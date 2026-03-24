@@ -1,0 +1,8 @@
+Starting server... 
+!!! SERVER STARTING V2 DEBUG !!!
+========================================
+CAMPUS SPARK SERVER V2 STARTING
+Port: 5000
+Time: 2026-02-22T21:59:16.936Z
+========================================
+Terminate batch job (Y/N)? 

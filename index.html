@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script>
+    window.onerror = function (msg, url, lineNo, columnNo, error) {
+      const errorDiv = document.createElement('div');
+      errorDiv.style.position = 'fixed';
+      errorDiv.style.top = '0';
+      errorDiv.style.left = '0';
+      errorDiv.style.width = '100%';
+      errorDiv.style.padding = '20px';
+      errorDiv.style.background = 'red';
+      errorDiv.style.color = 'white';
+      errorDiv.style.zIndex = '9999';
+      errorDiv.innerHTML = '<strong>Runtime Error:</strong> ' + msg + '<br>Line: ' + lineNo + ' at ' + url;
+      document.body.appendChild(errorDiv);
+      return false;
+    };
+    window.addEventListener('unhandledrejection', function (event) {
+      const errorDiv = document.createElement('div');
+      errorDiv.style.position = 'fixed';
+      errorDiv.style.bottom = '0';
+      errorDiv.style.left = '0';
+      errorDiv.style.width = '100%';
+      errorDiv.style.padding = '20px';
+      errorDiv.style.background = 'orange';
+      errorDiv.style.color = 'black';
+      errorDiv.style.zIndex = '9999';
+      errorDiv.innerHTML = '<strong>Unhandled Rejection:</strong> ' + event.reason;
+      document.body.appendChild(errorDiv);
+    });
+  </script>
+  <title>Campus Spark - Ignite Your Campus Presence</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'spark-red': '#E53E3E',
+            'spark-black': '#0F172A',
+            'spark-white': '#FFFFFF',
+            'spark-bg': '#FFFFFF',
+            'spark-light-gray': '#F8FAFC',
+            'spark-gray': '#475569',
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+          animation: {
+            'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'float': 'float 6s ease-in-out infinite',
+          },
+          keyframes: {
+            float: {
+              '0%, 100%': { transform: 'translateY(0)' },
+              '50%': { transform: 'translateY(-20px)' },
+            }
+          }
+        },
+      },
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+    rel="stylesheet">
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.2.0",
+    "react/": "https://esm.sh/react@18.2.0/",
+    "react-dom": "https://esm.sh/react-dom@18.2.0",
+    "react-dom/": "https://esm.sh/react-dom@18.2.0/",
+    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+
+    "react-router-dom": "https://esm.sh/react-router-dom@6.22.0?deps=react@18.2.0,react-dom@18.2.0",
+    "lucide-react": "https://esm.sh/lucide-react@0.460.0?deps=react@18.2.0",
+
+    "firebase/app": "https://esm.sh/firebase@12.8.0/app",
+    "firebase/auth": "https://esm.sh/firebase@12.8.0/auth",
+    "firebase/firestore": "https://esm.sh/firebase@12.8.0/firestore",
+    "firebase/storage": "https://esm.sh/firebase@12.8.0/storage",
+    "firebase/functions": "https://esm.sh/firebase@12.8.0/functions",
+    "firebase/analytics": "https://esm.sh/firebase@12.8.0/analytics",
+
+    "firebase/": "https://esm.sh/firebase@12.8.0/",
+    "axios": "https://esm.sh/axios@1.6.7"
+  }
+}
+</script>
+
+
+
+  <link rel="stylesheet" href="/index.css">
+</head>
+
+<body class="selection:bg-spark-red selection:text-white">
+  <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+
+</html>

@@ -1,0 +1,29 @@
+{
+  "name": "campus-spark",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev-backend": "pnpm --prefix server run dev",
+    "dev-full": "npx concurrently \"npm run dev\" \"npm run dev-backend\"",
+    "build": "vite build",
+    "preview": "vite preview",
+    "promote-admin": "npx tsx server/promote_user.ts"
+  },
+  "dependencies": {
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "react-router-dom": "6.22.0",
+    "lucide-react": "0.460.0",
+    "firebase": "12.8.0",
+    "axios": "^1.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^8.2.2",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}

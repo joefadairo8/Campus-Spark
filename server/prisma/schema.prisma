@@ -1,0 +1,106 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-1.0.x", "debian-openssl-1.1.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+
+model User {
+  id              String         @id @default(uuid())
+  email           String         @unique
+  password        String
+  name            String
+  role            String         // Ambassador, Brand, Student Organization
+  imageUrl        String?
+  bio             String?
+  location        String?
+  phoneNumber     String?
+  website         String?
+  instagram       String?
+  twitter         String?
+  linkedin        String?
+  industry        String?
+  university      String?
+  handle          String?
+  clubType        String?
+  companySize     String?
+  createdAt       DateTime       @default(now())
+  events          Event[]        @relation("HostEvents")
+  notifications   Notification[]
+  sentProposals     Proposal[] @relation("SentProposals")
+  receivedProposals Proposal[] @relation("ReceivedProposals")
+  gigs              Gig[]     @relation("StudentGigs")
+  applications      GigApplication[] @relation("StudentApplications")
+}
+
+model Event {
+  id                String   @id @default(uuid())
+  name              String
+  date              String
+  description       String
+  targetSponsorship Float
+  hostEmail         String
+  hostName          String
+  university        String
+  status            String   @default("published")
+  createdAt         DateTime @default(now())
+  host              User     @relation("HostEvents", fields: [hostEmail], references: [email])
+}
+
+model Gig {
+  id           String           @id @default(uuid())
+  title        String
+  description  String
+  reward       Float
+  brand        String
+  status       String           @default("open") // open, in_progress, reviewing, completed
+  studentId    String?
+  student      User?            @relation("StudentGigs", fields: [studentId], references: [id])
+  applications GigApplication[]
+  createdAt    DateTime         @default(now())
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  message   String
+  type      String   // info, success, warning
+  read      Boolean  @default(false)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model Proposal {
+  id          String   @id @default(uuid())
+  senderId    String
+  sender      User     @relation("SentProposals", fields: [senderId], references: [id])
+  recipientId String
+  recipient   User     @relation("ReceivedProposals", fields: [recipientId], references: [id])
+  message     String?
+  budget      String?
+  timeline    String?
+  status      String   @default("pending") // pending, accepted, rejected
+  createdAt   DateTime @default(now())
+}
+
+model GigApplication {
+  id        String   @id @default(uuid())
+  gigId     String
+  gig       Gig      @relation(fields: [gigId], references: [id], onDelete: Cascade)
+  studentId String
+  student   User     @relation("StudentApplications", fields: [studentId], references: [id])
+  pitch     String
+  status    String   @default("pending") // pending, accepted, rejected
+  report    String?
+  reportLink String?
+  reportImageUrl String?
+  reportSubmittedAt DateTime?
+  createdAt DateTime @default(now())
+}
