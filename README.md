@@ -1,33 +1,83 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Campus Spark Nigeria ⚡
 
-# Run and deploy your AI Studio app
+**Campus Spark** is a premium digital ecosystem designed to bridge the gap between **Students**, **Organizations**, and **Brands** in the Nigerian campus landscape. It provides a centralized hub for campus gigs, sponsorships, and event management.
 
-This contains everything you need to run your app locally.
+---
 
-View your app in AI Studio: https://ai.studio/apps/drive/1GO8yOqfIfoOYWDKHcvnya1aULj9YOA-5
+## 👥 Stakeholders
+- **Students / Ambassadors**: Discover gigs, build portfolios, and earn.
+- **Brands / Agencies**: Launch campus campaigns and recruit top student talent.
+- **Student Organizations**: Seek sponsorships for events and manage partnerships.
+- **Admin**: Oversee the entire ecosystem and manage platform integrity.
 
-## Deployment Guide
+---
+
+## 🛠️ Technology Stack
+- **Frontend**: React (v18) + Vite + TypeScript
+- **Styling**: Modern Vanilla CSS (Premium, high-contrast aesthetic)
+- **Backend / Auth / DB**: **Firebase** (Auth & Cloud Firestore)
+- **Hosting**: Firebase Hosting
+
+---
+
+## 🏗️ Core Features
+1.  **Gig Management**: Discovery, application, and campaign reporting workflow.
+2.  **Partnership Engine**: Structured proposals between organizations and brands.
+3.  **Event Hub**: Centralized campus event listings with sponsorship tracking.
+4.  **Real-time Notifications**: Instant alerts for applications, approvals, and messages.
+
+---
+
+## 🚀 Getting Started
 
 ### Prerequisites
 - Node.js (v18+)
-- pnpm or npm
+- Firebase Account
 
-### Backend Setup
-1. Navigate to the server directory: `cd server`
-2. Install dependencies: `npm install`
-3. Create a `.env` file based on the provided template (see `.env` for required variables).
-4. Synchronize the database schema: `npx prisma db push`
-5. (Optional) Seed the database: `npx tsx prisma/seed.ts`
+### Setup
+1.  **Clone the project**:
+    ```bash
+    git clone [your-repo-link]
+    cd "Campus Spark"
+    ```
+2.  **Install dependencies**:
+    ```bash
+    npm install
+    ```
+3.  **Firebase Configuration**:
+    - Open `firebase.ts`.
+    - Ensure your `firebaseConfig` object matches your project credentials from the Firebase Console.
+4.  **Run Development Server**:
+    ```bash
+    npm run dev
+    ```
 
-### Frontend Setup
-1. Install dependencies in the root: `npm install`
-2. Create/Update `.env.local` with:
-   - `GEMINI_API_KEY`: Your Gemini API key.
-   - `VITE_API_URL`: The URL of your deployed backend (e.g., `https://your-api.com/api/`).
-3. Build the frontend: `npm run build`
+---
 
-### Running in Production
-- **Backend**: In the `server` directory, run `npm run build` then `npm start`.
-- **Frontend**: Serve the `dist` directory using a static file host (Vercel, Netlify, etc.).
+## 🔐 Firestore Security Rules
+To ensure the app functions correctly, apply the rules found in the `firebase.json` or paste the following into your Firebase Console:
+
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+```
+
+---
+
+## 📦 Deployment
+The project is optimized for **Firebase Hosting**:
+1. `npm run build`
+2. `firebase deploy`
+
+---
+*Created with ❤️ for the Nigerian Campus Community.*
