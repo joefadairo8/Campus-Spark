@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { auth, db } from './firebase';
+import { doc as firebaseDoc, getDoc as firebaseGetDoc } from 'firebase/firestore';
 import Navbar from './components/Navbar';
 import HeroSection from './components/HeroSection';
 import FeaturesSection from './components/FeaturesSection';
@@ -28,19 +30,28 @@ const App: React.FC = () => {
 
   // Sync with localStorage
   useEffect(() => {
-    const checkAuth = () => {
-      const storedUser = localStorage.getItem('user');
-      if (storedUser) {
-        setUser(JSON.parse(storedUser));
+    const unsubscribe = auth.onAuthStateChanged(async (firebaseUser: any) => {
+      if (firebaseUser) {
+        try {
+          const userDocRef = firebaseDoc(db, 'users', firebaseUser.uid);
+          const userSnap = await firebaseGetDoc(userDocRef);
+          if (userSnap.exists()) {
+            const profile = { id: firebaseUser.uid, ...userSnap.data() };
+            setUser(profile);
+            localStorage.setItem('user', JSON.stringify(profile));
+          } else {
+            setUser(firebaseUser);
+          }
+        } catch (err) {
+          console.error('Error fetching user profile:', err);
+          setUser(firebaseUser);
+        }
       } else {
         setUser(null);
+        localStorage.removeItem('user');
       }
-    };
-
-    checkAuth();
-    // Listen for storage changes (handles multiple tabs if needed)
-    window.addEventListener('storage', checkAuth);
-    return () => window.removeEventListener('storage', checkAuth);
+    });
+    return () => unsubscribe();
   }, []);
 
   const navigateTo = (page: string) => {

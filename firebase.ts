@@ -110,4 +110,83 @@ export const addDoc = async (colName: any, data: any) => {
 export const updateDoc = firebaseUpdateDoc;
 export const deleteDoc = firebaseDeleteDoc;
 
+// API Client for components that need it
+export const apiClient = {
+  auth,
+  db,
+  collection: (name: string) => firebaseCollection(db, name),
+  doc: (col: string, id: string) => firebaseDoc(db, col, id),
+  getDocs: async (q: any) => {
+    const snapshot = await firebaseGetDocs(q);
+    return {
+      empty: snapshot.empty,
+      docs: snapshot.docs.map(d => ({
+        id: d.id,
+        data: () => d.data()
+      }))
+    };
+  },
+  getDoc: async (docRef: any) => {
+    const docSnap = await firebaseGetDoc(docRef);
+    return {
+      exists: () => docSnap.exists(),
+      data: () => docSnap.data()
+    };
+  },
+  setDoc: firebaseSetDoc,
+  addDoc: async (colName: any, data: any) => {
+    const colRef = typeof colName === 'string' 
+      ? firebaseCollection(db, colName) 
+      : colName;
+    const docRef = await firebaseAddDoc(colRef, data);
+    return { id: docRef.id };
+  },
+  updateDoc: firebaseUpdateDoc,
+  deleteDoc: firebaseDeleteDoc,
+  query: firebaseQuery,
+  where: firebaseWhere,
+  limit: firebaseLimit,
+  orderBy: firebaseOrderBy,
+  serverTimestamp: firebaseTimestamp,
+  get: async (path: string) => {
+  const parts = path.replace(/^\//, '').split('/');
+  if (parts.length === 2) {
+    const docRef = firebaseDoc(db, parts[0], parts[1]);
+    const docSnap = await firebaseGetDoc(docRef);
+    return { data: docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null };
+  } else {
+    const colRef = firebaseCollection(db, parts[0]);
+    const snapshot = await firebaseGetDocs(colRef);
+    return { 
+      data: snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+    };
+  }
+},
+post: async (path: string, data: any) => {
+  const parts = path.replace(/^\//, '').split('/');
+  const colRef = firebaseCollection(db, parts[0]);
+  const docRef = await firebaseAddDoc(colRef, {
+    ...data,
+    createdAt: new Date().toISOString()
+  });
+  return { data: { id: docRef.id, ...data } };
+},
+put: async (path: string, data: any) => {
+  const parts = path.replace(/^\//, '').split('/');
+  if (parts.length === 2) {
+    const docRef = firebaseDoc(db, parts[0], parts[1]);
+    await firebaseUpdateDoc(docRef, data);
+    return { data: { id: parts[1], ...data } };
+  }
+},
+delete: async (path: string) => {
+  const parts = path.replace(/^\//, '').split('/');
+  if (parts.length === 2) {
+    const docRef = firebaseDoc(db, parts[0], parts[1]);
+    await firebaseDeleteDoc(docRef);
+    return { data: { success: true } };
+  }
+}
+};
+
 export default { auth, db };
