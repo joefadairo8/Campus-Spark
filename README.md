@@ -110,9 +110,29 @@ service cloud.firestore {
 
 ## 📦 Deployment
 The project is optimized for **Firebase Hosting**:
-1. `npm run build`
-2. `firebase deploy`
 
+1. **Build the project**:
+```bash
+   npm run build
+```
+2. **Initialize Firebase** (first time only):
+```bash
+   firebase init
+```
+   - Select **Hosting**
+   - Select **campus-spark-3a55d** as the project
+   - Set public directory to **`dist`**
+   - Configure as single page app: **Yes**
+   - Automatic GitHub deploys: **No**
+
+3. **Deploy**:
+```bash
+   firebase deploy
+```
+
+### 🌐 Live URL
+```
+https://campus-spark-3a55d.web.app
 ---
 
 ---
