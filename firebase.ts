@@ -149,18 +149,47 @@ export const apiClient = {
   orderBy: firebaseOrderBy,
   serverTimestamp: firebaseTimestamp,
   get: async (path: string) => {
-  const parts = path.replace(/^\//, '').split('/');
-  if (parts.length === 2) {
+  const [pathPart, queryString] = path.replace(/^\//, '').split('?');
+  const parts = pathPart.split('/');
+
+  // Parse query params
+  const params: Record<string, string> = {};
+  if (queryString) {
+    queryString.split('&').forEach(p => {
+      const [k, v] = p.split('=');
+      if (k && v) params[decodeURIComponent(k)] = decodeURIComponent(v);
+    });
+  }
+
+  // Single document: collection/id
+  if (parts.length === 2 && !queryString) {
     const docRef = firebaseDoc(db, parts[0], parts[1]);
     const docSnap = await firebaseGetDoc(docRef);
-    return { data: docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null };
-  } else {
-    const colRef = firebaseCollection(db, parts[0]);
-    const snapshot = await firebaseGetDocs(colRef);
-    return { 
-      data: snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
-    };
+    return { data: docSnap.exists() ? [{ id: docSnap.id, ...docSnap.data() }] : [] };
   }
+
+  // Collection with optional filters
+  const colRef = firebaseCollection(db, parts[0]);
+  let constraints: any[] = [];
+
+  if (params.role) {
+    constraints.push(firebaseWhere('role', '==', params.role));
+  }
+  if (params.status) {
+    constraints.push(firebaseWhere('status', '==', params.status));
+  }
+  if (params.studentId) {
+    constraints.push(firebaseWhere('studentId', '==', params.studentId));
+  }
+
+  const q = constraints.length > 0
+    ? firebaseQuery(colRef, ...constraints)
+    : colRef;
+
+  const snapshot = await firebaseGetDocs(q as any);
+  return {
+    data: snapshot.docs.map((d: any) => ({ id: d.id, ...d.data() })) as any[]
+  };
 },
 post: async (path: string, data: any) => {
   const parts = path.replace(/^\//, '').split('/');
@@ -170,6 +199,16 @@ post: async (path: string, data: any) => {
     createdAt: new Date().toISOString()
   });
   return { data: { id: docRef.id, ...data } };
+},
+patch: async (path: string, data: any = {}) => {
+  const parts = path.replace(/^\//, '').split('/');
+  if (parts.length >= 2) {
+    const docRef = firebaseDoc(db, parts[0], parts[1]);
+    if (data) {
+      await firebaseUpdateDoc(docRef, data);
+    }
+    return { data: { success: true } };
+  }
 },
 put: async (path: string, data: any) => {
   const parts = path.replace(/^\//, '').split('/');

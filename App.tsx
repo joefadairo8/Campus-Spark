@@ -94,12 +94,17 @@ const App: React.FC = () => {
     'create-account'
   ].includes(currentPage);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setUser(null);
-    navigateTo('home');
-    window.location.reload();
+    setCurrentPage('home');
+    window.history.pushState({}, '', '/');
   };
 
   const renderPageContent = () => {

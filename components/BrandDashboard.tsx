@@ -42,7 +42,7 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
         setApplicantsLoading(true);
         try {
             const res = await apiClient.get(`gigs/${campaign.id}/applications`);
-            setApplicants(res.data);
+            setApplicants(Array.isArray(res.data) ? res.data : []);
         } catch (e) {
             console.error('Error fetching applicants:', e);
             setApplicants([]);
@@ -68,7 +68,7 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
 
     const handleReportApproval = async (campaignId: string) => {
         try {
-            await apiClient.post(`gigs/${campaignId}/approve-report`);
+            await apiClient.post(`gigs/${campaignId}/approve-report`, {});
             alert('Report approved! Campaign is now marked as completed.');
             // Refresh
             const res = await apiClient.get(`gigs/${campaignId}/applications`);
@@ -182,7 +182,7 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
             try {
                 const q = query(collection(db, "users"), where("role", "==", UserRole.Ambassador), limit(50));
                 const querySnapshot = await getDocs(q);
-                const studentsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                const studentsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
                 setStudents(studentsData);
             } catch (err) {
                 console.error("Error fetching talent:", err);

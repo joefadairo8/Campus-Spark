@@ -100,7 +100,14 @@ service cloud.firestore {
 - ✅ Fixed missing `apiClient` export in `firebase.ts` that was causing app-wide crashes
 - ✅ Fixed Navbar crash caused by undefined user `name` on login
 - ✅ Fixed `App.tsx` authentication flow to fetch full user profile from Firestore
-- ✅ Added `get`, `post`, `put` and `delete` methods to `apiClient` for dashboard data fetching
+- ✅ Added `get`, `post`, `put`, `patch` and `delete` methods to `apiClient` for dashboard data fetching
+- ✅ Fixed logout flow — app now properly signs out from Firebase and redirects to home
+- ✅ Fixed friendly error messages on registration (email already in use, weak password, etc.)
+- ✅ Fixed `apiClient.get` to support query parameters for filtering by role, status, brand and studentId
+- ✅ Fixed TypeScript errors across `StudentDashboard.tsx` and `BrandDashboard.tsx`
+- ✅ Brand dashboard talent directory now shows all registered student ambassadors
+- ✅ Campus events now visible on both Brand and Student dashboards
+- ✅ Student dashboard now shows registered brands, student organizations and proposals
 
 ### Firebase Setup
 - ✅ Created Cloud Firestore database (us-central1)

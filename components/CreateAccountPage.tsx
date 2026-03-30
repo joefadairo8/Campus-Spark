@@ -164,7 +164,15 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
             }
         } catch (err: any) {
             console.error('Registration Main Error:', err);
-            setError(err.message || 'An error occurred during registration.');
+            if (err.code === 'auth/email-already-in-use') {
+                setError('This email is already registered. Please log in instead.');
+            } else if (err.code === 'auth/invalid-email') {
+                 setError('Please enter a valid email address.');
+            } else if (err.code === 'auth/weak-password') {
+                setError('Password is too weak. Please use at least 6 characters.');
+            } else {
+                setError('An error occurred during registration. Please try again.');
+            }
             setLoading(false);
         }
     };
