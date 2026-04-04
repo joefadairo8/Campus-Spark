@@ -194,10 +194,43 @@ export const apiClient = {
 post: async (path: string, data: any) => {
   const parts = path.replace(/^\//, '').split('/');
   const colRef = firebaseCollection(db, parts[0]);
-  const docRef = await firebaseAddDoc(colRef, {
-    ...data,
-    createdAt: new Date().toISOString()
-  });
+  let enrichedData = { ...data, createdAt: new Date().toISOString() };
+
+    if (parts[0] === 'proposals') {
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        try {
+          const userDoc = await firebaseGetDoc(firebaseDoc(db, 'users', currentUser.uid));
+          const senderProfile = userDoc.exists() ? (userDoc.data() as any) : {};
+          enrichedData = {
+            ...enrichedData,
+            senderId: currentUser.uid,
+            sender: {
+              name: senderProfile.name || 'Unknown',
+              role: senderProfile.role || 'User',
+              email: senderProfile.email || currentUser.email,
+              imageUrl: senderProfile.imageUrl || ''
+            },
+            status: 'pending'
+          };
+          if (data.recipientId) {
+            const recipientDoc = await firebaseGetDoc(firebaseDoc(db, 'users', data.recipientId));
+            if (recipientDoc.exists()) {
+              const recipientProfile = recipientDoc.data() as any;
+              enrichedData.recipient = {
+                name: recipientProfile.name || 'Unknown',
+                role: recipientProfile.role || 'User',
+                email: recipientProfile.email || '',
+                imageUrl: recipientProfile.imageUrl || ''
+              };
+            }
+          }
+        } catch (err) {
+          console.error('Error enriching proposal:', err);
+        }
+      }
+    }
+  const docRef = await firebaseAddDoc(colRef, enrichedData);
   return { data: { id: docRef.id, ...data } };
 },
 patch: async (path: string, data: any = {}) => {

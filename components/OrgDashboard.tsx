@@ -51,7 +51,7 @@ const OrgDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: () 
         const user = auth.currentUser;
         if (user) {
             const userDoc = await getDoc(doc(db, "users", (user as any).uid || (user as any).id));
-            if (userDoc.exists()) setOrgProfile(userDoc.data());
+            if (userDoc.exists()) setOrgProfile({ id: user.uid, ...(userDoc.data() as any) });
         }
     };
 
@@ -82,7 +82,7 @@ const OrgDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: () 
         try {
             const q = query(collection(db, "users"), where("role", "==", UserRole.Brand), limit(20));
             const snap = await getDocs(q);
-            setBrands(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            setBrands(snap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })));
         } catch (error) {
             console.error("Error fetching brands:", error);
         }
@@ -377,11 +377,12 @@ const OrgDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: () 
                                 {proposals.map((p) => {
                                     const isSender = p.senderId === (orgProfile?.id || auth.currentUser?.uid);
                                     const otherParty = isSender ? p.recipient : p.sender;
+                                    if (!otherParty) return null;
                                     return (
                                         <div key={p.id} className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm flex items-center justify-between">
                                             <div className="flex items-center space-x-6">
                                                 <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center text-2xl font-black text-spark-red shadow-inner">
-                                                    {otherParty.imageUrl ? <img src={otherParty.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : otherParty.name.charAt(0)}
+                                                    {otherParty?.imageUrl ? <img src={otherParty.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : otherParty?.name?.charAt(0) || '?'}
                                                 </div>
                                                 <div>
                                                     <h4 className="text-xl font-black text-spark-black">{otherParty.name}</h4>

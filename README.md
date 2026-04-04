@@ -107,7 +107,11 @@ service cloud.firestore {
 - ✅ Fixed TypeScript errors across `StudentDashboard.tsx` and `BrandDashboard.tsx`
 - ✅ Brand dashboard talent directory now shows all registered student ambassadors
 - ✅ Campus events now visible on both Brand and Student dashboards
-- ✅ Student dashboard now shows registered brands, student organizations and proposals
+- ✅ Fixed OrgDashboard runtime error on Brand Partnerships section
+- ✅ Fixed profile update to use correct Firebase Auth user ID
+- ✅ Fixed profile image upload using base64 encoding
+- ✅ Fixed proposals communication — sender and recipient info now automatically saved when proposal is sent
+- ✅ Fixed wrong name showing in OrgDashboard header
 
 ### Firebase Setup
 - ✅ Created Cloud Firestore database (us-central1)

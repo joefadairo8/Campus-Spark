@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { updateDoc, doc, db, apiClient } from '../firebase';
+import { updateDoc, doc, db } from '../firebase';
 import { User, UserRole } from '../types';
 
 interface ProfileViewProps {
@@ -48,11 +48,13 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
 
         setUploading(true);
         try {
-            const res = await apiClient.post('users/upload', uploadFormData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-            });
-            setFormData(prev => ({ ...prev, imageUrl: res.data.imageUrl }));
-            onUpdate();
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setFormData(prev => ({ ...prev, imageUrl: reader.result as string }));
+                setUploading(false);
+            };
+            reader.readAsDataURL(file);
+            return;
         } catch (err) {
             console.error("Upload error:", err);
             alert("Failed to upload image");
@@ -66,7 +68,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
         setLoading(true);
         setSuccess(false);
         try {
-            await updateDoc(doc(db, "users", user.id), formData);
+            await updateDoc(doc(db, "users", user.id), formData as any);
             setSuccess(true);
             onUpdate();
         } catch (err) {
@@ -98,7 +100,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
                     <div className="absolute -bottom-20 left-12 group">
                         <div className="w-40 h-40 rounded-[3rem] bg-white p-3 shadow-2xl ring-8 ring-white relative overflow-hidden transition-transform duration-500 group-hover:scale-105">
                             {formData.imageUrl ? (
-                                <img src={formData.imageUrl.startsWith('/') ? `${apiClient.defaults.baseURL?.replace('/api/', '')}${formData.imageUrl}` : formData.imageUrl} alt="Profile" className="w-full h-full object-cover rounded-[2.5rem]" />
+                                <img src={formData.imageUrl} alt="Profile" className="w-full h-full object-cover rounded-[2.5rem]" />
                             ) : (
                                 <div className="w-full h-full bg-gradient-to-br from-red-50 to-white flex items-center justify-center text-5xl font-black text-spark-red">
                                     {(formData.name || 'U').charAt(0)}
