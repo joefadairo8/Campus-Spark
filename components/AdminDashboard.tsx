@@ -132,11 +132,11 @@ const AdminDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
                                         <div className="flex items-center space-x-12">
                                             <div className="flex items-center -space-x-4">
                                                 <div className="w-16 h-16 bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center text-xl font-black text-spark-red z-10 uppercase">
-                                                    {p.senderName.charAt(0)}
+                                                    {(p.senderName || '?').charAt(0)}
                                                 </div>
                                                 <div className="w-16 h-16 bg-spark-red/10 rounded-2xl border-2 border-dashed border-spark-red/30 flex items-center justify-center text-xl">🤝</div>
                                                 <div className="w-16 h-16 bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center text-xl font-black text-blue-600 uppercase">
-                                                    {p.recipientName.charAt(0)}
+                                                    {(p.recipientName || '?').charAt(0)}
                                                 </div>
                                             </div>
                                             <div>
@@ -254,7 +254,7 @@ const AdminDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
                                                     <td className="px-8 py-5">
                                                         <div className="flex items-center space-x-3">
                                                             <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center font-black text-spark-red uppercase">
-                                                                {user.name.charAt(0)}
+                                                                {(user.name || '?').charAt(0)}
                                                             </div>
                                                             <div>
                                                                 <p className="font-black text-spark-black">{user.name}</p>

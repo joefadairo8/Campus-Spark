@@ -13,7 +13,7 @@ export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOp
 
     if (!isOpen || !proposal) return null;
 
-    const otherParty = isSender ? proposal.recipient : proposal.sender;
+    const otherParty = (isSender ? proposal.recipient : proposal.sender) || { name: 'Unknown User', role: 'Unknown', email: '' };
 
     const handleAction = async (status: 'accepted' | 'rejected' | 'reviewing') => {
         setUpdating(true);
@@ -83,6 +83,29 @@ export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOp
                             {proposal.message}
                         </div>
                     </div>
+
+                    {/* Proposal Document */}
+                    {proposal.documentUrl && (
+                        <div className="space-y-3">
+                            <p className="text-[10px] font-black text-spark-gray uppercase tracking-widest">Attached Document</p>
+                            <div className="p-6 bg-gray-50 rounded-[2rem] border border-gray-100 flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center text-spark-red">
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                    </div>
+                                    <span className="font-bold text-spark-black truncate max-w-[200px]">{proposal.documentName || 'Proposal Document'}</span>
+                                </div>
+                                <a
+                                    href={proposal.documentUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-4 py-2 bg-spark-red text-white text-xs font-black rounded-xl hover:bg-red-700 transition-all shadow-md"
+                                >
+                                    Download
+                                </a>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Sender/Recipient Info */}
                     <div className="flex items-center gap-4 p-4 border border-gray-100 rounded-2xl">

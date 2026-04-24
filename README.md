@@ -94,7 +94,7 @@ service cloud.firestore {
 
 ---
 
-## 🔧 Recent Updates (March 2026)
+## 🔧 Recent Updates (April 2026)
 
 ### Bug Fixes
 - ✅ Fixed missing `apiClient` export in `firebase.ts` that was causing app-wide crashes
@@ -107,11 +107,18 @@ service cloud.firestore {
 - ✅ Fixed TypeScript errors across `StudentDashboard.tsx` and `BrandDashboard.tsx`
 - ✅ Brand dashboard talent directory now shows all registered student ambassadors
 - ✅ Campus events now visible on both Brand and Student dashboards
+- ✅ Fixed `apiClient.get` to support complex `OR` queries for proposals (senderId/recipientId)
+- ✅ Fixed Talent Directory visibility mismatch between enum values and legacy database roles
+- ✅ Fixed UI flickering/incorrect empty states by adding loading checks to Proposals and Events sections
+- ✅ Fixed "Unknown User" display by implementing profile enrichment on the server side (firebase.ts)
+- ✅ Added fallback to Email/Auth data for profiles with missing name information
+- ✅ Standardized user ID handling across all dashboards to ensure reliable data filtering
 - ✅ Fixed OrgDashboard runtime error on Brand Partnerships section
 - ✅ Fixed profile update to use correct Firebase Auth user ID
 - ✅ Fixed profile image upload using base64 encoding
 - ✅ Fixed proposals communication — sender and recipient info now automatically saved when proposal is sent
 - ✅ Fixed wrong name showing in OrgDashboard header
+- ✅ Improved Brand Dashboard data fetching to correctly filter campaigns by brand name
 
 ### Firebase Setup
 - ✅ Created Cloud Firestore database (us-central1)
@@ -147,5 +154,5 @@ https://campus-spark-3a55d.web.app
 ---
 
 ---
-*Last Updated: March 2026*
+*Last Updated: April 2026*
 *Created with ❤️ for the Nigerian Campus Community.*

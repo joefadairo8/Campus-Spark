@@ -57,7 +57,7 @@ const StudentDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout:
             try {
                 const userDoc = await getDoc(doc(db, "users", (user as any).uid || (user as any).id));
                 if (userDoc.exists()) {
-                    setUserProfile(userDoc.data());
+                    setUserProfile({ id: (user as any).uid || (user as any).id, ...userDoc.data() });
                 }
             } catch (e) {
                 console.error("Profile load error:", e);
@@ -66,8 +66,10 @@ const StudentDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout:
     };
 
     const fetchProposals = async () => {
+        if (!userProfile?.id) return;
         try {
-            const res = await apiClient.get('proposals');
+            // Fetch proposals where user is either sender or recipient
+            const res = await apiClient.get(`proposals?senderId=${userProfile.id}&recipientId=${userProfile.id}`);
             setProposals(res.data);
         } catch (error) {
             console.error("Error fetching proposals:", error);
@@ -246,7 +248,7 @@ const StudentDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout:
     const getMyApplication = (gigId: string) => myApplications.find((a: any) => a.gigId === gigId);
 
 
-    const handleSendProposal = async (data: { recipientId: string; message: string; budget?: string; timeline?: string }) => {
+    const handleSendProposal = async (data: { recipientId: string; message: string; budget?: string; timeline?: string; documentUrl?: string; documentName?: string; }) => {
         try {
             await apiClient.post('proposals', data);
             alert("Partnership proposal sent successfully!");
@@ -367,7 +369,7 @@ const StudentDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout:
                             <div key={profile.id} className="group bg-white rounded-[2rem] border border-gray-100 overflow-hidden shadow-sm hover:shadow-xl transition-all p-6">
                                 <div className="flex items-center space-x-4 mb-4">
                                     <div className="w-14 h-14 rounded-2xl bg-gray-50 flex items-center justify-center text-2xl font-black text-spark-red overflow-hidden flex-shrink-0">
-                                        {profile.imageUrl ? <img src={profile.imageUrl} className="w-full h-full object-cover" alt={profile.name} /> : profile.name.charAt(0)}
+                                        {profile.imageUrl ? <img src={profile.imageUrl} className="w-full h-full object-cover" alt={profile.name} /> : (profile.name || '?').charAt(0)}
                                     </div>
                                     <div className="min-w-0">
                                         <h3 className="font-black text-base line-clamp-1">{profile.name}</h3>
@@ -415,7 +417,7 @@ const StudentDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout:
                                     <div className="h-20 bg-gradient-to-r from-orange-50 to-red-50"></div>
                                     <div className="px-6 pb-6 -mt-8">
                                         <div className="w-16 h-16 rounded-2xl bg-white border-4 border-white shadow-lg flex items-center justify-center text-2xl font-black text-spark-red overflow-hidden mb-3">
-                                            {org.imageUrl ? <img src={org.imageUrl} className="w-full h-full object-cover" alt={org.name} /> : org.name.charAt(0)}
+                                            {org.imageUrl ? <img src={org.imageUrl} className="w-full h-full object-cover" alt={org.name} /> : (org.name || '?').charAt(0)}
                                         </div>
                                         <h3 className="font-black text-lg text-spark-black">{org.name}</h3>
                                         <p className="text-[10px] font-black text-spark-gray uppercase tracking-widest mb-2">{org.university || 'Student Organization'}</p>
@@ -466,7 +468,7 @@ const StudentDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout:
                                     <div className="h-16 bg-gradient-to-r from-purple-50 to-pink-50"></div>
                                     <div className="px-5 pb-5 -mt-6 flex flex-col items-center text-center">
                                         <div className="w-14 h-14 rounded-xl bg-white border-4 border-white shadow-lg flex items-center justify-center text-xl font-black text-spark-red overflow-hidden mb-2">
-                                            {member.imageUrl ? <img src={member.imageUrl} className="w-full h-full object-cover" alt={member.name} /> : member.name.charAt(0)}
+                                            {member.imageUrl ? <img src={member.imageUrl} className="w-full h-full object-cover" alt={member.name} /> : (member.name || '?').charAt(0)}
                                         </div>
                                         <h3 className="font-black text-base text-spark-black">{member.name}</h3>
                                         <p className="text-[10px] font-black text-spark-gray uppercase tracking-widest mb-1">{member.university || 'Ambassador'}</p>
@@ -526,18 +528,28 @@ const StudentDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout:
             case 'proposals':
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-                        <div className="grid gap-6">
+                        {loading ? (
+                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
+                        ) : proposals.length === 0 ? (
+                            <div className="bg-white p-12 rounded-[3rem] border-2 border-dashed border-gray-100 text-center">
+                                <div className="text-6xl mb-6">📩</div>
+                                <h3 className="text-2xl font-black text-spark-black mb-2">No Proposals Yet</h3>
+                                <p className="text-spark-gray font-medium">When you receive offers from brands or organizations, they will appear here.</p>
+                            </div>
+                        ) : (
+                            <div className="grid gap-6">
                             {proposals.map((p) => {
-                                const isSender = p.senderId === userProfile?.id;
-                                const otherParty = isSender ? p.recipient : p.sender;
+                                const isSender = p.senderId === (userProfile?.id || auth.currentUser?.uid);
+                                const otherParty = (isSender ? p.recipient : p.sender) || { name: 'Unknown User', role: 'Unknown', email: '' };
+                                const displayName = otherParty.name !== 'Unknown User' ? otherParty.name : (otherParty.email || 'Unknown User');
                                 return (
                                     <div key={p.id} className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm flex items-center justify-between">
                                         <div className="flex items-center space-x-6">
                                             <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center text-2xl font-black text-spark-red shadow-inner">
-                                                {otherParty.imageUrl ? <img src={otherParty.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : otherParty.name.charAt(0)}
+                                                {otherParty.imageUrl ? <img src={otherParty.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : (displayName.charAt(0))}
                                             </div>
                                             <div>
-                                                <h4 className="text-xl font-black text-spark-black">{otherParty.name}</h4>
+                                                <h4 className="text-xl font-black text-spark-black">{displayName}</h4>
                                                 <p className="text-xs text-spark-red font-black uppercase tracking-widest">{otherParty.role}</p>
                                                 <div className="flex gap-2 mt-1">
                                                     <p className="text-[10px] text-spark-gray font-bold uppercase tracking-wider">{new Date(p.createdAt).toLocaleDateString()}</p>
@@ -564,7 +576,8 @@ const StudentDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout:
                                     </div>
                                 );
                             })}
-                        </div>
+                            </div>
+                        )}
                     </div>
                 );
             default:
@@ -684,7 +697,7 @@ const StudentDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout:
                         <div className="h-48 bg-gradient-to-br from-spark-red to-red-400 relative">
                             <div className="absolute -bottom-12 left-12">
                                 <div className="w-24 h-24 bg-white p-2 rounded-3xl shadow-xl ring-4 ring-white flex items-center justify-center text-4xl font-black text-spark-red">
-                                    {selectedBrand.name.charAt(0)}
+                                    {(selectedBrand.name || '?').charAt(0)}
                                 </div>
                             </div>
                         </div>

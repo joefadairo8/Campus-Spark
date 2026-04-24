@@ -6,23 +6,8 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged
 } from 'firebase/auth';
-import { 
-  getFirestore, 
-  collection as firebaseCollection, 
-  doc as firebaseDoc, 
-  getDocs as firebaseGetDocs, 
-  getDoc as firebaseGetDoc, 
-  setDoc as firebaseSetDoc, 
-  addDoc as firebaseAddDoc,
-  updateDoc as firebaseUpdateDoc,
-  deleteDoc as firebaseDeleteDoc,
-  query as firebaseQuery,
-  where as firebaseWhere,
-  limit as firebaseLimit,
-  orderBy as firebaseOrderBy,
-  serverTimestamp as firebaseTimestamp
-} from 'firebase/firestore';
-
+import { getFirestore, collection as firebaseCollection, doc as firebaseDoc, getDocs as firebaseGetDocs, getDoc as firebaseGetDoc, setDoc as firebaseSetDoc, addDoc as firebaseAddDoc, updateDoc as firebaseUpdateDoc, deleteDoc as firebaseDeleteDoc, query as firebaseQuery, where as firebaseWhere, or as firebaseOr, limit as firebaseLimit, orderBy as firebaseOrderBy, serverTimestamp as firebaseTimestamp } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import { getAnalytics } from "firebase/analytics";
 
 // Your web app's Firebase configuration
@@ -41,6 +26,7 @@ const app = initializeApp(firebaseConfig);
 export const analytics = getAnalytics(app);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+export const storage = getStorage(app);
 
 // Local storage parity for existing components (optional but helpful)
 const setUser = (user: any) => {
@@ -173,13 +159,40 @@ export const apiClient = {
   let constraints: any[] = [];
 
   if (params.role) {
-    constraints.push(firebaseWhere('role', '==', params.role));
+    const ambassadorRoles = [
+      'Student/Professional Influencer',
+      'Ambassador',
+      'Ambassador/Influencer',
+      'Student Influencer'
+    ];
+    
+    if (ambassadorRoles.includes(params.role)) {
+      constraints.push(firebaseWhere('role', 'in', ambassadorRoles));
+    } else {
+      constraints.push(firebaseWhere('role', '==', params.role));
+    }
   }
   if (params.status) {
     constraints.push(firebaseWhere('status', '==', params.status));
   }
   if (params.studentId) {
     constraints.push(firebaseWhere('studentId', '==', params.studentId));
+  }
+  
+  // Handle senderId and recipientId filters
+  if (params.senderId && params.recipientId && parts[0] === 'proposals') {
+    // If both are provided for proposals, we usually mean "involved in either"
+    constraints.push(firebaseOr(
+      firebaseWhere('senderId', '==', params.senderId),
+      firebaseWhere('recipientId', '==', params.recipientId)
+    ));
+  } else {
+    if (params.senderId) {
+      constraints.push(firebaseWhere('senderId', '==', params.senderId));
+    }
+    if (params.recipientId) {
+      constraints.push(firebaseWhere('recipientId', '==', params.recipientId));
+    }
   }
 
   const q = constraints.length > 0
@@ -202,23 +215,29 @@ post: async (path: string, data: any) => {
         try {
           const userDoc = await firebaseGetDoc(firebaseDoc(db, 'users', currentUser.uid));
           const senderProfile = userDoc.exists() ? (userDoc.data() as any) : {};
+          
+          // Use auth data as fallback if profile document is missing or incomplete
+          const senderName = senderProfile.name || senderProfile.fullName || currentUser.displayName || 'User';
+          const senderRole = senderProfile.role || 'Member';
+          
           enrichedData = {
             ...enrichedData,
             senderId: currentUser.uid,
             sender: {
-              name: senderProfile.name || 'Unknown',
-              role: senderProfile.role || 'User',
-              email: senderProfile.email || currentUser.email,
-              imageUrl: senderProfile.imageUrl || ''
+              name: senderName,
+              role: senderRole,
+              email: senderProfile.email || currentUser.email || '',
+              imageUrl: senderProfile.imageUrl || currentUser.photoURL || ''
             },
             status: 'pending'
           };
+          
           if (data.recipientId) {
             const recipientDoc = await firebaseGetDoc(firebaseDoc(db, 'users', data.recipientId));
             if (recipientDoc.exists()) {
               const recipientProfile = recipientDoc.data() as any;
               enrichedData.recipient = {
-                name: recipientProfile.name || 'Unknown',
+                name: recipientProfile.name || recipientProfile.fullName || 'Unknown User',
                 role: recipientProfile.role || 'User',
                 email: recipientProfile.email || '',
                 imageUrl: recipientProfile.imageUrl || ''

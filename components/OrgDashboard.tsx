@@ -70,11 +70,15 @@ const OrgDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: () 
     };
 
     const fetchProposals = async () => {
+        if (!orgProfile?.id) return;
+        setLoading(true);
         try {
-            const res = await apiClient.get('proposals');
+            const res = await apiClient.get(`proposals?senderId=${orgProfile.id}&recipientId=${orgProfile.id}`);
             setProposals(res.data);
         } catch (error) {
             console.error("Error fetching proposals:", error);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -197,7 +201,7 @@ const OrgDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: () 
         setShowProposalModal(true);
     };
 
-    const handleSendProposal = async (data: { recipientId: string; message: string; budget?: string; timeline?: string }) => {
+    const handleSendProposal = async (data: { recipientId: string; message: string; budget?: string; timeline?: string; documentUrl?: string; documentName?: string; }) => {
         try {
             await apiClient.post('proposals', data);
             alert("Partnership proposal sent successfully!");
@@ -324,7 +328,7 @@ const OrgDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: () 
                                         <div className="h-20 bg-gradient-to-r from-spark-red/10 to-orange-50"></div>
                                         <div className="px-6 pb-6 -mt-8">
                                             <div className="w-16 h-16 rounded-2xl bg-gray-50 border-4 border-white shadow-lg flex items-center justify-center text-2xl font-black text-spark-red overflow-hidden mb-3">
-                                                {profile.imageUrl ? <img src={profile.imageUrl} className="w-full h-full object-cover" alt={profile.name} /> : profile.name.charAt(0)}
+                                                {profile.imageUrl ? <img src={profile.imageUrl} className="w-full h-full object-cover" alt={profile.name} /> : (profile.name || '?').charAt(0)}
                                             </div>
                                             <h3 className="font-black text-lg text-spark-black">{profile.name}</h3>
                                             <p className="text-[10px] font-black text-spark-gray uppercase tracking-widest mb-1">{profile.university || 'Campus Ambassador'}</p>
@@ -366,7 +370,9 @@ const OrgDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: () 
             case 'proposals':
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-                        {proposals.length === 0 ? (
+                        {loading ? (
+                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
+                        ) : proposals.length === 0 ? (
                             <DashboardPlaceholder
                                 title="No Partnerships"
                                 icon="🤝"
@@ -376,16 +382,16 @@ const OrgDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: () 
                             <div className="grid gap-6">
                                 {proposals.map((p) => {
                                     const isSender = p.senderId === (orgProfile?.id || auth.currentUser?.uid);
-                                    const otherParty = isSender ? p.recipient : p.sender;
-                                    if (!otherParty) return null;
+                                    const otherParty = (isSender ? p.recipient : p.sender) || { name: 'Unknown User', role: 'Unknown', email: '' };
+                                    const displayName = otherParty.name !== 'Unknown User' ? otherParty.name : (otherParty.email || 'Unknown User');
                                     return (
                                         <div key={p.id} className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm flex items-center justify-between">
                                             <div className="flex items-center space-x-6">
                                                 <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center text-2xl font-black text-spark-red shadow-inner">
-                                                    {otherParty?.imageUrl ? <img src={otherParty.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : otherParty?.name?.charAt(0) || '?'}
+                                                    {otherParty?.imageUrl ? <img src={otherParty.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : (displayName.charAt(0))}
                                                 </div>
                                                 <div>
-                                                    <h4 className="text-xl font-black text-spark-black">{otherParty.name}</h4>
+                                                    <h4 className="text-xl font-black text-spark-black">{displayName}</h4>
                                                     <p className="text-xs text-spark-red font-black uppercase tracking-widest">{otherParty.role}</p>
                                                     <p className="text-[10px] text-spark-gray font-bold mt-1 uppercase tracking-wider">{new Date(p.createdAt).toLocaleDateString()}</p>
                                                 </div>
@@ -415,11 +421,21 @@ const OrgDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: () 
                 );
             case 'brands':
                 return (
-                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <div className="animate-in slide-in-from-bottom-4 duration-500">
+                        {loading ? (
+                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
+                        ) : brands.length === 0 ? (
+                            <div className="text-center py-24 bg-white rounded-[3rem] border-2 border-dashed border-gray-100">
+                                <div className="text-6xl mb-4">🏢</div>
+                                <h3 className="text-2xl font-black text-spark-black mb-2">No Brands Found</h3>
+                                <p className="text-spark-gray">Check back later as more brands join the network!</p>
+                            </div>
+                        ) : (
+                            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
                         {brands.map(profile => (
                             <div key={profile.id} className="bg-white rounded-[2rem] border border-gray-100 p-6 flex items-center space-x-4">
                                 <div className="w-14 h-14 bg-gray-50 rounded-xl flex items-center justify-center text-xl font-black text-spark-red">
-                                    {profile.imageUrl ? <img src={profile.imageUrl} className="w-full h-full object-cover rounded-xl" /> : profile.name.charAt(0)}
+                                    {profile.imageUrl ? <img src={profile.imageUrl} className="w-full h-full object-cover rounded-xl" /> : (profile.name || '?').charAt(0)}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <h4 className="font-black text-spark-black truncate">{profile.name}</h4>
@@ -436,6 +452,8 @@ const OrgDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: () 
                                 </button>
                             </div>
                         ))}
+                            </div>
+                        )}
                     </div>
                 );
             case 'resources':
@@ -526,7 +544,7 @@ const OrgDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: () 
                         <div className="h-48 bg-gradient-to-br from-spark-red to-red-400 relative">
                             <div className="absolute -bottom-12 left-12">
                                 <div className="w-24 h-24 bg-white p-2 rounded-3xl shadow-xl ring-4 ring-white flex items-center justify-center text-4xl font-black text-spark-red">
-                                    {selectedBrand.imageUrl ? <img src={selectedBrand.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : selectedBrand.name.charAt(0)}
+                                    {selectedBrand.imageUrl ? <img src={selectedBrand.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : (selectedBrand.name || '?').charAt(0)}
                                 </div>
                             </div>
                         </div>

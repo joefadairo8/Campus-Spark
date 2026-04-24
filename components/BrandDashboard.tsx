@@ -130,13 +130,14 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
         const user = auth.currentUser;
         if (user) {
             const userDoc = await getDoc(doc(db, "users", (user as any).uid || (user as any).id));
-            if (userDoc.exists()) setBrandProfile(userDoc.data());
+            if (userDoc.exists()) setBrandProfile({ id: (user as any).uid || (user as any).id, ...userDoc.data() });
         }
     };
 
     const fetchProposals = async () => {
+        if (!brandProfile?.id) return;
         try {
-            const res = await apiClient.get('proposals');
+            const res = await apiClient.get(`proposals?senderId=${brandProfile.id}&recipientId=${brandProfile.id}`);
             setProposals(res.data);
         } catch (error) {
             console.error("Error fetching proposals:", error);
@@ -151,10 +152,12 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
     useEffect(() => {
         const fetchData = async () => {
             if (currentView === 'proposals') {
+                setLoading(true);
                 await fetchProposals();
                 setLoading(false);
                 return;
             } else if (currentView === 'events') {
+                setLoading(true);
                 try {
                     const res = await apiClient.get('events');
                     setEvents(res.data);
@@ -180,7 +183,14 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
 
             setLoading(true);
             try {
-                const q = query(collection(db, "users"), where("role", "==", UserRole.Ambassador), limit(50));
+                // Search for all variants of the ambassador role to ensure the directory isn't empty
+                const ambassadorRoles = [
+                    UserRole.Ambassador,
+                    'Ambassador',
+                    'Ambassador/Influencer',
+                    'Student Influencer'
+                ];
+                const q = query(collection(db, "users"), where("role", "in", ambassadorRoles), limit(50));
                 const querySnapshot = await getDocs(q);
                 const studentsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
                 setStudents(studentsData);
@@ -211,7 +221,7 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
         setSelectedEvent(null); // Close event modal
     };
 
-    const handleSendProposal = async (data: { recipientId: string; message: string; budget?: string; timeline?: string }) => {
+    const handleSendProposal = async (data: { recipientId: string; message: string; budget?: string; timeline?: string; documentUrl?: string; documentName?: string; }) => {
         try {
             await apiClient.post('proposals', data);
             alert("Partnership proposal sent successfully!");
@@ -263,7 +273,7 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
                                 {filteredStudents.map(student => (
                                     <div key={student.id} className="group bg-white rounded-[2rem] border border-gray-100 overflow-hidden shadow-sm hover:shadow-xl transition-all p-6 text-center">
                                         <div className="w-16 h-16 rounded-2xl bg-spark-red text-white flex items-center justify-center font-black text-2xl mx-auto mb-4">
-                                            {student.name.charAt(0)}
+                                            {(student.name || '?').charAt(0)}
                                         </div>
                                         <h3 className="font-black text-lg line-clamp-1">{student.name}</h3>
                                         <p className="text-[10px] text-spark-red font-black uppercase tracking-widest mb-3">{student.university || 'Verified'}</p>
@@ -295,31 +305,41 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
                 );
             case 'events':
                 return (
-                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in slide-in-from-bottom-4 duration-500">
-                        {events.map(event => (
-                            <div key={event.id} className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm hover:shadow-xl transition-all overflow-hidden flex flex-col group">
-                                <div className="h-4 bg-spark-red"></div>
-                                <div className="p-8 flex-1 flex flex-col">
-                                    <div className="mb-4 bg-white/90 shadow-sm px-4 py-1 rounded-full text-[10px] font-black uppercase text-spark-red tracking-widest inline-block w-max">{new Date(event.date).toLocaleDateString()}</div>
-                                    <h3 className="text-xl font-black mb-2 group-hover:text-spark-red transition-colors">{event.name}</h3>
-                                    <p className="text-spark-gray text-sm mb-6 line-clamp-3">{event.description}</p>
-                                    <div className="mt-auto flex items-center justify-between border-t border-gray-50 pt-6">
-                                        <button
-                                            onClick={() => setSelectedEvent(event)}
-                                            className="text-spark-red font-black text-sm uppercase tracking-widest hover:underline underline-offset-4"
-                                        >
-                                            View Details
-                                        </button>
+                    <div className="animate-in slide-in-from-bottom-4 duration-500">
+                        {loading ? (
+                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
+                        ) : events.length === 0 ? (
+                            <DashboardPlaceholder title="No Events" icon="📅" description="There are no upcoming campus events at the moment." />
+                        ) : (
+                            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                                {events.map(event => (
+                                    <div key={event.id} className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm hover:shadow-xl transition-all overflow-hidden flex flex-col group">
+                                        <div className="h-4 bg-spark-red"></div>
+                                        <div className="p-8 flex-1 flex flex-col">
+                                            <div className="mb-4 bg-white/90 shadow-sm px-4 py-1 rounded-full text-[10px] font-black uppercase text-spark-red tracking-widest inline-block w-max">{new Date(event.date).toLocaleDateString()}</div>
+                                            <h3 className="text-xl font-black mb-2 group-hover:text-spark-red transition-colors">{event.name}</h3>
+                                            <p className="text-spark-gray text-sm mb-6 line-clamp-3">{event.description}</p>
+                                            <div className="mt-auto flex items-center justify-between border-t border-gray-50 pt-6">
+                                                <button
+                                                    onClick={() => setSelectedEvent(event)}
+                                                    className="text-spark-red font-black text-sm uppercase tracking-widest hover:underline underline-offset-4"
+                                                >
+                                                    View Details
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
+                                ))}
                             </div>
-                        ))}
+                        )}
                     </div>
                 );
             case 'proposals':
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-                        {proposals.length === 0 ? (
+                        {loading ? (
+                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
+                        ) : proposals.length === 0 ? (
                             <DashboardPlaceholder
                                 title="No Activity"
                                 icon="📩"
@@ -328,16 +348,17 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
                         ) : (
                             <div className="grid gap-6">
                                 {proposals.map((p) => {
-                                    const isSender = p.senderId === brandProfile?.id;
-                                    const otherParty = isSender ? p.recipient : p.sender;
+                                    const isSender = p.senderId === (brandProfile?.id || auth.currentUser?.uid);
+                                    const otherParty = (isSender ? p.recipient : p.sender) || { name: 'Unknown User', role: 'Unknown', email: '' };
+                                    const displayName = otherParty.name !== 'Unknown User' ? otherParty.name : (otherParty.email || 'Unknown User');
                                     return (
                                         <div key={p.id} className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm flex items-center justify-between">
                                             <div className="flex items-center space-x-6">
                                                 <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center text-2xl font-black text-spark-red shadow-inner">
-                                                    {otherParty.imageUrl ? <img src={otherParty.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : otherParty.name.charAt(0)}
+                                                    {otherParty.imageUrl ? <img src={otherParty.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : (otherParty.name ? otherParty.name.charAt(0) : '?')}
                                                 </div>
                                                 <div>
-                                                    <h4 className="text-xl font-black text-spark-black">{otherParty.name}</h4>
+                                                    <h4 className="text-xl font-black text-spark-black">{displayName}</h4>
                                                     <p className="text-xs text-spark-red font-black uppercase tracking-widest">{otherParty.role}</p>
                                                     <p className="text-[10px] text-spark-gray font-bold mt-1 uppercase tracking-wider">{new Date(p.createdAt).toLocaleDateString()}</p>
                                                 </div>
@@ -653,7 +674,7 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
                         <div className="h-48 bg-gradient-to-br from-spark-red to-red-400 relative">
                             <div className="absolute -bottom-12 left-12">
                                 <div className="w-24 h-24 bg-white p-2 rounded-3xl shadow-xl ring-4 ring-white flex items-center justify-center text-4xl font-black text-spark-red">
-                                    {selectedStudent.name.charAt(0)}
+                                    {(selectedStudent.name || '?').charAt(0)}
                                 </div>
                             </div>
                         </div>

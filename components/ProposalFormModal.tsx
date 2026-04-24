@@ -6,7 +6,7 @@ interface ProposalFormModalProps {
     recipientName: string;
     recipientId: string;
     initialMessage?: string;
-    onSubmit: (data: { recipientId: string; message: string; budget?: string; timeline?: string }) => Promise<void>;
+    onSubmit: (data: { recipientId: string; message: string; budget?: string; timeline?: string; documentUrl?: string; documentName?: string; }) => Promise<void>;
 }
 
 export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
@@ -20,8 +20,23 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
     const [message, setMessage] = useState(initialMessage);
     const [budget, setBudget] = useState('');
     const [timeline, setTimeline] = useState('');
+    const [file, setFile] = useState<File | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            const selectedFile = e.target.files[0];
+            if (selectedFile.size > 5 * 1024 * 1024) {
+                setError('File size must be less than 5MB');
+                e.target.value = ''; // clear input
+                setFile(null);
+            } else {
+                setError('');
+                setFile(selectedFile);
+            }
+        }
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -35,17 +50,62 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
         setError('');
 
         try {
-            await onSubmit({
+            let documentUrl: string | undefined = undefined;
+            let documentName: string | undefined = undefined;
+
+            if (file) {
+                try {
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    formData.append('upload_preset', 'campus-spark');
+
+                    // Using 'auto' allows raw files (PDF, DOCX) as well as images
+                    const uploadTask = fetch('https://api.cloudinary.com/v1_1/dk9tq3oop/auto/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    // Add a timeout to prevent infinite hanging
+                    const timeout = new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('Cloudinary upload timed out. Please check your connection.')), 25000)
+                    );
+                    
+                    const response = await Promise.race([uploadTask, timeout]) as Response;
+                    
+                    if (!response.ok) {
+                        const errData = await response.json().catch(() => null);
+                        throw new Error(errData?.error?.message || 'Cloudinary upload failed');
+                    }
+                    
+                    const data = await response.json();
+                    documentUrl = data.secure_url;
+                    documentName = file.name;
+                } catch (uploadError: any) {
+                    console.error("Cloudinary upload failed:", uploadError);
+                    throw new Error(uploadError.message || 'Failed to upload document to Cloudinary.');
+                }
+            }
+
+            // Timeout for API submission as well
+            const apiTask = onSubmit({
                 recipientId,
                 message: message.trim(),
                 budget: budget.trim() || undefined,
-                timeline: timeline.trim() || undefined
+                timeline: timeline.trim() || undefined,
+                documentUrl,
+                documentName
             });
+            const apiTimeout = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Database submission timed out. Please check your connection.')), 15000)
+            );
+            
+            await Promise.race([apiTask, apiTimeout]);
 
             // Reset form
             setMessage('');
             setBudget('');
             setTimeline('');
+            setFile(null);
             onClose();
         } catch (err: any) {
             console.error("Proposal form error:", err);
@@ -125,6 +185,20 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
                             onChange={(e) => setTimeline(e.target.value)}
                             placeholder="e.g., 3 months, 6 weeks"
                             className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:border-spark-red focus:outline-none font-bold text-spark-black"
+                            disabled={submitting}
+                        />
+                    </div>
+
+                    {/* Document Upload Field */}
+                    <div className="mb-8">
+                        <label className="block text-[10px] font-black text-spark-gray uppercase tracking-widest mb-2">
+                            Proposal Document (Optional, Max 5MB)
+                        </label>
+                        <input
+                            type="file"
+                            accept=".pdf,.doc,.docx"
+                            onChange={handleFileChange}
+                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:border-spark-red focus:outline-none font-bold text-spark-gray file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-spark-red/10 file:text-spark-red hover:file:bg-spark-red/20 transition-all"
                             disabled={submitting}
                         />
                     </div>
