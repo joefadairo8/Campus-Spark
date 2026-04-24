@@ -6,20 +6,20 @@ const HeroSection: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavig
   return (
     <section className="bg-white text-spark-black relative overflow-hidden pt-10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        <div className="py-12 sm:py-20 lg:flex lg:items-center lg:gap-12">
+        <div className="py-12 sm:py-20 flex flex-col items-center">
 
           {/* Text Content */}
-          <div className="text-center lg:text-left lg:w-1/2">
-            <div className="inline-block px-4 py-2 mb-6 text-xs font-black tracking-[0.2em] text-spark-red uppercase bg-red-50 rounded-full">
-              Nigeria's Premier Campus Network
+          <div className="text-center w-full max-w-4xl mx-auto">
+            <div className="inline-block px-5 py-2 mb-8 text-xs font-bold tracking-[0.3em] text-spark-red uppercase bg-red-50/50 rounded-full border border-red-100/50">
+              The Heart of Nigerian Campuses
             </div>
-            <h1 className="text-4xl md:text-6xl lg:text-7xl font-black tracking-tight leading-[1.1] mb-6 text-spark-black">
-              Own the <span className="text-spark-red underline decoration-red-100 underline-offset-[12px]">Future</span> of Campus Marketing.
+            <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.1] mb-8 text-spark-black">
+              Connect with the <span className="text-spark-red underline decoration-red-200/50 underline-offset-[12px]">Pulse</span> of Campus Culture.
             </h1>
-            <p className="max-w-xl mx-auto lg:mx-0 text-lg md:text-xl text-spark-gray font-medium leading-relaxed mb-10">
-              Connect your brand with the pulse of Nigerian universities. Join 50k+ verified student leaders and creators today.
+            <p className="max-w-2xl mx-auto text-xl md:text-2xl text-spark-gray/70 font-normal leading-relaxed mb-12">
+              The most direct way for brands to engage with Nigerian universities. Join a community of 50,000+ verified student leaders and creators today.
             </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <button
                 onClick={() => onNavigate('create-account')}
                 className="w-full sm:w-auto bg-spark-red text-white font-extrabold py-4 px-10 rounded-2xl text-lg hover:bg-red-700 transition-all shadow-xl shadow-red-200 active:scale-95"
@@ -35,15 +35,7 @@ const HeroSection: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavig
             </div>
           </div>
 
-          {/* Hero Image */}
-          <div className="mt-12 lg:mt-0 lg:w-1/2 relative">
-            <div className="absolute -inset-4 bg-gradient-to-r from-red-100 to-orange-50 rounded-[3rem] transform rotate-2 blur-2xl opacity-60"></div>
-            <img
-              src="/images/hero-students.png"
-              alt="Happy Nigerian University Students"
-              className="relative rounded-[2.5rem] shadow-2xl transform -rotate-1 border-4 border-white object-cover w-full h-auto"
-            />
-          </div>
+
 
         </div>
 

@@ -22,16 +22,7 @@ const FeatureBlock: React.FC<{ feature: Feature }> = ({ feature }) => (
       </div>
     </div>
 
-    {feature.image && (
-      <div className="relative mt-4 group">
-        <div className="absolute -inset-2 bg-gradient-to-r from-red-100 to-gray-100 rounded-[2rem] transform rotate-1 blur-xl opacity-50 group-hover:opacity-75 transition-opacity duration-500"></div>
-        <img
-          src={feature.image}
-          alt={feature.title}
-          className="relative rounded-[2rem] shadow-2xl border-4 border-white w-full h-[400px] object-cover hover:scale-[1.02] transition-transform duration-500"
-        />
-      </div>
-    )}
+
   </div>
 );
 

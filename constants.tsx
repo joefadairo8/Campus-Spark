@@ -39,7 +39,6 @@ export const FEATURES: Feature[] = [
         description: "Fund your next major campus event. Connect with premium Nigerian brands looking to sponsor concerts, tech fests, and student gatherings.",
         bullets: ["Direct sponsorship requests", "Verified organizer profiles", "Tiered visibility options"],
         useCase: "A computer science club at UNILAG secures a ₦5M tech sponsorship for their annual hackathon.",
-        image: "/images/feature-events.png",
     },
     {
         icon: <UsersIcon className="w-8 h-8 text-spark-red" />,
@@ -47,7 +46,6 @@ export const FEATURES: Feature[] = [
         description: "Scale your campus influence. Our marketplace allows brands to find and hire the top student voices across all 36 Nigerian states.",
         bullets: ["Nationwide university coverage", "Performance-based rewards", "Integrated task management"],
         useCase: "A top Nigerian lifestyle brand launches an ambassador program with 50 students across 5 universities in 24 hours.",
-        image: "/images/feature-ambassador.png",
     },
 ];
 
@@ -73,12 +71,12 @@ export const HOW_IT_WORKS_CONTENT: HowItWorksContent = {
 };
 
 export const PARTNER_LOGOS = [
-    { name: 'Flutterwave', src: '', alt: 'Flutterwave' },
-    { name: 'Paystack', src: '', alt: 'Paystack' },
-    { name: 'MTN', src: '', alt: 'MTN Nigeria' },
-    { name: 'PiggyVest', src: '', alt: 'PiggyVest' },
-    { name: 'Kuda', src: '', alt: 'Kuda Bank' },
-    { name: 'Jumia', src: '', alt: 'Jumia Nigeria' },
+    { name: 'Flutterwave', alt: 'Flutterwave' },
+    { name: 'Paystack', alt: 'Paystack' },
+    { name: 'MTN', alt: 'MTN Nigeria' },
+    { name: 'PiggyVest', alt: 'PiggyVest' },
+    { name: 'Kuda', alt: 'Kuda Bank' },
+    { name: 'Jumia', alt: 'Jumia Nigeria' },
 ];
 
 export const TESTIMONIALS: Testimonial[] = [
@@ -86,19 +84,16 @@ export const TESTIMONIALS: Testimonial[] = [
         quote: "Campus Spark bridged the gap between us and the Gen-Z market in Lagos. The ROI on our ambassador program was 4x compared to traditional ads.",
         name: "Damilola Ade",
         title: "Growth Lead, FinTech X",
-        image: "",
     },
     {
         quote: "Our student week used to be underfunded. Now, brands reach out to us directly via Spark. It's been a game changer for our organization.",
         name: "Ikenna Eze",
         title: "President, UNN Student Union",
-        image: "",
     },
     {
         quote: "I've worked with 3 brands this semester as an ambassador. The payments are fast and the experience is helping me build a solid marketing CV.",
         name: "Fatima Yusuf",
         title: "Student Influencer, ABU Zaria",
-        image: "",
     },
 ];
 

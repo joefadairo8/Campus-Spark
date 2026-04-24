@@ -89,6 +89,8 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
         handle: '',
         clubType: '',
         companySize: 'Small/Medium (11-50)',
+        influencerType: 'Student Influencer',
+        orgType: 'Student Organization',
     });
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -145,6 +147,8 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                     handle: formData.handle,
                     clubType: formData.clubType,
                     companySize: formData.companySize,
+                    influencerType: selectedRole === UserRole.Ambassador ? formData.influencerType : null,
+                    orgType: selectedRole === UserRole.StudentOrg ? formData.orgType : null,
                     createdAt: new Date().toISOString(),
                 });
 
@@ -216,7 +220,7 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                                 role={UserRole.Ambassador}
                                 selected={selectedRole === UserRole.Ambassador}
                                 onClick={() => setSelectedRole(UserRole.Ambassador)}
-                                title="I am a Student / Influencer"
+                                title="I am a Student Influencer / Professional Influencer"
                                 description="I want to work with brands and build my resume."
                                 icon="⚡"
                             />
@@ -232,7 +236,7 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                                 role={UserRole.StudentOrg}
                                 selected={selectedRole === UserRole.StudentOrg}
                                 onClick={() => setSelectedRole(UserRole.StudentOrg)}
-                                title="I represent a Student Org"
+                                title="I represent a Student / Professional Organization"
                                 description="I want to find sponsors for our campus events."
                                 icon="🏛️"
                             />
@@ -288,12 +292,42 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                                 </>
                             ) : selectedRole === UserRole.Ambassador ? (
                                 <>
-                                    <InputField id="university" label="Your University" placeholder="e.g. University of Lagos" value={formData.university} onChange={handleChange} />
+                                    <div className="mb-6">
+                                        <label className="block text-sm font-black text-spark-black mb-3 uppercase tracking-widest">Influencer Type</label>
+                                        <div className="flex gap-4">
+                                            <label className="flex-1 cursor-pointer">
+                                                <input type="radio" name="influencerType" value="Student Influencer" checked={formData.influencerType === 'Student Influencer'} onChange={handleChange} className="hidden peer" />
+                                                <div className="p-4 border-2 rounded-2xl peer-checked:border-spark-red peer-checked:bg-red-50 text-center font-bold text-spark-gray peer-checked:text-spark-red transition-all">Student Influencer</div>
+                                            </label>
+                                            <label className="flex-1 cursor-pointer">
+                                                <input type="radio" name="influencerType" value="Professional Influencer" checked={formData.influencerType === 'Professional Influencer'} onChange={handleChange} className="hidden peer" />
+                                                <div className="p-4 border-2 rounded-2xl peer-checked:border-spark-red peer-checked:bg-red-50 text-center font-bold text-spark-gray peer-checked:text-spark-red transition-all">Professional Influencer</div>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    {formData.influencerType === 'Student Influencer' && (
+                                        <InputField id="university" label="Your University" placeholder="e.g. University of Lagos" value={formData.university} onChange={handleChange} />
+                                    )}
                                     <InputField id="handle" label="Primary Social Handle" placeholder="e.g. @username_spark" value={formData.handle} onChange={handleChange} />
                                 </>
                             ) : (
                                 <>
-                                    <InputField id="university" label="University Location" placeholder="e.g. OAU Ife" value={formData.university} onChange={handleChange} />
+                                    <div className="mb-6">
+                                        <label className="block text-sm font-black text-spark-black mb-3 uppercase tracking-widest">Organization Type</label>
+                                        <div className="flex gap-4">
+                                            <label className="flex-1 cursor-pointer">
+                                                <input type="radio" name="orgType" value="Student Organization" checked={formData.orgType === 'Student Organization'} onChange={handleChange} className="hidden peer" />
+                                                <div className="p-4 border-2 rounded-2xl peer-checked:border-spark-red peer-checked:bg-red-50 text-center font-bold text-spark-gray peer-checked:text-spark-red transition-all">Student Org</div>
+                                            </label>
+                                            <label className="flex-1 cursor-pointer">
+                                                <input type="radio" name="orgType" value="Professional Organization" checked={formData.orgType === 'Professional Organization'} onChange={handleChange} className="hidden peer" />
+                                                <div className="p-4 border-2 rounded-2xl peer-checked:border-spark-red peer-checked:bg-red-50 text-center font-bold text-spark-gray peer-checked:text-spark-red transition-all">Professional Org</div>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    {formData.orgType === 'Student Organization' && (
+                                        <InputField id="university" label="University Location" placeholder="e.g. OAU Ife" value={formData.university} onChange={handleChange} />
+                                    )}
                                     <InputField id="clubType" label="Org Type" placeholder="e.g. Tech Club, Student Union, Sports" value={formData.clubType} onChange={handleChange} />
                                 </>
                             )}

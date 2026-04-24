@@ -19,8 +19,8 @@ const Navbar: React.FC<{ onNavigate: (page: string) => void, user: any, onLogout
 
   const dashboardPage = user?.role === 'Admin' ? 'admin-dashboard' :
     user?.role === 'Brand' ? 'brand-dashboard' :
-      user?.role === 'Ambassador' ? 'student-dashboard' :
-        user?.role === 'Student Organization' ? 'org-dashboard' : 'login';
+      (user?.role === 'Ambassador/Influencer' || user?.role === 'Student/Professional Influencer') ? 'student-dashboard' :
+        (user?.role === 'Student Organization' || user?.role === 'Student/Professional Organization') ? 'org-dashboard' : 'login';
 
   return (
     <nav className="bg-white/80 backdrop-blur-xl sticky top-0 z-50 border-b border-gray-100">

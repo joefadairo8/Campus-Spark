@@ -17,14 +17,14 @@ export interface Feature {
 
 export enum UserType {
   Brands = 'For Brands',
-  Clubs = 'For Student Clubs',
-  Ambassadors = 'For Ambassadors & Influencers',
+  Clubs = 'For Student & Professional Orgs',
+  Ambassadors = 'For Student & Professional Influencers',
 }
 
 export enum UserRole {
   Brand = 'Brand',
-  StudentOrg = 'Student Organization',
-  Ambassador = 'Ambassador/Influencer',
+  StudentOrg = 'Student/Professional Organization',
+  Ambassador = 'Student/Professional Influencer',
   Admin = 'Admin',
 }
 

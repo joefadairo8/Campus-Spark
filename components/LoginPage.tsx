@@ -65,12 +65,15 @@ const LoginPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigat
                                 onNavigate('brand-dashboard');
                                 break;
                             case 'Student Organization':
+                            case 'Student/Professional Organization':
                                 onNavigate('org-dashboard');
                                 break;
                             case 'Admin':
                                 onNavigate('admin-dashboard');
                                 break;
                             case 'Ambassador':
+                            case 'Ambassador/Influencer':
+                            case 'Student/Professional Influencer':
                             default:
                                 onNavigate('student-dashboard');
                                 break;

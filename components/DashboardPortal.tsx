@@ -50,16 +50,16 @@ const DashboardPortal: React.FC<{ onNavigate: (page: string) => void }> = ({ onN
                         onAction={onNavigate}
                     />
                     <PortalCard 
-                        title="For Ambassadors"
+                        title="For Influencers"
                         role={UserRole.Ambassador}
-                        desc="Find high-paying gigs from top brands, track your tasks, and withdraw your earnings directly."
+                        desc="Build your professional profile as a student or professional influencer, collaborate with brands, and track your growth."
                         icon="⚡"
                         onAction={onNavigate}
                     />
                     <PortalCard 
                         title="For Organizations"
                         role={UserRole.StudentOrg}
-                        desc="List your campus events, secure corporate sponsorships, and access professional planning resources."
+                        desc="List your student or professional organization, secure corporate sponsorships for events, and grow your impact."
                         icon="🏛️"
                         onAction={onNavigate}
                     />
