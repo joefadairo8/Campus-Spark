@@ -2,28 +2,32 @@ import React from 'react';
 
 const CtaSection: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigate }) => {
   return (
-    <section className="bg-white py-24 relative overflow-hidden">
-      <div className="absolute inset-0 bg-red-50/50 -z-10"></div>
+    <section className="bg-[var(--bg-primary)] py-24 relative overflow-hidden">
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full -z-10">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-spark-red/5 rounded-full blur-[150px]"></div>
+      </div>
+
       <div className="max-w-5xl mx-auto text-center px-4 sm:px-6 lg:px-8 relative">
-        <div className="bg-white p-12 md:p-20 rounded-[3rem] shadow-2xl shadow-red-100 border border-red-100">
-            <h2 className="text-3xl font-extrabold text-spark-black sm:text-5xl leading-tight">
-              Ready to <span className="text-spark-red underline decoration-red-200 underline-offset-8">Spark</span> a Connection?
+        <div className="bg-gradient-red p-12 md:p-20 rounded-[3rem] border border-white/10 relative overflow-hidden shadow-2xl shadow-spark-red/20">
+            <div className="absolute top-0 left-0 w-64 h-64 bg-white/10 blur-[100px] -ml-32 -mt-32"></div>
+            <h2 className="text-2xl md:text-4xl font-fancy font-black text-white leading-tight mb-8">
+              Start earning. Start collaborating. <br className="hidden md:block"/><span className="italic">Start growing.</span>
             </h2>
-            <p className="mt-8 text-xl leading-relaxed text-spark-gray max-w-2xl mx-auto">
-              Join Campus Spark today and start building authentic relationships with the next generation of Nigerian leaders, creators, and innovators.
+            <p className="mt-8 text-base md:text-lg leading-relaxed text-white/80 max-w-2xl mx-auto mb-10 font-medium">
+              Join the marketplace where brands, influencers, and organizations meet to create high-impact youth marketing campaigns.
             </p>
-            <div className="mt-12 flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-6">
+            <div className="flex flex-col sm:flex-row justify-center gap-4">
                <button
-                onClick={() => onNavigate('contact')}
-                className="inline-block bg-spark-red text-white font-bold py-5 px-10 rounded-2xl text-xl hover:bg-red-700 transition-all shadow-lg shadow-red-200"
+                onClick={() => onNavigate('create-account')}
+                className="bg-white text-spark-red font-black py-4 px-10 rounded-2xl text-base hover:scale-105 transition-all shadow-xl"
               >
-                Start Your Campaign
+                Join as Influencer
               </button>
               <button
-                onClick={() => onNavigate('for-brands')}
-                className="inline-block bg-white border-2 border-spark-red text-spark-red font-bold py-5 px-10 rounded-2xl text-xl hover:bg-red-50 transition-all"
+                onClick={() => onNavigate('create-account')}
+                className="bg-black/20 text-white border border-white/20 font-black py-4 px-10 rounded-2xl text-base hover:bg-black/30 transition-all active:scale-95"
               >
-                Talk to an Expert
+                Join as Brand
               </button>
             </div>
         </div>

@@ -4,29 +4,32 @@ import { CheckCircleIcon, PARTNER_LOGOS } from '../constants';
 
 const BrandsPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigate }) => {
   return (
-    <div className="bg-white min-h-screen font-sans text-spark-black text-center">
+    <div className="bg-[var(--bg-primary)] min-h-screen font-sans text-[var(--text-primary)] text-center">
       {/* Hero Section */}
-      <section className="relative bg-white overflow-hidden pt-24 pb-24 border-b border-gray-50">
+      <section className="relative overflow-hidden pt-24 pb-24 border-b border-[var(--border-color)]">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full -z-10 opacity-50">
+          <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-spark-red/10 rounded-full blur-[120px]"></div>
+        </div>
         <div className="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="inline-block px-4 py-1.5 mb-6 text-sm font-bold tracking-wider text-spark-red uppercase bg-red-50 rounded-full">
+            <div className="inline-block px-4 py-1.5 mb-6 text-[10px] font-black tracking-[0.2em] text-spark-red uppercase bg-spark-red/5 border border-spark-red/10 rounded-full">
               Growth for Brands
             </div>
-            <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight leading-tight mb-8">
-              Captivate the <span className="text-spark-red">Next Generation</span> of Nigerian Consumers.
+            <h1 className="text-3xl md:text-5xl font-fancy font-black tracking-tighter leading-[1.1] mb-8 text-[var(--text-primary)]">
+              Captivate the <span className="text-gradient-red italic">Next Generation</span> of Nigerian Consumers.
             </h1>
-            <p className="text-xl md:text-2xl text-spark-gray mb-12 leading-relaxed max-w-3xl mx-auto">
-              Campus Spark is your direct line to millions of students across the nation. Build authentic connections, drive adoption, and gather deep insights through verified campus ambassadors and influencers.
+            <p className="text-base md:text-lg text-[var(--text-secondary)] mb-12 leading-relaxed max-w-3xl mx-auto font-medium">
+              Campus Spark is your direct line to millions of students. Build authentic connections, drive adoption, and gather deep insights through verified campus ambassadors.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <button 
                 onClick={() => onNavigate('contact')}
-                className="bg-spark-red text-white font-bold py-5 px-12 rounded-xl text-lg hover:bg-red-700 transition-all shadow-lg shadow-red-200"
+                className="bg-gradient-red text-white font-bold py-4 px-10 rounded-2xl text-base hover:shadow-xl hover:shadow-spark-red/20 transition-all shadow-lg active:scale-95"
               >
                 Get Started
               </button>
               <button 
                  onClick={() => document.getElementById('solutions')?.scrollIntoView({ behavior: 'smooth' })}
-                className="bg-white border-2 border-spark-red text-spark-red font-bold py-5 px-12 rounded-xl text-lg hover:bg-red-50 transition-all"
+                className="bg-transparent border-2 border-spark-red text-spark-red font-bold py-4 px-10 rounded-2xl text-base hover:bg-spark-red/5 transition-all active:scale-95"
               >
                 Explore Solutions
               </button>
@@ -35,26 +38,26 @@ const BrandsPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNaviga
       </section>
 
       {/* Market Context */}
-      <section className="py-24 bg-white border-b border-gray-50">
+      <section className="py-24 bg-[var(--bg-primary)] border-b border-[var(--border-color)]">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-            <h2 className="text-4xl font-extrabold text-spark-black mb-8">
-                Why Nigerian Campuses?
+            <h2 className="text-2xl md:text-4xl font-fancy font-black text-[var(--text-primary)] mb-8">
+                Why Nigerian <span className="text-gradient-red italic">Campuses?</span>
             </h2>
-            <p className="text-xl text-spark-gray mb-12 leading-relaxed">
-                Nigeria has one of the youngest populations on the planet, with a rapidly growing student population that drives culture, technology adoption, and consumption trends.
+            <p className="text-base text-[var(--text-secondary)] mb-12 leading-relaxed font-medium">
+                Nigeria has one of the youngest populations, with a rapidly growing student demographic that drives culture, technology adoption, and consumption trends.
             </p>
-            <div className="grid sm:grid-cols-2 gap-8 text-left">
+            <div className="grid sm:grid-cols-2 gap-6 text-left">
                 {[
-                    "Access a market of millions of higher education students.",
+                    "Access a market of millions of students.",
                     "Build brand loyalty at a pivotal life stage.",
-                    "Leverage the high social influence of student leaders.",
-                    "Bypass traditional ad-blockers with peer-to-peer marketing."
+                    "Leverage the high influence of student leaders.",
+                    "Bypass traditional ad-blockers with P2P marketing."
                 ].map((item, i) => (
-                    <div key={i} className="flex items-start bg-gray-50 p-6 rounded-2xl">
+                    <div key={i} className="flex items-start bg-[var(--bg-primary)] border border-[var(--border-color)] p-6 rounded-[2rem] card-hover">
                         <div className="mt-1 flex-shrink-0">
-                            <CheckCircleIcon className="w-6 h-6 text-spark-red" />
+                            <CheckCircleIcon className="w-5 h-5 text-spark-red" />
                         </div>
-                        <span className="ml-4 text-spark-black font-bold text-lg">{item}</span>
+                        <span className="ml-4 text-[var(--text-primary)] font-bold text-base">{item}</span>
                     </div>
                 ))}
             </div>
@@ -62,54 +65,30 @@ const BrandsPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNaviga
       </section>
 
       {/* Solutions Grid */}
-      <section id="solutions" className="py-24 bg-gray-50/50">
+      <section id="solutions" className="py-24 bg-[var(--bg-primary)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center max-w-3xl mx-auto mb-20">
-                <h2 className="text-4xl font-extrabold text-spark-black sm:text-5xl mb-6">
-                    Comprehensive Campus Solutions
+                <h2 className="text-2xl md:text-4xl font-fancy font-black text-[var(--text-primary)] mb-6">
+                    Comprehensive <span className="text-gradient-red italic">Solutions</span>
                 </h2>
-                <p className="text-xl text-spark-gray">
+                <p className="text-base text-[var(--text-secondary)] font-medium">
                     We provide the toolkit you need to execute diverse marketing strategies, from digital buzz to on-ground activations.
                 </p>
             </div>
 
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 text-left">
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 text-left">
                 {[
-                    {
-                        title: "Student Ambassador Programs",
-                        desc: "Recruit and manage long-term brand representatives to drive downloads, sign-ups, and ongoing awareness on their specific campuses.",
-                        icon: "🎓"
-                    },
-                    {
-                        title: "Event Sponsorships",
-                        desc: "Find high-traffic student events (hackathons, cultural fests, sports) and secure sponsorship tiers that guarantee visibility.",
-                        icon: "🎉"
-                    },
-                    {
-                        title: "Influencer Marketing",
-                        desc: "Collaborate with micro-influencers who have high engagement rates within their university bubbles for authentic product endorsements.",
-                        icon: "📱"
-                    },
-                    {
-                        title: "Product Sampling & Activations",
-                        desc: "Coordinate on-ground teams to distribute samples, run demos, or manage pop-up stalls directly in high-footfall campus areas.",
-                        icon: "📦"
-                    },
-                    {
-                        title: "Market Research & Surveys",
-                        desc: "Gain rapid feedback on new products or features by deploying surveys to a segmented audience of verified students.",
-                        icon: "📊"
-                    },
-                    {
-                        title: "Direct Recruitment",
-                        desc: "Spot top talent early. Connect with leaders of coding clubs, business societies, and debate teams for internships and grad roles.",
-                        icon: "🤝"
-                    }
+                    { title: "Student Ambassador Programs", desc: "Recruit long-term reps to drive downloads, sign-ups, and awareness on specific campuses.", icon: "🎓" },
+                    { title: "Event Sponsorships", desc: "Find high-traffic student events and secure sponsorship tiers that guarantee visibility.", icon: "🎉" },
+                    { title: "Influencer Marketing", desc: "Collaborate with micro-influencers who have high engagement within university bubbles.", icon: "📱" },
+                    { title: "Product Activations", desc: "Coordinate on-ground teams to distribute samples or manage pop-up stalls directly.", icon: "📦" },
+                    { title: "Market Research", desc: "Gain rapid feedback on products by deploying surveys to verified student audiences.", icon: "📊" },
+                    { title: "Direct Recruitment", desc: "Spot top talent early. Connect with leaders of clubs for internships and grad roles.", icon: "🤝" }
                 ].map((card, i) => (
-                    <div key={i} className="bg-white p-10 rounded-[2rem] shadow-sm hover:shadow-xl hover:shadow-red-50 transition-all duration-300 border border-gray-100 group">
-                        <div className="text-4xl mb-6 transform group-hover:scale-110 transition-transform duration-300">{card.icon}</div>
-                        <h3 className="text-xl font-bold text-spark-black mb-4 group-hover:text-spark-red transition-colors">{card.title}</h3>
-                        <p className="text-spark-gray leading-relaxed">{card.desc}</p>
+                    <div key={i} className="bg-[var(--bg-primary)] p-8 rounded-[2rem] border border-[var(--border-color)] group card-hover shadow-sm transition-all duration-500 hover:shadow-2xl hover:shadow-spark-red/5">
+                        <div className="text-3xl mb-6 transition-transform duration-300 group-hover:scale-110">{card.icon}</div>
+                        <h3 className="text-lg font-bold text-[var(--text-primary)] mb-3 group-hover:text-spark-red transition-colors">{card.title}</h3>
+                        <p className="text-[var(--text-secondary)] text-sm leading-relaxed font-medium">{card.desc}</p>
                     </div>
                 ))}
             </div>

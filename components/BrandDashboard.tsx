@@ -1,7 +1,6 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import DashboardShell from './DashboardShell';
-import { db, auth, collection, query, where, getDocs, limit, doc, getDoc, apiClient } from '../firebase';
+import { db, auth, collection, query, where, getDocs, limit, doc, getDoc, apiClient, orderBy } from '../firebase';
 import { UserRole } from '../types';
 import { STATES, UNIVERSITIES } from '../constants';
 import ProfileView from './ProfileView';
@@ -9,8 +8,15 @@ import DashboardPlaceholder from './DashboardPlaceholder';
 import { ProposalFormModal } from './ProposalFormModal';
 import { ProposalDetailsModal } from './ProposalDetailsModal';
 import { EventDetailsModal } from './EventDetailsModal';
+import { WalletService, CampaignAllocation } from '../WalletService';
+import { Calendar, Wallet, BarChart3, Lock, Plus, Minus, Mail, Users, Megaphone, Inbox, TrendingUp, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
 
-const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: () => void }> = ({ onNavigate, onLogout }) => {
+const BrandDashboard: React.FC<{ 
+    onNavigate: (page: string) => void, 
+    onLogout: () => void,
+    isDarkMode: boolean,
+    toggleTheme: () => void
+}> = ({ onNavigate, onLogout, isDarkMode, toggleTheme }) => {
     const [currentView, setCurrentView] = useState('directory');
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedState, setSelectedState] = useState('All');
@@ -36,6 +42,26 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
     const [viewingApplicants, setViewingApplicants] = useState<any>(null); // Campaign whose applicants are being viewed
     const [applicants, setApplicants] = useState<any[]>([]);
     const [applicantsLoading, setApplicantsLoading] = useState(false);
+    const [wallet, setWallet] = useState<any>(null);
+    const [transactions, setTransactions] = useState<any[]>([]);
+    const [walletLoading, setWalletLoading] = useState(false);
+
+    // ── Campaign & Allocation state ───────────────────────────────────────────
+    const [walletData, setWalletData] = useState<{ available: number; locked: number }>({ available: 0, locked: 0 });
+    const [allAllocations, setAllAllocations] = useState<CampaignAllocation[]>([]);
+    const [campaignAllocations, setCampaignAllocations] = useState<Record<string, CampaignAllocation[]>>({});
+    const [showAllocationModal, setShowAllocationModal] = useState(false);
+    const [allocationTarget, setAllocationTarget] = useState<any>(null); // influencer card
+    const [allocationForm, setAllocationForm] = useState({ campaignId: '', amount: '' });
+    const [allocationSubmitting, setAllocationSubmitting] = useState(false);
+    const [showCreateInModal, setShowCreateInModal] = useState(false);
+    const [inlineCreateForm, setInlineCreateForm] = useState({ title: '', brief: '', budget: '', deadline: '', category: 'Awareness' });
+    const [inlineCreateSubmitting, setInlineCreateSubmitting] = useState(false);
+    const [selectedCampaignDetail, setSelectedCampaignDetail] = useState<any>(null);
+    const [detailAllocations, setDetailAllocations] = useState<CampaignAllocation[]>([]);
+    const [detailLoading, setDetailLoading] = useState(false);
+    const [activeCampaignContext, setActiveCampaignContext] = useState<any>(null); // for directory overview panel
+    const [releaseSubmitting, setReleaseSubmitting] = useState<string | null>(null); // allocation id being released
 
     const fetchApplicants = async (campaign: any) => {
         setViewingApplicants(campaign);
@@ -117,12 +143,237 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
         setShowCampaignModal(true);
     };
 
+    const fetchWallet = async () => {
+        if (currentView === 'wallet' && brandProfile?.id) {
+            setWalletLoading(true);
+            try {
+                const w = await WalletService.getOrCreateWallet(brandProfile.id);
+                setWallet(w);
+                setWalletData({ available: w.balance || 0, locked: w.escrow || 0 });
+                const q = query(collection(db, 'transactions'), where('userId', '==', brandProfile.id), orderBy('createdAt', 'desc'), limit(10));
+                const transSnap = await getDocs(q);
+                setTransactions(transSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+            } catch (e) {
+                console.error("Wallet fetch error:", e);
+            } finally {
+                setWalletLoading(false);
+            }
+        }
+    };
+
+    // Sync wallet strip data (lightweight — always runs on mount & profile load)
+    const syncWalletStrip = async (profileId: string) => {
+        try {
+            const w = await WalletService.getOrCreateWallet(profileId);
+            setWalletData({ available: w.balance || 0, locked: w.escrow || 0 });
+        } catch (e) { /* silent */ }
+    };
+
+    // Load all allocations for this brand from Firestore
+    const fetchAllAllocations = async (brandId: string) => {
+        try {
+            const allocations = await WalletService.getAllocationsByBrand(brandId);
+            setAllAllocations(allocations);
+            // Group by campaignId
+            const grouped: Record<string, CampaignAllocation[]> = {};
+            for (const alloc of allocations) {
+                if (!grouped[alloc.campaignId]) grouped[alloc.campaignId] = [];
+                grouped[alloc.campaignId].push(alloc);
+            }
+            setCampaignAllocations(grouped);
+        } catch (e) {
+            console.error("Allocation fetch error:", e);
+        }
+    };
+
+    // Derive a student's status across all campaigns
+    const getInfluencerStatus = (studentId: string): 'available' | 'in_campaign' | 'paid' => {
+        const match = allAllocations.find(a => a.influencerId === studentId);
+        if (!match) return 'available';
+        if (match.status === 'paid') return 'paid';
+        return 'in_campaign';
+    };
+
+    // Calculate budget stats for a campaign
+    const getCampaignBudgetStats = (campaign: any) => {
+        const allocations = campaignAllocations[campaign.id] || [];
+        const allocated = allocations.filter(a => a.status !== 'rejected').reduce((s, a) => s + a.amount, 0);
+        const budget = Number(campaign.budget || campaign.reward || 0);
+        return { budget, allocated, remaining: Math.max(0, budget - allocated) };
+    };
+
+    // Open the "Add to Campaign" modal
+    const openAllocationModal = (student: any) => {
+        setAllocationTarget(student);
+        setAllocationForm({ campaignId: campaigns[0]?.id || '', amount: '' });
+        setShowCreateInModal(false);
+        setShowAllocationModal(true);
+    };
+
+    // Confirm allocation → persist to Firestore & lock funds
+    const handleAllocateInfluencer = async () => {
+        if (!brandProfile?.id || !allocationTarget || !allocationForm.campaignId || !allocationForm.amount) return;
+        const amount = Number(allocationForm.amount);
+        if (isNaN(amount) || amount <= 0) { alert('Enter a valid allocation amount.'); return; }
+        const campaign = campaigns.find(c => c.id === allocationForm.campaignId);
+        if (!campaign) return;
+        const stats = getCampaignBudgetStats(campaign);
+        if (amount > stats.remaining) {
+            alert(`Amount ₦${amount.toLocaleString()} exceeds remaining campaign budget of ₦${stats.remaining.toLocaleString()}.`);
+            return;
+        }
+        setAllocationSubmitting(true);
+        try {
+            await WalletService.createAllocation({
+                campaignId: campaign.id,
+                brandId: brandProfile.id,
+                influencerId: allocationTarget.id,
+                influencerName: allocationTarget.name,
+                influencerUniversity: allocationTarget.university,
+                influencerEmail: allocationTarget.email,
+                amount,
+                status: 'selected',
+            });
+            await fetchAllAllocations(brandProfile.id);
+            setShowAllocationModal(false);
+            setAllocationTarget(null);
+        } catch (e: any) {
+            alert(e.message || 'Failed to allocate influencer.');
+        } finally {
+            setAllocationSubmitting(false);
+        }
+    };
+
+    // Open campaign detail with its allocations
+    const openCampaignDetail = async (campaign: any) => {
+        setSelectedCampaignDetail(campaign);
+        setDetailLoading(true);
+        try {
+            const allocations = await WalletService.getAllocationsForCampaign(campaign.id);
+            setDetailAllocations(allocations);
+        } catch (e) {
+            console.error('Detail fetch error:', e);
+        } finally {
+            setDetailLoading(false);
+        }
+    };
+
+    // Release payment → move escrow to influencer wallet, update allocation status
+    const handleReleasePayment = async (allocation: CampaignAllocation) => {
+        if (!brandProfile?.id || !allocation.id) return;
+        if (!window.confirm(`Release ₦${allocation.amount.toLocaleString()} to ${allocation.influencerName}?`)) return;
+        setReleaseSubmitting(allocation.id);
+        try {
+            await WalletService.releaseFundsToInfluencer(
+                brandProfile.id,
+                allocation.influencerId,
+                allocation.amount,
+                selectedCampaignDetail?.title || 'Campaign'
+            );
+            await WalletService.updateAllocationStatus(allocation.id, 'paid');
+            await syncWalletStrip(brandProfile.id);
+            await fetchAllAllocations(brandProfile.id);
+            // Refresh detail
+            if (selectedCampaignDetail) {
+                const updated = await WalletService.getAllocationsForCampaign(selectedCampaignDetail.id);
+                setDetailAllocations(updated);
+            }
+        } catch (e: any) {
+            alert(e.message || 'Failed to release payment.');
+        } finally {
+            setReleaseSubmitting(null);
+        }
+    };
+
+    // Reject allocation → refund to available balance, mark rejected
+    const handleRejectAllocation = async (allocation: CampaignAllocation) => {
+        if (!brandProfile?.id || !allocation.id) return;
+        if (!window.confirm(`Reject and refund ₦${allocation.amount.toLocaleString()} for ${allocation.influencerName}?`)) return;
+        try {
+            await WalletService.refundAllocation(
+                brandProfile.id,
+                allocation.amount,
+                `Refund: ${allocation.influencerName} removed from campaign`
+            );
+            await WalletService.updateAllocationStatus(allocation.id, 'rejected');
+            await syncWalletStrip(brandProfile.id);
+            await fetchAllAllocations(brandProfile.id);
+            if (selectedCampaignDetail) {
+                const updated = await WalletService.getAllocationsForCampaign(selectedCampaignDetail.id);
+                setDetailAllocations(updated);
+            }
+        } catch (e: any) {
+            alert(e.message || 'Failed to reject allocation.');
+        }
+    };
+
+    // Approve allocation (move status to approved)
+    const handleApproveAllocation = async (allocation: CampaignAllocation) => {
+        if (!allocation.id) return;
+        try {
+            await WalletService.updateAllocationStatus(allocation.id, 'approved');
+            await fetchAllAllocations(brandProfile.id);
+            if (selectedCampaignDetail) {
+                const updated = await WalletService.getAllocationsForCampaign(selectedCampaignDetail.id);
+                setDetailAllocations(updated);
+            }
+        } catch (e: any) {
+            alert(e.message || 'Failed to approve.');
+        }
+    };
+    // Handle inline campaign creation from the allocation modal
+    const handleInlineCreateCampaign = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!brandProfile?.id) return;
+        setInlineCreateSubmitting(true);
+        try {
+            // Check wallet balance first
+            const amount = Number(inlineCreateForm.budget);
+            if (walletData.available < amount) {
+                alert(`Insufficient wallet balance. You need ₦${amount.toLocaleString()} but only have ₦${walletData.available.toLocaleString()}.`);
+                return;
+            }
+            // 1. Create campaign in Firestore
+            const payload = {
+                title: inlineCreateForm.title,
+                brief: inlineCreateForm.brief,
+                budget: inlineCreateForm.budget,
+                reward: inlineCreateForm.budget, // Keep legacy field in sync
+                deadline: inlineCreateForm.deadline,
+                category: inlineCreateForm.category,
+                status: 'open',
+                brandId: brandProfile.id,
+                brandName: brandProfile.name || brandProfile.companyName || 'Brand',
+                createdAt: new Date().toISOString()
+            };
+            const docRef = await apiClient.post('gigs', payload);
+            const newCampaign = { id: docRef.data.id, ...payload };
+            
+            // 2. Lock budget in escrow
+            await WalletService.lockCampaignBudget(brandProfile.id, newCampaign.id, amount, newCampaign.title);
+            await syncWalletStrip(brandProfile.id);
+            
+            // 3. Add to local state & select it for allocation
+            setCampaigns([newCampaign, ...campaigns]);
+            setAllocationForm({ ...allocationForm, campaignId: newCampaign.id });
+            setShowCreateInModal(false);
+            setInlineCreateForm({ title: '', brief: '', budget: '', deadline: '', category: 'Awareness' });
+            
+        } catch (err: any) {
+            console.error("Create error:", err);
+            alert(err.message || "Failed to create campaign");
+        } finally {
+            setInlineCreateSubmitting(false);
+        }
+    };
+
     const sidebarItems = [
-        { id: 'directory', label: 'Talent Directory', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg> },
-        { id: 'events', label: 'Campus Events', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg> },
-        { id: 'proposals', label: 'Offers & Proposals', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg> },
-        { id: 'campaigns', label: 'My Campaigns', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg> },
-        { id: 'profile', label: 'Company Profile', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg> },
+        { id: 'directory', label: 'Talent Directory', icon: <Users className="w-5 h-5" /> },
+        { id: 'campaigns', label: 'My Campaigns', icon: <Megaphone className="w-5 h-5" /> },
+        { id: 'wallet', label: 'Wallet & Billing', icon: <Wallet className="w-5 h-5" /> },
+        { id: 'proposals', label: 'Offers & Proposals', icon: <Inbox className="w-5 h-5" /> },
+        { id: 'events', label: 'Campus Events', icon: <Calendar className="w-5 h-5" /> },
+        { id: 'profile', label: 'Company Profile', icon: <Users className="w-5 h-5" /> },
     ];
 
 
@@ -148,6 +399,18 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
         fetchBrandData();
         fetchProposals();
     }, []);
+
+    // When profile loads, sync wallet strip and allocations
+    useEffect(() => {
+        if (brandProfile?.id) {
+            syncWalletStrip(brandProfile.id);
+            fetchAllAllocations(brandProfile.id);
+        }
+    }, [brandProfile?.id]);
+
+    useEffect(() => {
+        fetchWallet();
+    }, [currentView, brandProfile]);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -253,52 +516,103 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
         switch (currentView) {
             case 'directory':
                 return (
-                    <div className="space-y-8">
-                        <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100 flex flex-col xl:flex-row gap-6 items-center">
+                    <div className="space-y-6">
+                        {/* ── Active Campaign Overview Panel ── */}
+                        {activeCampaignContext && (() => {
+                            const stats = getCampaignBudgetStats(activeCampaignContext);
+                            const pct = stats.budget > 0 ? Math.min(100, (stats.allocated / stats.budget) * 100) : 0;
+                            return (
+                                <div className="bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-[2rem] p-5 shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-4 animate-in slide-in-from-top-2 duration-300">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className="w-2 h-2 rounded-full bg-spark-red animate-pulse flex-shrink-0"></span>
+                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Active Campaign</p>
+                                        </div>
+                                        <h4 className="font-black text-[var(--text-primary)] truncate">{activeCampaignContext.title}</h4>
+                                        <div className="flex items-center gap-4 mt-2 text-xs text-[var(--text-secondary)] font-bold">
+                                            <span>Budget: <span className="text-[var(--text-primary)]">₦{stats.budget.toLocaleString()}</span></span>
+                                            <span>Allocated: <span className="text-spark-red">₦{stats.allocated.toLocaleString()}</span></span>
+                                            <span>Remaining: <span className="text-green-600">₦{stats.remaining.toLocaleString()}</span></span>
+                                        </div>
+                                        <div className="mt-2 h-1.5 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+                                            <div className="h-full bg-spark-red rounded-full transition-all" style={{ width: `${pct}%` }}></div>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2 flex-shrink-0">
+                                        <button onClick={() => { setCurrentView('campaigns'); openCampaignDetail(activeCampaignContext); }} className="px-4 py-2 text-[10px] font-black uppercase tracking-widest bg-spark-red text-white rounded-xl hover:bg-red-700 transition-all shadow-sm">View Detail</button>
+                                        <button onClick={() => setActiveCampaignContext(null)} className="px-3 py-2 text-[10px] font-black uppercase tracking-widest bg-[var(--text-primary)] text-[var(--bg-primary)] rounded-xl hover:bg-spark-red hover:text-white transition-all shadow-sm">Clear</button>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
+                        {/* ── Search Bar ── */}
+                        <div className="bg-[var(--bg-primary)] p-6 rounded-[2rem] shadow-sm border border-[var(--border-color)] flex flex-col xl:flex-row gap-6 items-center">
                             <div className="relative flex-1 w-full">
                                 <input
                                     type="text"
                                     placeholder="Search student talent..."
-                                    className="w-full pl-12 pr-4 py-4 bg-gray-50 border-0 rounded-2xl outline-none font-medium"
+                                    className="w-full pl-12 pr-4 py-4 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-2xl outline-none font-medium text-[var(--text-primary)]"
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                 />
                                 <svg className="absolute left-4 top-4.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                             </div>
+                            {campaigns.length > 0 && (
+                                <div className="flex items-center gap-3 w-full xl:w-auto">
+                                    <label className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest whitespace-nowrap">Campaign Context:</label>
+                                    <select
+                                        className="flex-1 px-4 py-3 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl text-sm font-bold text-[var(--text-primary)] outline-none focus:border-spark-red"
+                                        value={activeCampaignContext?.id || ''}
+                                        onChange={e => setActiveCampaignContext(campaigns.find(c => c.id === e.target.value) || null)}
+                                    >
+                                        <option value="">— No campaign selected —</option>
+                                        {campaigns.map(c => <option key={c.id} value={c.title}>{c.title}</option>)}
+                                    </select>
+                                </div>
+                            )}
                         </div>
+
+                        {/* ── Talent Grid ── */}
                         {loading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
                         ) : (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-                                {filteredStudents.map(student => (
-                                    <div key={student.id} className="group bg-white rounded-[2rem] border border-gray-100 overflow-hidden shadow-sm hover:shadow-xl transition-all p-6 text-center">
-                                        <div className="w-16 h-16 rounded-2xl bg-spark-red text-white flex items-center justify-center font-black text-2xl mx-auto mb-4">
-                                            {(student.name || '?').charAt(0)}
+                                {filteredStudents.map(student => {
+                                    const status = getInfluencerStatus(student.id);
+                                    const statusConfig = {
+                                        available: { label: 'Available', cls: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' },
+                                        in_campaign: { label: 'In Campaign', cls: 'bg-spark-red/10 text-spark-red border border-spark-red/20' },
+                                        paid: { label: 'Paid', cls: 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border border-[var(--border-color)]' },
+                                    }[status];
+                                    return (
+                                        <div key={student.id} className={`group bg-[var(--bg-primary)] rounded-[2rem] border overflow-hidden shadow-sm hover:shadow-xl transition-all p-6 text-center ${status === 'in_campaign' ? 'border-spark-red/30 ring-1 ring-spark-red/10' : 'border-[var(--border-color)]'}`}>
+                                            <div className="flex justify-end mb-2">
+                                                <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${statusConfig.cls}`}>{statusConfig.label}</span>
+                                            </div>
+                                            <div className="w-16 h-16 rounded-2xl bg-spark-red text-white flex items-center justify-center font-black text-2xl mx-auto mb-4">
+                                                {(student.name || '?').charAt(0)}
+                                            </div>
+                                            <h3 className="font-black text-lg line-clamp-1 text-[var(--text-primary)]">{student.name}</h3>
+                                            <p className="text-[10px] text-spark-red font-black uppercase tracking-widest mb-3">{student.university || 'Verified'}</p>
+                                            <div className="space-y-1.5 mb-6 flex flex-col items-center">
+                                                {student.email && (
+                                                    <a href={`mailto:${student.email}`} className="flex items-center gap-2 text-xs text-[var(--text-secondary)] hover:text-spark-red transition-colors">
+                                                        <Mail className="w-3.5 h-3.5 flex-shrink-0" />
+                                                        <span className="truncate max-w-[200px]">{student.email}</span>
+                                                    </a>
+                                                )}
+                                            </div>
+                                            <button
+                                                onClick={() => openAllocationModal(student)}
+                                                disabled={status === 'paid'}
+                                                className={`w-full py-3 font-black rounded-xl transition-all text-sm active:scale-95 shadow-sm ${status === 'paid' ? 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)] opacity-50 cursor-not-allowed' : status === 'in_campaign' ? 'bg-spark-red/10 text-spark-red border border-spark-red/20 hover:bg-spark-red hover:text-white' : 'bg-[var(--text-primary)] text-[var(--bg-primary)] hover:bg-spark-red hover:text-white'}`}
+                                            >
+                                                {status === 'paid' ? 'Already Paid' : status === 'in_campaign' ? 'Re-allocate' : 'Add to Campaign'}
+                                            </button>
                                         </div>
-                                        <h3 className="font-black text-lg line-clamp-1">{student.name}</h3>
-                                        <p className="text-[10px] text-spark-red font-black uppercase tracking-widest mb-3">{student.university || 'Verified'}</p>
-                                        <div className="space-y-1.5 mb-6 flex flex-col items-center">
-                                            {student.email && (
-                                                <a href={`mailto:${student.email}`} className="flex items-center gap-2 text-xs text-spark-gray hover:text-spark-red transition-colors">
-                                                    <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
-                                                    <span className="truncate max-w-[200px]">{student.email}</span>
-                                                </a>
-                                            )}
-                                            {student.phoneNumber && (
-                                                <a href={`tel:${student.phoneNumber}`} className="flex items-center gap-2 text-xs text-spark-gray hover:text-spark-red transition-colors">
-                                                    <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
-                                                    <span>{student.phoneNumber}</span>
-                                                </a>
-                                            )}
-                                        </div>
-                                        <button
-                                            onClick={() => setSelectedStudent(student)}
-                                            className="w-full py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all text-sm active:scale-95"
-                                        >
-                                            Send Offer
-                                        </button>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
@@ -313,13 +627,13 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
                         ) : (
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
                                 {events.map(event => (
-                                    <div key={event.id} className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm hover:shadow-xl transition-all overflow-hidden flex flex-col group">
+                                    <div key={event.id} className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] shadow-sm hover:shadow-xl transition-all overflow-hidden flex flex-col group">
                                         <div className="h-4 bg-spark-red"></div>
                                         <div className="p-8 flex-1 flex flex-col">
-                                            <div className="mb-4 bg-white/90 shadow-sm px-4 py-1 rounded-full text-[10px] font-black uppercase text-spark-red tracking-widest inline-block w-max">{new Date(event.date).toLocaleDateString()}</div>
-                                            <h3 className="text-xl font-black mb-2 group-hover:text-spark-red transition-colors">{event.name}</h3>
-                                            <p className="text-spark-gray text-sm mb-6 line-clamp-3">{event.description}</p>
-                                            <div className="mt-auto flex items-center justify-between border-t border-gray-50 pt-6">
+                                            <div className="mb-4 bg-[var(--bg-primary)] border border-[var(--border-color)] shadow-sm px-4 py-1 rounded-full text-[10px] font-black uppercase text-spark-red tracking-widest inline-block w-max">{new Date(event.date).toLocaleDateString()}</div>
+                                            <h3 className="text-xl font-black mb-2 group-hover:text-spark-red transition-colors text-[var(--text-primary)]">{event.name}</h3>
+                                            <p className="text-[var(--text-secondary)] text-sm mb-6 line-clamp-3">{event.description}</p>
+                                            <div className="mt-auto flex items-center justify-between border-t border-[var(--border-color)] pt-6">
                                                 <button
                                                     onClick={() => setSelectedEvent(event)}
                                                     className="text-spark-red font-black text-sm uppercase tracking-widest hover:underline underline-offset-4"
@@ -334,6 +648,98 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
                         )}
                     </div>
                 );
+            case 'wallet':
+                return (
+                    <div className="space-y-10 animate-in slide-in-from-bottom-4 duration-500">
+                        {walletLoading ? (
+                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
+                        ) : (
+                            <>
+                                {/* Summary Cards */}
+                                <div className="grid md:grid-cols-3 gap-8">
+                                    {[
+                                        { label: 'Available Balance', value: `₦${(wallet?.balance || 0).toLocaleString()}`, icon: <Wallet className="w-6 h-6" />, color: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' },
+                                        { label: 'Total Spent', value: `₦0.00`, icon: <TrendingUp className="w-6 h-6" />, color: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/20' },
+                                        { label: 'Locked in Escrow', value: `₦${(wallet?.escrow || 0).toLocaleString()}`, icon: <Lock className="w-6 h-6" />, color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' },
+                                    ].map((stat, i) => (
+                                        <div key={i} className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm">
+                                            <div className={`w-12 h-12 ${stat.color} rounded-2xl flex items-center justify-center text-xl mb-4`}>{stat.icon}</div>
+                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">{stat.label}</p>
+                                            <h4 className="text-3xl font-black text-[var(--text-primary)]">{stat.value}</h4>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Wallet Actions */}
+                                <div className="bg-spark-black rounded-[2.5rem] p-10 text-white shadow-xl flex flex-col md:flex-row items-center justify-between gap-8">
+                                    <div>
+                                        <h3 className="text-2xl font-black mb-2 text-white">Top Up Your Wallet</h3>
+                                        <p className="text-gray-400 font-medium">Add funds to launch new campaigns and hire influencers instantly.</p>
+                                    </div>
+                                    <button 
+                                        onClick={async () => {
+                                            if (!brandProfile?.id) return;
+                                            const amount = Number(prompt("Enter amount to top up (₦):", "5000"));
+                                            if (!amount || amount <= 0) return;
+
+                                            const handler = (window as any).PaystackPop.setup({
+                                                key: 'pk_test_YOUR_PAYSTACK_PUBLIC_KEY', // Replace with your real public key
+                                                email: brandProfile.email || 'brand@campushub.africa',
+                                                amount: amount * 100, // Paystack uses Kobo
+                                                currency: 'NGN',
+                                                callback: async (response: any) => {
+                                                    // Payment Successful
+                                                    await WalletService.topUpWallet(brandProfile.id, amount, response.reference);
+                                                    alert(`Successfully topped up ₦${amount.toLocaleString()}!`);
+                                                    fetchWallet();
+                                                },
+                                                onClose: () => {
+                                                    console.log('Payment window closed');
+                                                }
+                                            });
+                                            handler.openIframe();
+                                        }}
+                                        className="px-10 py-5 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all shadow-lg whitespace-nowrap"
+                                    >
+                                        + Add Funds
+                                    </button>
+                                </div>
+
+                                {/* Transactions Table */}
+                                <div className="bg-[var(--bg-primary)] rounded-[3rem] border border-[var(--border-color)] shadow-sm p-10">
+                                    <h3 className="text-2xl font-black text-[var(--text-primary)] mb-8">Recent Activity</h3>
+                                    <div className="space-y-6">
+                                        {transactions.length === 0 ? (
+                                            <p className="text-[var(--text-secondary)] text-center py-4 italic font-medium">No transactions found.</p>
+                                        ) : (
+                                            transactions.map((trans: any, i) => (
+                                                <div key={i} className="flex items-center justify-between p-6 bg-[var(--bg-secondary)] rounded-2xl">
+                                                    <div className="flex items-center space-x-4">
+                                                        <div className={`w-10 h-10 rounded-xl shadow-sm flex items-center justify-center text-lg ${trans.type === 'credit' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                                                            {trans.type === 'credit' ? <Plus className="w-5 h-5" /> : <Minus className="w-5 h-5" />}
+                                                        </div>
+                                                        <div>
+                                                            <p className="font-black text-[var(--text-primary)]">{trans.description}</p>
+                                                            <p className="text-xs text-[var(--text-secondary)] font-bold">
+                                                                {trans.createdAt?.seconds ? new Date(trans.createdAt.seconds * 1000).toLocaleDateString() : 'Just now'}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <p className={`font-black ${trans.type === 'credit' ? 'text-green-600' : 'text-spark-red'}`}>
+                                                            {trans.type === 'credit' ? '+' : '-'} ₦{Number(trans.amount).toLocaleString()}
+                                                        </p>
+                                                        <p className="text-[10px] font-black uppercase text-[var(--text-secondary)]">{trans.status}</p>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                );
             case 'proposals':
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
@@ -342,7 +748,7 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
                         ) : proposals.length === 0 ? (
                             <DashboardPlaceholder
                                 title="No Activity"
-                                icon="📩"
+                                icon={<Inbox className="w-10 h-10" />}
                                 description="You haven't sent or received any partnership proposals yet. Browse the talent directory to start!"
                             />
                         ) : (
@@ -352,21 +758,21 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
                                     const otherParty = (isSender ? p.recipient : p.sender) || { name: 'Unknown User', role: 'Unknown', email: '' };
                                     const displayName = otherParty.name !== 'Unknown User' ? otherParty.name : (otherParty.email || 'Unknown User');
                                     return (
-                                        <div key={p.id} className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm flex items-center justify-between">
+                                        <div key={p.id} className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm flex items-center justify-between">
                                             <div className="flex items-center space-x-6">
-                                                <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center text-2xl font-black text-spark-red shadow-inner">
+                                                <div className="w-16 h-16 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-2xl flex items-center justify-center text-2xl font-black text-spark-red shadow-inner">
                                                     {otherParty.imageUrl ? <img src={otherParty.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : (otherParty.name ? otherParty.name.charAt(0) : '?')}
                                                 </div>
                                                 <div>
-                                                    <h4 className="text-xl font-black text-spark-black">{displayName}</h4>
+                                                    <h4 className="text-xl font-black text-[var(--text-primary)]">{displayName}</h4>
                                                     <p className="text-xs text-spark-red font-black uppercase tracking-widest">{otherParty.role}</p>
-                                                    <p className="text-[10px] text-spark-gray font-bold mt-1 uppercase tracking-wider">{new Date(p.createdAt).toLocaleDateString()}</p>
+                                                    <p className="text-[10px] text-[var(--text-secondary)] font-bold mt-1 uppercase tracking-wider">{new Date(p.createdAt).toLocaleDateString()}</p>
                                                 </div>
                                             </div>
                                             <div className="flex items-center space-x-4">
                                                 <button
                                                     onClick={() => setSelectedProposal(p)}
-                                                    className="px-6 py-2 bg-gray-50 text-spark-black rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 transition-all border border-gray-200"
+                                                    className="px-6 py-2 bg-[var(--bg-secondary)] text-[var(--text-primary)] rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-[var(--bg-tertiary)] transition-all border border-gray-200"
                                                 >
                                                     View Proposal
                                                 </button>
@@ -400,14 +806,125 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
                     'open': 'bg-green-50 text-green-600',
                     'in_progress': 'bg-blue-50 text-blue-600',
                     'reviewing': 'bg-orange-50 text-orange-600',
-                    'completed': 'bg-gray-100 text-gray-500',
+                    'completed': 'bg-[var(--bg-tertiary)] text-gray-500',
                 };
+                const allocStatusColors: Record<string, string> = {
+                    'selected': 'bg-blue-50 text-blue-600',
+                    'in_progress': 'bg-orange-50 text-orange-600',
+                    'submitted': 'bg-purple-50 text-purple-600',
+                    'approved': 'bg-teal-50 text-teal-600',
+                    'paid': 'bg-green-50 text-green-600',
+                    'rejected': 'bg-red-50 text-red-500',
+                };
+
+                // ── Campaign Detail View ──────────────────────────────────────
+                if (selectedCampaignDetail) {
+                    const detailStats = getCampaignBudgetStats(selectedCampaignDetail);
+                    const detailPct = detailStats.budget > 0 ? Math.min(100, (detailStats.allocated / detailStats.budget) * 100) : 0;
+                    return (
+                        <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                            {/* Back + Header */}
+                            <div className="flex items-center gap-4">
+                                <button onClick={() => { setSelectedCampaignDetail(null); setDetailAllocations([]); }} className="w-10 h-10 bg-spark-black text-white rounded-xl flex items-center justify-center hover:bg-gray-800 transition-all">
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"/></svg>
+                                </button>
+                                <div>
+                                    <h3 className="text-2xl font-black text-[var(--text-primary)]">{selectedCampaignDetail.title}</h3>
+                                    <p className="text-xs text-[var(--text-secondary)] uppercase tracking-widest font-bold mt-0.5">{selectedCampaignDetail.category} · Campaign Detail</p>
+                                </div>
+                            </div>
+
+                            {/* Budget Summary */}
+                            <div className="grid grid-cols-3 gap-5">
+                                {[
+                                    { label: 'Total Budget', value: `₦${detailStats.budget.toLocaleString()}`, color: 'text-[var(--text-primary)]' },
+                                    { label: 'Allocated', value: `₦${detailStats.allocated.toLocaleString()}`, color: 'text-spark-red' },
+                                    { label: 'Remaining', value: `₦${detailStats.remaining.toLocaleString()}`, color: 'text-green-600' },
+                                ].map((s, i) => (
+                                    <div key={i} className="bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-[1.5rem] p-5">
+                                        <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">{s.label}</p>
+                                        <p className={`text-2xl font-black ${s.color}`}>{s.value}</p>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+                                <div className="h-full bg-spark-red rounded-full transition-all duration-700" style={{ width: `${detailPct}%` }}></div>
+                            </div>
+
+                            {/* Influencer Table */}
+                            <div className="bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-[2rem] overflow-hidden shadow-sm">
+                                <div className="flex items-center justify-between p-6 border-b border-[var(--border-color)]">
+                                    <h4 className="font-black text-[var(--text-primary)]">Allocated Influencers</h4>
+                                    <button onClick={() => { setCurrentView('directory'); setActiveCampaignContext(selectedCampaignDetail); }} className="px-4 py-2 text-[10px] font-black uppercase tracking-widest bg-spark-red text-white rounded-xl hover:bg-red-700 transition-all">+ Add Influencer</button>
+                                </div>
+                                {detailLoading ? (
+                                    <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-spark-red"/></div>
+                                ) : detailAllocations.length === 0 ? (
+                                    <div className="text-center py-16">
+                                        <p className="text-4xl mb-3">👥</p>
+                                        <p className="font-black text-[var(--text-primary)] mb-1">No influencers allocated yet</p>
+                                        <p className="text-sm text-[var(--text-secondary)]">Go to the Talent Directory and click "Add to Campaign".</p>
+                                    </div>
+                                ) : (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm">
+                                            <thead>
+                                                <tr className="border-b border-[var(--border-color)]">
+                                                    {['Influencer', 'University', 'Allocation', 'Status', 'Actions'].map(h => (
+                                                        <th key={h} className="text-left px-6 py-4 text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">{h}</th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {detailAllocations.map((alloc) => (
+                                                    <tr key={alloc.id} className="border-b border-[var(--border-color)] last:border-0 hover:bg-[var(--bg-secondary)] transition-colors">
+                                                        <td className="px-6 py-4">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="w-9 h-9 rounded-xl bg-spark-red text-white flex items-center justify-center font-black text-sm flex-shrink-0">{(alloc.influencerName || '?').charAt(0)}</div>
+                                                                <span className="font-black text-[var(--text-primary)]">{alloc.influencerName}</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-6 py-4 text-[var(--text-secondary)] text-xs">{alloc.influencerUniversity || '—'}</td>
+                                                        <td className="px-6 py-4 font-black text-[var(--text-primary)]">₦{alloc.amount.toLocaleString()}</td>
+                                                        <td className="px-6 py-4">
+                                                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${allocStatusColors[alloc.status] || 'bg-[var(--bg-tertiary)] text-gray-500'}`}>{alloc.status.replace('_', ' ')}</span>
+                                                        </td>
+                                                        <td className="px-6 py-4">
+                                                            {alloc.status === 'rejected' || alloc.status === 'paid' ? (
+                                                                <span className="text-[10px] text-[var(--text-secondary)] italic">{alloc.status === 'paid' ? 'Payment released' : 'Refunded'}</span>
+                                                            ) : (
+                                                                <div className="flex gap-2">
+                                                                    {alloc.status !== 'approved' && (
+                                                                        <button onClick={() => handleApproveAllocation(alloc)} className="px-3 py-1.5 bg-spark-black text-white rounded-lg text-[10px] font-black uppercase hover:bg-gray-800 transition-colors">Approve</button>
+                                                                    )}
+                                                                    {(alloc.status === 'approved') && (
+                                                                        <button disabled={releaseSubmitting === alloc.id} onClick={() => handleReleasePayment(alloc)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center gap-1">
+                                                                            {releaseSubmitting === alloc.id ? <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin"/> : null}
+                                                                            Release Pay
+                                                                        </button>
+                                                                    )}
+                                                                    <button onClick={() => handleRejectAllocation(alloc)} className="px-3 py-1.5 bg-spark-red text-white rounded-lg text-[10px] font-black uppercase hover:bg-red-700 transition-colors">Reject</button>
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    );
+                }
+
+                // ── Campaign List View ────────────────────────────────────────
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                         <div className="flex justify-between items-center">
                             <div>
-                                <h3 className="text-2xl font-black text-spark-black">My Campaigns</h3>
-                                <p className="text-spark-gray mt-1">Create and manage your influencer marketing campaigns.</p>
+                                <h3 className="text-2xl font-black text-[var(--text-primary)]">My Campaigns</h3>
+                                <p className="text-[var(--text-secondary)] mt-1">Create and manage your influencer marketing campaigns.</p>
                             </div>
                             <button onClick={() => setShowCampaignModal(true)} className="bg-spark-red text-white px-6 py-3 rounded-xl font-black shadow-lg shadow-red-100 hover:bg-red-700 transition-all active:scale-95">
                                 + New Campaign
@@ -415,62 +932,70 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
                         </div>
 
                         {campaigns.length === 0 ? (
-                            <div className="text-center py-24 bg-white rounded-[3rem] border-2 border-dashed border-gray-100">
+                            <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)]">
                                 <div className="text-6xl mb-6">📢</div>
-                                <h3 className="text-2xl font-black text-spark-black mb-2">No Campaigns Yet</h3>
-                                <p className="text-spark-gray mb-8">Launch your first influencer campaign to connect with students at scale.</p>
+                                <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">No Campaigns Yet</h3>
+                                <p className="text-[var(--text-secondary)] mb-8">Launch your first influencer campaign to connect with students at scale.</p>
                                 <button onClick={() => setShowCampaignModal(true)} className="px-8 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all">Create First Campaign</button>
                             </div>
                         ) : (
                             <div className="grid md:grid-cols-2 gap-6">
-                                {campaigns.map((c: any) => (
-                                    <div key={c.id} className="bg-white rounded-[2rem] border border-gray-100 p-8 hover:shadow-xl transition-all group">
-                                        <div className="flex justify-between items-start mb-4">
-                                            <div>
-                                                <h4 className="text-xl font-black text-spark-black group-hover:text-spark-red transition-colors">{c.title}</h4>
-                                                <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${catColors[c.category] || 'bg-gray-50 text-gray-600'}`}>{c.category}</span>
+                                {campaigns.map((c: any) => {
+                                    const bStats = getCampaignBudgetStats(c);
+                                    const bPct = bStats.budget > 0 ? Math.min(100, (bStats.allocated / bStats.budget) * 100) : 0;
+                                    return (
+                                        <div key={c.id} className="bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] p-8 hover:shadow-xl transition-all group">
+                                            <div className="flex justify-between items-start mb-4">
+                                                <div>
+                                                    <h4 className="text-xl font-black text-[var(--text-primary)] group-hover:text-spark-red transition-colors">{c.title}</h4>
+                                                    <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${catColors[c.category] || 'bg-[var(--bg-primary)] text-[var(--text-secondary)]'}`}>{c.category}</span>
+                                                </div>
+                                                <span className={`px-3 py-1 text-[10px] font-black rounded-full uppercase ${statusColorsMap[c.status] || 'bg-[var(--bg-secondary)] text-gray-600'}`}>{c.status?.replace('_', ' ')}</span>
                                             </div>
-                                            <span className={`px-3 py-1 text-[10px] font-black rounded-full uppercase ${statusColorsMap[c.status] || 'bg-gray-50 text-gray-600'}`}>{c.status?.replace('_', ' ')}</span>
-                                        </div>
-                                        <p className="text-sm text-spark-gray line-clamp-2 mb-6">{c.brief}</p>
-                                        <div className="grid grid-cols-2 gap-4 mb-6">
-                                            <div className="bg-gray-50 rounded-xl p-3">
-                                                <p className="text-[10px] font-black text-spark-gray uppercase tracking-wider">Budget</p>
-                                                <p className="font-black text-spark-black">₦{Number(c.budget).toLocaleString()}</p>
+                                            <p className="text-sm text-[var(--text-secondary)] line-clamp-2 mb-5">{c.brief}</p>
+
+                                            {/* Budget Progress */}
+                                            <div className="mb-5 space-y-2">
+                                                <div className="flex justify-between text-xs font-black">
+                                                    <span className="text-[var(--text-secondary)]">Allocated <span className="text-spark-red">₦{bStats.allocated.toLocaleString()}</span></span>
+                                                    <span className="text-[var(--text-secondary)]">Remaining <span className="text-green-600">₦{bStats.remaining.toLocaleString()}</span></span>
+                                                </div>
+                                                <div className="h-1.5 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+                                                    <div className="h-full bg-spark-red rounded-full transition-all" style={{ width: `${bPct}%` }}></div>
+                                                </div>
+                                                <p className="text-[10px] text-[var(--text-secondary)] font-bold">Total Budget: ₦{bStats.budget.toLocaleString()} · Deadline: {c.deadline}</p>
                                             </div>
-                                            <div className="bg-gray-50 rounded-xl p-3">
-                                                <p className="text-[10px] font-black text-spark-gray uppercase tracking-wider">Deadline</p>
-                                                <p className="font-black text-spark-black">{c.deadline}</p>
+
+                                            <div className="flex gap-3">
+                                                <button onClick={() => openCampaignDetail(c)} className="flex-1 py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all text-sm">View Detail</button>
+                                                <button onClick={() => fetchApplicants(c)} className="flex-1 py-3 bg-spark-black text-white font-black rounded-xl hover:bg-gray-800 transition-all text-sm flex items-center justify-center gap-2">
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                                    Applicants
+                                                </button>
+                                                <button onClick={() => handleEditCampaign(c)} className="w-12 h-12 bg-spark-black text-white rounded-xl flex items-center justify-center hover:bg-gray-800 transition-all">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                                                </button>
+                                                <button onClick={() => handleDeleteCampaign(c.id)} className="w-12 h-12 bg-spark-red text-white rounded-xl flex items-center justify-center hover:bg-red-700 transition-all">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                                </button>
                                             </div>
                                         </div>
-                                        <div className="flex gap-4">
-                                            <button onClick={() => fetchApplicants(c)} className="flex-1 py-3 bg-spark-black text-white font-black rounded-xl hover:bg-spark-red transition-all text-sm flex items-center justify-center gap-2">
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                                Applicants
-                                            </button>
-                                            <button onClick={() => handleEditCampaign(c)} className="w-12 h-12 bg-gray-50 text-spark-black rounded-xl flex items-center justify-center hover:bg-gray-100 transition-all border border-gray-100">
-                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
-                                            </button>
-                                            <button onClick={() => handleDeleteCampaign(c.id)} className="w-12 h-12 bg-gray-50 text-spark-red rounded-xl flex items-center justify-center hover:bg-red-50 transition-all border border-gray-100">
-                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
 
                         {/* ===== APPLICANTS PANEL ===== */}
                         {viewingApplicants && (
                             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-                                <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col animate-in zoom-in-95 duration-200">
+                                <div className="bg-[var(--bg-primary)] rounded-[2.5rem] shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col animate-in zoom-in-95 duration-200">
                                     {/* Header */}
                                     <div className="p-8 pb-4 flex justify-between items-start flex-shrink-0">
                                         <div>
-                                            <h2 className="text-2xl font-black text-spark-black">Applicants</h2>
-                                            <p className="text-spark-gray text-sm mt-1">{viewingApplicants.title}</p>
+                                            <h2 className="text-2xl font-black text-[var(--text-primary)]">Applicants</h2>
+                                            <p className="text-[var(--text-secondary)] text-sm mt-1">{viewingApplicants.title}</p>
                                         </div>
-                                        <button onClick={() => { setViewingApplicants(null); setApplicants([]); }} className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-all">
+                                        <button onClick={() => { setViewingApplicants(null); setApplicants([]); }} className="w-10 h-10 bg-spark-black text-white rounded-full flex items-center justify-center hover:bg-gray-800 transition-all">
                                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
                                         </button>
                                     </div>
@@ -481,34 +1006,34 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
                                         ) : applicants.length === 0 ? (
                                             <div className="text-center py-16">
                                                 <p className="text-5xl mb-4">📭</p>
-                                                <p className="font-black text-spark-black text-lg">No applications yet</p>
-                                                <p className="text-spark-gray text-sm">Students who apply will appear here with their pitch.</p>
+                                                <p className="font-black text-[var(--text-primary)] text-lg">No applications yet</p>
+                                                <p className="text-[var(--text-secondary)] text-sm">Students who apply will appear here with their pitch.</p>
                                             </div>
                                         ) : applicants.map((app: any) => {
                                             const statusColors: any = { pending: 'bg-yellow-50 text-yellow-700', accepted: 'bg-green-50 text-green-700', rejected: 'bg-red-50 text-red-500' };
                                             return (
-                                                <div key={app.id} className="bg-gray-50 rounded-2xl p-6 border border-gray-100">
+                                                <div key={app.id} className="bg-[var(--bg-secondary)] rounded-2xl p-6 border border-[var(--border-color)]">
                                                     <div className="flex items-center gap-4 mb-4">
                                                         <div className="w-12 h-12 rounded-2xl bg-spark-red text-white flex items-center justify-center font-black text-lg flex-shrink-0">
                                                             {app.student?.name?.charAt(0) || '?'}
                                                         </div>
                                                         <div className="flex-1 min-w-0">
-                                                            <h4 className="font-black text-spark-black">{app.student?.name}</h4>
-                                                            <p className="text-xs text-spark-gray">{app.student?.university || app.student?.email}</p>
+                                                            <h4 className="font-black text-[var(--text-primary)]">{app.student?.name}</h4>
+                                                            <p className="text-xs text-[var(--text-secondary)]">{app.student?.university || app.student?.email}</p>
                                                         </div>
-                                                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${statusColors[app.status] || 'bg-gray-100 text-gray-500'}`}>{app.status}</span>
+                                                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${statusColors[app.status] || 'bg-[var(--bg-tertiary)] text-gray-500'}`}>{app.status}</span>
                                                     </div>
-                                                    <div className="bg-white rounded-xl p-4 mb-4 border border-gray-100">
-                                                        <p className="text-[10px] font-black text-spark-gray uppercase tracking-wider mb-2">Their Pitch</p>
-                                                        <p className="text-sm text-spark-black leading-relaxed">{app.pitch}</p>
+                                                    <div className="bg-[var(--bg-primary)] rounded-xl p-4 mb-4 border border-[var(--border-color)]">
+                                                        <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-wider mb-2">Their Pitch</p>
+                                                        <p className="text-sm text-[var(--text-primary)] leading-relaxed">{app.pitch}</p>
                                                     </div>
                                                     {app.report && (
-                                                        <div className="bg-white rounded-xl p-5 mb-4 border-2 border-green-100 shadow-sm">
+                                                        <div className="bg-[var(--bg-primary)] rounded-xl p-5 mb-4 border-2 border-green-100 shadow-sm">
                                                             <div className="flex justify-between items-center mb-3">
                                                                 <p className="text-[10px] font-black text-green-700 uppercase tracking-wider">📋 Campaign Report</p>
-                                                                {app.reportSubmittedAt && <p className="text-[9px] text-spark-gray">{new Date(app.reportSubmittedAt).toLocaleString()}</p>}
+                                                                {app.reportSubmittedAt && <p className="text-[9px] text-[var(--text-secondary)]">{new Date(app.reportSubmittedAt).toLocaleString()}</p>}
                                                             </div>
-                                                            <p className="text-sm text-spark-black leading-relaxed mb-4">{app.report}</p>
+                                                            <p className="text-sm text-[var(--text-primary)] leading-relaxed mb-4">{app.report}</p>
 
                                                             <div className="flex flex-wrap gap-3 mb-4">
                                                                 {app.reportLink && (
@@ -527,16 +1052,16 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
 
                                                             {viewingApplicants.status === 'reviewing' && app.status === 'accepted' && (
                                                                 <div className="flex gap-3 border-t border-gray-50 pt-4">
-                                                                    <button onClick={() => handleReportApproval(viewingApplicants.id)} className="flex-1 py-3 bg-green-600 text-white font-black rounded-xl hover:bg-green-700 transition-all text-xs">Approve Report & Pay</button>
-                                                                    <button onClick={() => handleReportRejection(viewingApplicants.id)} className="flex-1 py-3 bg-red-50 text-red-600 font-black rounded-xl hover:bg-red-100 transition-all text-xs">Reject & Request Revision</button>
+                                                                    <button onClick={() => handleReportApproval(viewingApplicants.id)} className="flex-1 py-3 bg-spark-black text-white font-black rounded-xl hover:bg-gray-800 transition-all text-xs">Approve Report & Pay</button>
+                                                                    <button onClick={() => handleReportRejection(viewingApplicants.id)} className="flex-1 py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all text-xs">Reject & Request Revision</button>
                                                                 </div>
                                                             )}
                                                         </div>
                                                     )}
                                                     {app.status === 'pending' && (
                                                         <div className="flex gap-3">
-                                                            <button onClick={() => handleApplicationDecision(app.id, 'accepted')} className="flex-1 py-3 bg-green-600 text-white font-black rounded-xl hover:bg-green-700 transition-all text-sm">✓ Accept</button>
-                                                            <button onClick={() => handleApplicationDecision(app.id, 'rejected')} className="flex-1 py-3 bg-gray-100 text-spark-gray font-black rounded-xl hover:bg-red-50 hover:text-spark-red transition-all text-sm">✗ Reject</button>
+                                                            <button onClick={() => handleApplicationDecision(app.id, 'accepted')} className="flex-1 py-3 bg-spark-black text-white font-black rounded-xl hover:bg-gray-800 transition-all text-sm">✓ Accept</button>
+                                                            <button onClick={() => handleApplicationDecision(app.id, 'rejected')} className="flex-1 py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all text-sm">✗ Reject</button>
                                                         </div>
                                                     )}
                                                 </div>
@@ -551,14 +1076,14 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
                         {showCampaignModal && (
                             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                                 <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md" onClick={() => { setShowCampaignModal(false); setEditingGig(null); }}></div>
-                                <div className="relative bg-white w-full max-w-xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+                                <div className="relative bg-[var(--bg-primary)] w-full max-w-xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
                                     <div className="p-10">
                                         <div className="flex justify-between items-start mb-8">
                                             <div>
-                                                <h2 className="text-2xl font-black text-spark-black">{editingGig ? 'Edit Campaign' : 'New Campaign'}</h2>
-                                                <p className="text-spark-gray mt-1">{editingGig ? 'Update your campaign details.' : 'Fill in the details for your campaign brief.'}</p>
+                                                <h2 className="text-2xl font-black text-[var(--text-primary)]">{editingGig ? 'Edit Campaign' : 'New Campaign'}</h2>
+                                                <p className="text-[var(--text-secondary)] mt-1">{editingGig ? 'Update your campaign details.' : 'Fill in the details for your campaign brief.'}</p>
                                             </div>
-                                            <button onClick={() => { setShowCampaignModal(false); setEditingGig(null); }} className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200">
+                                            <button onClick={() => { setShowCampaignModal(false); setEditingGig(null); }} className="w-10 h-10 bg-spark-black text-white rounded-full flex items-center justify-center hover:bg-gray-800">
                                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                                             </button>
                                         </div>
@@ -607,31 +1132,31 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
                                         }}>
 
                                             <div>
-                                                <label className="block text-xs font-black text-spark-gray uppercase tracking-widest mb-2">Campaign Title</label>
-                                                <input required value={campaignForm.title} onChange={e => setCampaignForm(p => ({ ...p, title: e.target.value }))} className="w-full px-5 py-4 bg-gray-50 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-spark-red" placeholder="e.g. Back to School Blitz" />
+                                                <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Campaign Title</label>
+                                                <input required value={campaignForm.title} onChange={e => setCampaignForm(p => ({ ...p, title: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] rounded-2xl font-bold outline-none border-2 border-transparent focus:border-spark-red" placeholder="e.g. Back to School Blitz" />
                                             </div>
                                             <div>
-                                                <label className="block text-xs font-black text-spark-gray uppercase tracking-widest mb-2">Category</label>
-                                                <select value={campaignForm.category} onChange={e => setCampaignForm(p => ({ ...p, category: e.target.value }))} className="w-full px-5 py-4 bg-gray-50 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-spark-red">
+                                                <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Category</label>
+                                                <select value={campaignForm.category} onChange={e => setCampaignForm(p => ({ ...p, category: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] rounded-2xl font-bold outline-none border-2 border-transparent focus:border-spark-red">
                                                     {categories.map(c => <option key={c}>{c}</option>)}
                                                 </select>
                                             </div>
                                             <div>
-                                                <label className="block text-xs font-black text-spark-gray uppercase tracking-widest mb-2">Campaign Brief</label>
-                                                <textarea required rows={3} value={campaignForm.brief} onChange={e => setCampaignForm(p => ({ ...p, brief: e.target.value }))} className="w-full px-5 py-4 bg-gray-50 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-spark-red resize-none" placeholder="Describe your campaign goals, target audience, and key messages..." />
+                                                <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Campaign Brief</label>
+                                                <textarea required rows={3} value={campaignForm.brief} onChange={e => setCampaignForm(p => ({ ...p, brief: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] rounded-2xl font-bold outline-none border-2 border-transparent focus:border-spark-red resize-none" placeholder="Describe your campaign goals, target audience, and key messages..." />
                                             </div>
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div>
-                                                    <label className="block text-xs font-black text-spark-gray uppercase tracking-widest mb-2">Budget (₦)</label>
-                                                    <input required type="number" min="0" value={campaignForm.budget} onChange={e => setCampaignForm(p => ({ ...p, budget: e.target.value }))} className="w-full px-5 py-4 bg-gray-50 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-spark-red" />
+                                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Budget (₦)</label>
+                                                    <input required type="number" min="0" value={campaignForm.budget} onChange={e => setCampaignForm(p => ({ ...p, budget: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] rounded-2xl font-bold outline-none border-2 border-transparent focus:border-spark-red" />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-xs font-black text-spark-gray uppercase tracking-widest mb-2">Deadline</label>
-                                                    <input required type="date" value={campaignForm.deadline} onChange={e => setCampaignForm(p => ({ ...p, deadline: e.target.value }))} className="w-full px-5 py-4 bg-gray-50 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-spark-red" />
+                                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Deadline</label>
+                                                    <input required type="date" value={campaignForm.deadline} onChange={e => setCampaignForm(p => ({ ...p, deadline: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] rounded-2xl font-bold outline-none border-2 border-transparent focus:border-spark-red" />
                                                 </div>
                                             </div>
                                             <div className="flex gap-4 pt-2">
-                                                <button type="button" onClick={() => { setShowCampaignModal(false); setEditingGig(null); }} className="flex-1 py-4 border-2 border-gray-100 text-spark-gray font-black rounded-2xl hover:bg-gray-50">Cancel</button>
+                                                <button type="button" onClick={() => { setShowCampaignModal(false); setEditingGig(null); }} className="flex-1 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-gray-800">Cancel</button>
                                                 <button type="submit" disabled={campaignSubmitting} className="flex-[2] py-4 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 shadow-xl shadow-red-200 flex items-center justify-center gap-2 disabled:opacity-50">
                                                     {campaignSubmitting ? <><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>{editingGig ? 'Updating...' : 'Creating...'}</> : editingGig ? 'Update Campaign' : 'Launch Campaign'}
                                                 </button>
@@ -660,20 +1185,38 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
             userName={brandProfile?.name || "Brand Partner"}
             userSub={brandProfile?.industry || "Market Leader"}
             userImage={brandProfile?.imageUrl}
+            isDarkMode={isDarkMode}
+            toggleTheme={toggleTheme}
+            walletStrip={
+                <div className="flex items-center gap-4 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-2xl p-1.5 shadow-sm">
+                    <div className="px-3">
+                        <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase tracking-widest leading-none">Available</p>
+                        <p className="text-sm font-black text-green-600">₦{walletData.available.toLocaleString()}</p>
+                    </div>
+                    <div className="w-px h-6 bg-[var(--border-color)]"></div>
+                    <div className="px-3">
+                        <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase tracking-widest leading-none">Locked (Escrow)</p>
+                        <p className="text-sm font-black text-[var(--text-primary)]">₦{walletData.locked.toLocaleString()}</p>
+                    </div>
+                    <button onClick={() => setCurrentView('wallet')} className="bg-spark-red text-white text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl hover:bg-red-700 transition-all">
+                        Fund Wallet
+                    </button>
+                </div>
+            }
         >
             {selectedStudent && (
                 <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-300">
-                    <div className="bg-white w-full max-w-2xl rounded-[2rem] sm:rounded-[4rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300 my-auto">
+                    <div className="bg-[var(--bg-primary)] w-full max-w-2xl rounded-[2rem] sm:rounded-[4rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300 my-auto">
                         <button
                             onClick={() => setSelectedStudent(null)}
-                            className="absolute top-8 right-8 w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center hover:bg-spark-red hover:text-white transition-all z-10"
+                            className="absolute top-8 right-8 w-12 h-12 bg-spark-black text-white rounded-full flex items-center justify-center hover:bg-spark-red transition-all z-10"
                         >
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12"></path></svg>
                         </button>
 
                         <div className="h-48 bg-gradient-to-br from-spark-red to-red-400 relative">
                             <div className="absolute -bottom-12 left-12">
-                                <div className="w-24 h-24 bg-white p-2 rounded-3xl shadow-xl ring-4 ring-white flex items-center justify-center text-4xl font-black text-spark-red">
+                                <div className="w-24 h-24 bg-[var(--bg-primary)] p-2 rounded-3xl shadow-xl ring-4 ring-white flex items-center justify-center text-4xl font-black text-spark-red">
                                     {(selectedStudent.name || '?').charAt(0)}
                                 </div>
                             </div>
@@ -682,54 +1225,54 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
                         <div className="pt-20 p-6 sm:p-12 max-h-[70vh] overflow-y-auto">
                             <div className="flex justify-between items-start mb-8">
                                 <div>
-                                    <h3 className="text-4xl font-black text-spark-black mb-1">{selectedStudent.name}</h3>
+                                    <h3 className="text-4xl font-black text-[var(--text-primary)] mb-1">{selectedStudent.name}</h3>
                                     <p className="text-spark-red font-black uppercase tracking-widest text-sm">{selectedStudent.university || 'Campus Talent'}</p>
                                 </div>
                             </div>
 
                             <div className="space-y-6 mb-10">
-                                <div className="p-6 bg-gray-50 rounded-3xl border border-gray-100">
-                                    <p className="text-[10px] font-black text-spark-gray uppercase tracking-widest mb-2 opacity-60">Talent Bio</p>
-                                    <p className="text-spark-black font-bold text-lg">{selectedStudent.bio || `${selectedStudent.name} is a high-impact influencer at ${selectedStudent.university || 'Spark University'}.`}</p>
+                                <div className="p-6 bg-[var(--bg-secondary)] rounded-3xl border border-[var(--border-color)]">
+                                    <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2 opacity-60">Talent Bio</p>
+                                    <p className="text-[var(--text-primary)] font-bold text-lg">{selectedStudent.bio || `${selectedStudent.name} is a high-impact influencer at ${selectedStudent.university || 'Spark University'}.`}</p>
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4">
                                     {selectedStudent.university && (
-                                        <div className="p-4 bg-gray-50 rounded-2xl">
-                                            <p className="text-[10px] font-black text-spark-gray uppercase mb-1">University</p>
-                                            <p className="font-black text-spark-black text-sm">{selectedStudent.university}</p>
+                                        <div className="p-4 bg-[var(--bg-secondary)] rounded-2xl">
+                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase mb-1">University</p>
+                                            <p className="font-black text-[var(--text-primary)] text-sm">{selectedStudent.university}</p>
                                         </div>
                                     )}
                                     {selectedStudent.handle && (
-                                        <div className="p-4 bg-gray-50 rounded-2xl">
-                                            <p className="text-[10px] font-black text-spark-gray uppercase mb-1">Handle</p>
-                                            <p className="font-black text-spark-black text-sm">@{selectedStudent.handle}</p>
+                                        <div className="p-4 bg-[var(--bg-secondary)] rounded-2xl">
+                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase mb-1">Handle</p>
+                                            <p className="font-black text-[var(--text-primary)] text-sm">@{selectedStudent.handle}</p>
                                         </div>
                                     )}
                                     {selectedStudent.email && (
-                                        <div className="p-4 bg-gray-50 rounded-2xl col-span-2">
-                                            <p className="text-[10px] font-black text-spark-gray uppercase mb-1">Email</p>
-                                            <p className="font-bold text-spark-black text-sm">{selectedStudent.email}</p>
+                                        <div className="p-4 bg-[var(--bg-secondary)] rounded-2xl col-span-2">
+                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase mb-1">Email</p>
+                                            <p className="font-bold text-[var(--text-primary)] text-sm">{selectedStudent.email}</p>
                                         </div>
                                     )}
                                 </div>
 
                                 {(selectedStudent.instagram || selectedStudent.twitter || selectedStudent.linkedin) && (
-                                    <div className="p-6 bg-gray-50 rounded-3xl border border-gray-100">
-                                        <p className="text-[10px] font-black text-spark-gray uppercase tracking-widest mb-4 opacity-60">Social Media</p>
+                                    <div className="p-6 bg-[var(--bg-secondary)] rounded-3xl border border-[var(--border-color)]">
+                                        <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-4 opacity-60">Social Media</p>
                                         <div className="flex gap-3 flex-wrap">
                                             {selectedStudent.instagram && (
-                                                <a href={selectedStudent.instagram} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-white rounded-xl font-bold text-xs hover:bg-spark-red hover:text-white transition-all">
+                                                <a href={selectedStudent.instagram} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-spark-black text-white rounded-xl font-bold text-xs hover:bg-spark-red transition-all">
                                                     Instagram
                                                 </a>
                                             )}
                                             {selectedStudent.twitter && (
-                                                <a href={selectedStudent.twitter} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-white rounded-xl font-bold text-xs hover:bg-spark-red hover:text-white transition-all">
+                                                <a href={selectedStudent.twitter} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-spark-black text-white rounded-xl font-bold text-xs hover:bg-spark-red transition-all">
                                                     Twitter
                                                 </a>
                                             )}
                                             {selectedStudent.linkedin && (
-                                                <a href={selectedStudent.linkedin} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-white rounded-xl font-bold text-xs hover:bg-spark-red hover:text-white transition-all">
+                                                <a href={selectedStudent.linkedin} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-spark-black text-white rounded-xl font-bold text-xs hover:bg-spark-red transition-all">
                                                     LinkedIn
                                                 </a>
                                             )}
@@ -781,6 +1324,93 @@ const BrandDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
                 userRole="Brand"
                 onContact={handleContactHost}
             />
+            {/* ===== ALLOCATION MODAL ===== */}
+            {showAllocationModal && allocationTarget && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-[var(--bg-primary)] rounded-[2.5rem] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 border border-[var(--border-color)]">
+                        <div className="p-6 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-secondary)]/50">
+                            <div>
+                                <h3 className="text-lg font-black text-[var(--text-primary)]">Add to Campaign</h3>
+                                <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest mt-1">Talent: {allocationTarget.name}</p>
+                            </div>
+                            <button onClick={() => { setShowAllocationModal(false); setAllocationTarget(null); setShowCreateInModal(false); }} className="w-8 h-8 bg-spark-black text-white rounded-full flex items-center justify-center hover:bg-gray-800 transition-all">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                        
+                        <div className="p-6 space-y-5">
+                            {showCreateInModal ? (
+                                <form onSubmit={handleInlineCreateCampaign} className="space-y-4">
+                                    <div>
+                                        <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Campaign Title</label>
+                                        <input required type="text" value={inlineCreateForm.title} onChange={e => setInlineCreateForm(p => ({ ...p, title: e.target.value }))} className="w-full px-4 py-3 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl font-bold outline-none focus:border-spark-red text-sm" placeholder="e.g. Back to School Promo" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Total Budget (₦)</label>
+                                            <input required type="number" min="0" value={inlineCreateForm.budget} onChange={e => setInlineCreateForm(p => ({ ...p, budget: e.target.value }))} className="w-full px-4 py-3 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl font-bold outline-none focus:border-spark-red text-sm" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Deadline</label>
+                                            <input required type="date" value={inlineCreateForm.deadline} onChange={e => setInlineCreateForm(p => ({ ...p, deadline: e.target.value }))} className="w-full px-4 py-3 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl font-bold outline-none focus:border-spark-red text-sm" />
+                                        </div>
+                                    </div>
+                                    <div className="pt-2 flex gap-3">
+                                        <button type="button" onClick={() => setShowCreateInModal(false)} className="flex-1 py-3 bg-spark-black text-white font-black text-xs uppercase tracking-wider rounded-xl hover:bg-gray-800">Cancel</button>
+                                        <button type="submit" disabled={inlineCreateSubmitting} className="flex-1 py-3 bg-spark-black text-white font-black text-xs uppercase tracking-wider rounded-xl hover:bg-gray-800 disabled:opacity-50">
+                                            {inlineCreateSubmitting ? 'Creating...' : 'Create & Lock'}
+                                        </button>
+                                    </div>
+                                </form>
+                            ) : (
+                                <>
+                                    <div>
+                                        <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Select Campaign</label>
+                                        <div className="flex gap-2">
+                                            <select 
+                                                value={allocationForm.campaignId} 
+                                                onChange={e => setAllocationForm(p => ({ ...p, campaignId: e.target.value }))}
+                                                className="flex-1 px-4 py-3 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl font-bold text-sm outline-none focus:border-spark-red"
+                                            >
+                                                <option value="" disabled>Choose a campaign...</option>
+                                                {campaigns.map((c: any) => <option key={c.id} value={c.id}>{c.title}</option>)}
+                                            </select>
+                                            <button onClick={() => setShowCreateInModal(true)} className="px-4 bg-spark-red text-white font-black text-xl rounded-xl hover:bg-red-700 transition-all flex-shrink-0" title="Create New Campaign">+</button>
+                                        </div>
+                                        {allocationForm.campaignId && (() => {
+                                            const c = campaigns.find((x: any) => x.id === allocationForm.campaignId);
+                                            if (!c) return null;
+                                            const stats = getCampaignBudgetStats(c);
+                                            return (
+                                                <p className="text-[10px] text-[var(--text-secondary)] font-bold mt-2">Remaining Budget: <span className="text-green-600">₦{stats.remaining.toLocaleString()}</span></p>
+                                            );
+                                        })()}
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Allocation Amount (₦)</label>
+                                        <input 
+                                            type="number" 
+                                            min="0"
+                                            placeholder="e.g. 15000"
+                                            value={allocationForm.amount} 
+                                            onChange={e => setAllocationForm(p => ({ ...p, amount: e.target.value }))}
+                                            className="w-full px-4 py-3 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl font-bold text-lg outline-none focus:border-spark-red"
+                                        />
+                                        <p className="text-[10px] text-[var(--text-secondary)] mt-2">This amount will be deducted from the campaign budget and locked for {allocationTarget.name}.</p>
+                                    </div>
+                                    <button 
+                                        onClick={handleAllocateInfluencer}
+                                        disabled={allocationSubmitting || !allocationForm.campaignId || !allocationForm.amount}
+                                        className="w-full py-4 mt-2 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-red-100 flex items-center justify-center gap-2"
+                                    >
+                                        {allocationSubmitting ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"/> : 'Confirm Allocation'}
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {renderContent()}
         </DashboardShell>

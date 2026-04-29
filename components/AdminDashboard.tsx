@@ -1,8 +1,11 @@
-
 import React, { useState, useEffect } from 'react';
 import DashboardShell from './DashboardShell';
-import { apiClient } from '../firebase';
+import { db, auth, collection, query, where, getDocs, limit, doc, getDoc, apiClient, orderBy, updateDoc, deleteDoc } from '../firebase';
 import { UserRole } from '../types';
+import ProfileView from './ProfileView';
+import DashboardPlaceholder from './DashboardPlaceholder';
+import { WalletService } from '../WalletService';
+import { BarChart3, Users, Megaphone, Building2, Shield, Wallet, Search, ArrowUpRight, ArrowDownLeft, Clock, CheckCircle2, XCircle, ArrowRight } from 'lucide-react';
 
 interface AdminStats {
     users: number;
@@ -11,6 +14,9 @@ interface AdminStats {
     roles: Record<string, number>;
     rewardPool: number;
     pendingProposals: number;
+    totalUsers: number;
+    activeGigs: number;
+    totalEscrow: number;
 }
 
 interface RecentUser {
@@ -34,7 +40,12 @@ interface Partnership {
     createdAt: string;
 }
 
-const AdminDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: () => void }> = ({ onNavigate, onLogout }) => {
+const AdminDashboard: React.FC<{ 
+    onNavigate: (page: string) => void, 
+    onLogout: () => void,
+    isDarkMode: boolean,
+    toggleTheme: () => void
+}> = ({ onNavigate, onLogout, isDarkMode, toggleTheme }) => {
     const [stats, setStats] = useState<AdminStats | null>(null);
     const [recentUsers, setRecentUsers] = useState<RecentUser[]>([]);
     const [partnerships, setPartnerships] = useState<Partnership[]>([]);
@@ -83,8 +94,8 @@ const AdminDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
     );
 
     const sidebarItems = [
-        { id: 'overview', label: 'Network Overview', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v16a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h14v2a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg> },
-        { id: 'proposals', label: 'Proposal Monitor', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg> },
+        { id: 'overview', label: 'Network Overview', icon: <BarChart3 className="w-5 h-5" /> },
+        { id: 'proposals', label: 'Proposal Monitor', icon: <Megaphone className="w-5 h-5" /> },
     ];
 
     const renderContent = () => {
@@ -108,68 +119,45 @@ const AdminDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
         switch (currentView) {
             case 'proposals':
                 return (
-                    <div className="bg-white rounded-[3rem] border border-gray-100 shadow-sm p-10 animate-in slide-in-from-bottom-4 duration-500">
-                        <div className="flex justify-between items-center mb-10">
-                            <div>
-                                <h3 className="text-3xl font-black text-spark-black mb-2">Partnership Monitor</h3>
-                                <p className="text-spark-gray font-bold">Real-time view of all collaborations across the Campus Spark network.</p>
-                            </div>
-                            <div className="bg-spark-red/5 px-6 py-3 rounded-2xl border border-spark-red/10">
-                                <span className="text-spark-red font-black text-xl">{stats?.pendingProposals}</span>
-                                <span className="text-spark-red/60 font-bold ml-2 uppercase tracking-widest text-xs">Pending Review</span>
-                            </div>
-                        </div>
-
+                    <div className="bg-[var(--bg-primary)] rounded-[3rem] border border-[var(--border-color)] shadow-sm p-10 animate-in slide-in-from-bottom-4 duration-500">
                         <div className="space-y-6">
                             {partnerships.length === 0 ? (
-                                <div className="text-center py-20">
-                                    <div className="text-6xl mb-4">📜</div>
-                                    <p className="text-spark-gray font-bold italic text-lg">No active partnerships in the network.</p>
-                                </div>
+                                <DashboardPlaceholder
+                                    title="No active partnerships"
+                                    icon={<Clock className="w-10 h-10" />}
+                                    description="No active partnerships in the network."
+                                />
                             ) : (
                                 partnerships.map((p) => (
-                                    <div key={p.id} className="p-8 bg-gray-50 rounded-[2.5rem] border border-gray-100 flex items-center justify-between group hover:bg-white hover:shadow-xl hover:shadow-gray-100 transition-all duration-300">
-                                        <div className="flex items-center space-x-12">
-                                            <div className="flex items-center -space-x-4">
-                                                <div className="w-16 h-16 bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center text-xl font-black text-spark-red z-10 uppercase">
+                                    <div key={p.id} className="p-8 bg-[var(--bg-secondary)] rounded-[2.5rem] border border-[var(--border-color)] flex items-center justify-between group hover:bg-[var(--bg-primary)] hover:shadow-xl hover:shadow-gray-100 transition-all duration-300">
+                                        <div className="flex items-center gap-6">
+                                            <div className="flex -space-x-3 items-center">
+                                                <div className="w-16 h-16 bg-[var(--bg-primary)] rounded-2xl shadow-sm border border-[var(--border-color)] flex items-center justify-center text-xl font-black text-spark-red z-10 uppercase">
                                                     {(p.senderName || '?').charAt(0)}
                                                 </div>
-                                                <div className="w-16 h-16 bg-spark-red/10 rounded-2xl border-2 border-dashed border-spark-red/30 flex items-center justify-center text-xl">🤝</div>
-                                                <div className="w-16 h-16 bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center text-xl font-black text-blue-600 uppercase">
+                                                <div className="w-16 h-16 bg-spark-red/10 rounded-2xl border-2 border-dashed border-spark-red/30 flex items-center justify-center text-xl"><Building2 className="w-6 h-6 text-spark-red" /></div>
+                                                <div className="w-16 h-16 bg-[var(--bg-primary)] rounded-2xl shadow-sm border border-[var(--border-color)] flex items-center justify-center text-xl font-black text-blue-600 uppercase">
                                                     {(p.recipientName || '?').charAt(0)}
                                                 </div>
                                             </div>
                                             <div>
-                                                <div className="flex items-center space-x-3 mb-1">
-                                                    <span className="font-black text-spark-black text-lg">{p.senderName}</span>
-                                                    <span className="text-spark-gray opacity-40">➔</span>
-                                                    <span className="font-black text-spark-black text-lg">{p.recipientName}</span>
-                                                </div>
-                                                <p className="text-[10px] font-black text-spark-gray uppercase tracking-widest mb-2">
-                                                    {p.senderRole} • {new Date(p.createdAt).toLocaleDateString()}
-                                                </p>
+                                                <h4 className="text-xl font-black text-[var(--text-primary)] mb-1">{p.senderName} <ArrowRight className="inline w-5 h-5 text-gray-400 mx-2" /> {p.recipientName}</h4>
                                                 <div className="flex gap-2">
                                                     {p.budget && (
                                                         <span className="inline-block px-3 py-1 bg-green-50 text-green-700 text-[10px] font-bold rounded-lg border border-green-100">
-                                                            💰 {p.budget}
+                                                            <Wallet className="w-3 h-3 inline mr-1" /> {p.budget}
                                                         </span>
                                                     )}
                                                     {p.timeline && (
                                                         <span className="inline-block px-3 py-1 bg-blue-50 text-blue-700 text-[10px] font-bold rounded-lg border border-blue-100">
-                                                            ⏱️ {p.timeline}
+                                                            <Clock className="w-3 h-3 inline mr-1" /> {p.timeline}
                                                         </span>
                                                     )}
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="text-right flex flex-col items-end gap-2">
-                                            <span className={`px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border ${p.status === 'accepted' ? 'bg-green-100 text-green-700 border-green-200' :
-                                                p.status === 'rejected' ? 'bg-red-100 text-red-700 border-red-200' :
-                                                    'bg-yellow-100 text-yellow-700 border-yellow-200'
-                                                }`}>
-                                                {p.status}
-                                            </span>
-                                            <p className="text-[10px] text-spark-gray italic max-w-xs">{p.proposalMessage.substring(0, 60)}...</p>
+                                        <div className="flex items-center gap-4">
+                                            <span className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${p.status === 'accepted' ? 'bg-green-500 text-white' : p.status === 'rejected' ? 'bg-spark-red text-white' : 'bg-gray-100 text-gray-500'}`}>{p.status}</span>
                                         </div>
                                     </div>
                                 ))
@@ -181,41 +169,41 @@ const AdminDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
                 return (
                     <>
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                            <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm relative overflow-hidden group">
+                            <div className="bg-[var(--bg-primary)] p-8 rounded-3xl border border-[var(--border-color)] shadow-sm relative overflow-hidden group">
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-spark-red/5 rounded-full -mr-16 -mt-16 group-hover:scale-110 transition-transform duration-500"></div>
-                                <p className="text-spark-gray font-bold text-xs uppercase tracking-wider relative z-10">Total Network</p>
-                                <p className="text-4xl font-black text-spark-black mt-2 relative z-10">{stats?.users}</p>
+                                <p className="text-[var(--text-secondary)] font-bold text-xs uppercase tracking-wider relative z-10">Total Network</p>
+                                <p className="text-4xl font-black text-[var(--text-primary)] mt-2 relative z-10">{stats?.users}</p>
                                 <div className="mt-4 flex gap-2 relative z-10">
-                                    <span className="text-[10px] bg-spark-red/10 text-spark-red px-2 py-0.5 rounded-full font-black">A: {stats?.roles['Ambassador'] || 0}</span>
-                                    <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-black">B: {stats?.roles['Brand'] || 0}</span>
-                                    <span className="text-[10px] bg-green-50 text-green-600 px-2 py-0.5 rounded-full font-black">O: {stats?.roles['Student Organization'] || 0}</span>
+                                    <span className="text-[10px] bg-spark-red/10 text-spark-red px-2 py-0.5 rounded-full font-black border border-spark-red/20">A: {stats?.roles?.['Ambassador'] || 0}</span>
+                                    <span className="text-[10px] bg-blue-500/10 text-blue-600 px-2 py-0.5 rounded-full font-black border border-blue-500/20">B: {stats?.roles?.['Brand'] || 0}</span>
+                                    <span className="text-[10px] bg-green-500/10 text-green-600 px-2 py-0.5 rounded-full font-black border border-green-500/20">O: {stats?.roles?.['Student Organization'] || 0}</span>
                                 </div>
                             </div>
-                            <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm relative overflow-hidden group">
+                            <div className="bg-[var(--bg-primary)] p-8 rounded-3xl border border-[var(--border-color)] shadow-sm relative overflow-hidden group">
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full -mr-16 -mt-16 group-hover:scale-110 transition-transform duration-500"></div>
-                                <p className="text-spark-gray font-bold text-xs uppercase tracking-wider relative z-10">Total Reward Pool</p>
-                                <p className="text-4xl font-black text-spark-black mt-2 relative z-10">₦{(stats?.rewardPool || 0).toLocaleString()}</p>
-                                <p className="text-[10px] text-spark-gray mt-2 font-black uppercase tracking-widest relative z-10">Distributed across {stats?.gigs} gigs</p>
+                                <p className="text-[var(--text-secondary)] font-bold text-xs uppercase tracking-wider relative z-10">Total Reward Pool</p>
+                                <p className="text-4xl font-black text-[var(--text-primary)] mt-2 relative z-10">₦{(stats?.rewardPool || 0).toLocaleString()}</p>
+                                <p className="text-[10px] text-[var(--text-secondary)] mt-2 font-black uppercase tracking-widest relative z-10">Distributed across {stats?.gigs} gigs</p>
                             </div>
-                            <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm relative overflow-hidden group">
+                            <div className="bg-[var(--bg-primary)] p-8 rounded-3xl border border-[var(--border-color)] shadow-sm relative overflow-hidden group">
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/5 rounded-full -mr-16 -mt-16 group-hover:scale-110 transition-transform duration-500"></div>
-                                <p className="text-spark-gray font-bold text-xs uppercase tracking-wider relative z-10">Network Events</p>
-                                <p className="text-4xl font-black text-spark-black mt-2 relative z-10">{stats?.events}</p>
-                                <p className="text-[10px] text-spark-gray mt-2 font-black uppercase tracking-widest relative z-10">Live on campus</p>
+                                <p className="text-[var(--text-secondary)] font-bold text-xs uppercase tracking-wider relative z-10">Network Events</p>
+                                <p className="text-4xl font-black text-[var(--text-primary)] mt-2 relative z-10">{stats?.events}</p>
+                                <p className="text-[10px] text-[var(--text-secondary)] mt-2 font-black uppercase tracking-widest relative z-10">Live on campus</p>
                             </div>
-                            <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm relative overflow-hidden group">
+                            <div className="bg-[var(--bg-primary)] p-8 rounded-3xl border border-[var(--border-color)] shadow-sm relative overflow-hidden group">
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/5 rounded-full -mr-16 -mt-16 group-hover:scale-110 transition-transform duration-500"></div>
-                                <p className="text-spark-gray font-bold text-xs uppercase tracking-wider relative z-10">Pending Partnerships</p>
-                                <p className="text-4xl font-black text-spark-black mt-2 relative z-10">{stats?.pendingProposals}</p>
+                                <p className="text-[var(--text-secondary)] font-bold text-xs uppercase tracking-wider relative z-10">Pending Partnerships</p>
+                                <p className="text-4xl font-black text-[var(--text-primary)] mt-2 relative z-10">{stats?.pendingProposals}</p>
                                 <p className="text-[10px] text-spark-red mt-2 font-black uppercase tracking-widest relative z-10 animate-pulse">Action Required</p>
                             </div>
                         </div>
 
-                        <div className="bg-white rounded-[3rem] border border-gray-100 shadow-sm overflow-hidden">
+                        <div className="bg-[var(--bg-primary)] rounded-[3rem] border border-[var(--border-color)] shadow-sm overflow-hidden">
                             <div className="p-8 border-b border-gray-50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                 <div>
-                                    <h3 className="text-2xl font-black text-spark-black">User Management</h3>
-                                    <p className="text-spark-gray font-bold text-sm">Monitor and moderate network participants.</p>
+                                    <h3 className="text-2xl font-black text-[var(--text-primary)]">User Management</h3>
+                                    <p className="text-[var(--text-secondary)] font-bold text-sm">Monitor and moderate network participants.</p>
                                 </div>
                                 <div className="flex gap-4 w-full md:w-auto">
                                     <div className="relative flex-1 md:w-64">
@@ -224,7 +212,7 @@ const AdminDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
                                             placeholder="Search directory..."
                                             value={searchTerm}
                                             onChange={(e) => setSearchTerm(e.target.value)}
-                                            className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-spark-red/20 transition-all"
+                                            className="w-full pl-10 pr-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-spark-red/20 transition-all"
                                         />
                                         <svg className="w-5 h-5 absolute left-3 top-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                                     </div>
@@ -236,42 +224,42 @@ const AdminDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
                             <div className="overflow-x-auto">
                                 <table className="w-full">
                                     <thead>
-                                        <tr className="bg-gray-50/50">
-                                            <th className="px-8 py-4 text-left text-xs font-black text-spark-gray uppercase tracking-widest">User Profile</th>
-                                            <th className="px-8 py-4 text-left text-xs font-black text-spark-gray uppercase tracking-widest">Platform Role</th>
-                                            <th className="px-8 py-4 text-left text-xs font-black text-spark-gray uppercase tracking-widest">Join Date</th>
-                                            <th className="px-8 py-4 text-right text-xs font-black text-spark-gray uppercase tracking-widest">Actions</th>
+                                        <tr className="bg-[var(--bg-secondary)]/50">
+                                            <th className="px-8 py-4 text-left text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest">User Profile</th>
+                                            <th className="px-8 py-4 text-left text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest">Platform Role</th>
+                                            <th className="px-8 py-4 text-left text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest">Join Date</th>
+                                            <th className="px-8 py-4 text-right text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-50">
                                         {filteredUsers.length === 0 ? (
                                             <tr>
-                                                <td colSpan={4} className="px-8 py-20 text-center text-spark-gray font-bold italic">No users found matching your search.</td>
+                                                <td colSpan={4} className="px-8 py-20 text-center text-[var(--text-secondary)] font-bold italic">No users found matching your search.</td>
                                             </tr>
                                         ) : (
                                             filteredUsers.map((user) => (
-                                                <tr key={user.id} className="hover:bg-gray-50/50 transition-colors group">
+                                                <tr key={user.id} className="hover:bg-[var(--bg-secondary)]/50 transition-colors group">
                                                     <td className="px-8 py-5">
                                                         <div className="flex items-center space-x-3">
-                                                            <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center font-black text-spark-red uppercase">
+                                                            <div className="w-10 h-10 bg-[var(--bg-tertiary)] rounded-xl flex items-center justify-center font-black text-spark-red uppercase">
                                                                 {(user.name || '?').charAt(0)}
                                                             </div>
                                                             <div>
-                                                                <p className="font-black text-spark-black">{user.name}</p>
-                                                                <p className="text-xs text-spark-gray font-bold opacity-60">{user.email}</p>
+                                                                <p className="font-black text-[var(--text-primary)]">{user.name}</p>
+                                                                <p className="text-xs text-[var(--text-secondary)] font-bold opacity-60">{user.email}</p>
                                                             </div>
                                                         </div>
                                                     </td>
                                                     <td className="px-8 py-5">
-                                                        <span className={`px-3 py-1 text-[10px] font-black rounded-lg uppercase tracking-wider border ${user.role === 'Brand' ? 'bg-blue-50 text-blue-600 border-blue-100' :
-                                                                user.role === 'Student Organization' ? 'bg-green-50 text-green-600 border-green-100' :
-                                                                    'bg-red-50 text-spark-red border-red-100'
-                                                            }`}>
-                                                            {user.role}
-                                                        </span>
+                                                         <span className={`px-3 py-1 text-[10px] font-black rounded-lg uppercase tracking-wider border ${user.role === 'Brand' ? 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20' :
+                                                                 user.role === 'Student Organization' ? 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20' :
+                                                                     'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20'
+                                                             }`}>
+                                                             {user.role}
+                                                         </span>
                                                     </td>
                                                     <td className="px-8 py-5">
-                                                        <p className="text-spark-gray text-xs font-bold">{new Date(user.createdAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                                                        <p className="text-[var(--text-secondary)] text-xs font-bold">{new Date(user.createdAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}</p>
                                                     </td>
                                                     <td className="px-8 py-5 text-right">
                                                         <button
@@ -303,6 +291,8 @@ const AdminDashboard: React.FC<{ onNavigate: (page: string) => void, onLogout: (
             sidebarItems={sidebarItems}
             userName="Administrator"
             userSub="System Monitor"
+            isDarkMode={isDarkMode}
+            toggleTheme={toggleTheme}
         >
             <div className="space-y-8">
                 {renderContent()}

@@ -1,35 +1,46 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { HOW_IT_WORKS_CONTENT } from '../constants';
-import { HowItWorksStep } from '../types';
 import { UserType } from '../types';
 
 const HowItWorksSection: React.FC = () => {
-  const brandSteps = HOW_IT_WORKS_CONTENT[UserType.Brands];
+  const [activeTab, setActiveTab] = useState<UserType>(UserType.Brands);
 
   return (
-    <section id="how-it-works" className="py-24 bg-white">
+    <section id="how-it-works" className="py-24 bg-[var(--bg-primary)]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
-          <h2 className="text-3xl font-extrabold text-spark-black sm:text-4xl">
-            Get Started in 4 Simple Steps
+          <h2 className="text-2xl md:text-4xl font-fancy font-black text-[var(--text-primary)] mb-6">
+            How it <span className="text-gradient-red italic">Works</span>
           </h2>
-          <p className="mt-4 max-w-2xl mx-auto text-xl text-spark-gray">
-            Launch your first campus campaign in minutes. Here’s how easy it is for brands to get started.
-          </p>
+          
+          <div className="flex items-center justify-center mt-10">
+            <div className="inline-flex p-1 bg-spark-red/5 rounded-2xl border border-spark-red/10">
+              {[UserType.Brands, UserType.Ambassadors, UserType.Clubs].map((type) => (
+                <button
+                  key={type}
+                  onClick={() => setActiveTab(type)}
+                  className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                    activeTab === type ? 'bg-spark-red text-white shadow-lg' : 'text-[var(--text-secondary)] hover:text-spark-red'
+                  }`}
+                >
+                  {type === UserType.Ambassadors ? 'Influencers' : type === UserType.Clubs ? 'Organizers' : 'Brands'}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="max-w-6xl mx-auto">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-12">
-            {brandSteps.map((step: HowItWorksStep, index: number) => (
-              <div key={index} className="text-center relative">
-                <div className="flex items-center justify-center bg-red-50 text-spark-red w-20 h-20 rounded-2xl mx-auto mb-6 font-extrabold text-3xl shadow-sm border border-red-100">
-                  {index + 1}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            {HOW_IT_WORKS_CONTENT[activeTab].map((step, index) => (
+              <div key={index} className="relative group">
+                <div className="bg-[var(--bg-primary)] p-8 rounded-[2rem] border border-[var(--border-color)] h-full transition-all duration-500 hover:shadow-2xl hover:shadow-spark-red/5 card-hover">
+                  <div className="w-10 h-10 bg-spark-red/10 rounded-xl flex items-center justify-center text-spark-red font-black text-base mb-6 border border-spark-red/10">
+                    {index + 1}
+                  </div>
+                  <h3 className="text-lg font-bold text-[var(--text-primary)] mb-3">{step.title}</h3>
+                  <p className="text-[var(--text-secondary)] text-xs leading-relaxed font-medium">{step.description}</p>
                 </div>
-                <h3 className="text-xl font-bold text-spark-black mb-3">{step.title}</h3>
-                <p className="text-spark-gray leading-relaxed text-sm px-4">{step.description}</p>
-                {index < 3 && (
-                  <div className="hidden md:block absolute top-10 left-[calc(50%+4rem)] w-[calc(100%-8rem)] border-t-2 border-dashed border-red-100"></div>
-                )}
               </div>
             ))}
           </div>

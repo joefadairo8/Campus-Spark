@@ -6,7 +6,7 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged
 } from 'firebase/auth';
-import { getFirestore, collection as firebaseCollection, doc as firebaseDoc, getDocs as firebaseGetDocs, getDoc as firebaseGetDoc, setDoc as firebaseSetDoc, addDoc as firebaseAddDoc, updateDoc as firebaseUpdateDoc, deleteDoc as firebaseDeleteDoc, query as firebaseQuery, where as firebaseWhere, or as firebaseOr, limit as firebaseLimit, orderBy as firebaseOrderBy, serverTimestamp as firebaseTimestamp } from 'firebase/firestore';
+import { getFirestore, collection as firebaseCollection, doc as firebaseDoc, getDocs as firebaseGetDocs, getDoc as firebaseGetDoc, setDoc as firebaseSetDoc, addDoc as firebaseAddDoc, updateDoc as firebaseUpdateDoc, deleteDoc as firebaseDeleteDoc, query as firebaseQuery, where as firebaseWhere, or as firebaseOr, limit as firebaseLimit, orderBy as firebaseOrderBy, serverTimestamp as firebaseTimestamp, runTransaction } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getAnalytics } from "firebase/analytics";
 
@@ -95,11 +95,13 @@ export const addDoc = async (colName: any, data: any) => {
 };
 export const updateDoc = firebaseUpdateDoc;
 export const deleteDoc = firebaseDeleteDoc;
+export { runTransaction };
 
 // API Client for components that need it
 export const apiClient = {
   auth,
   db,
+  runTransaction,
   collection: (name: string) => firebaseCollection(db, name),
   doc: (col: string, id: string) => firebaseDoc(db, col, id),
   getDocs: async (q: any) => {
@@ -206,6 +208,48 @@ export const apiClient = {
 },
 post: async (path: string, data: any) => {
   const parts = path.replace(/^\//, '').split('/');
+  
+  // Wallet Logic: Approve Report (Escrow -> Influencer)
+  if (parts[0] === 'gigs' && parts[2] === 'approve-report') {
+    const gigId = parts[1];
+    return await runTransaction(db, async (transaction) => {
+      const gigRef = firebaseDoc(db, 'gigs', gigId);
+      const gigSnap = await transaction.get(gigRef);
+      if (!gigSnap.exists()) throw new Error('Gig not found');
+      const gigData = gigSnap.data() as any;
+
+      const brandRef = firebaseDoc(db, 'wallets', gigData.brandId);
+      const influencerRef = firebaseDoc(db, 'wallets', gigData.studentId);
+      
+      const bSnap = await transaction.get(brandRef);
+      const iSnap = await transaction.get(influencerRef);
+
+      const bData = bSnap.exists() ? (bSnap.data() as any) : { balance: 0, pending: 0, escrow: 0 };
+      const iData = iSnap.exists() ? (iSnap.data() as any) : { balance: 0, pending: 0, escrow: 0 };
+      const amount = Number(gigData.reward);
+
+      transaction.update(brandRef, { 
+        escrow: (bData.escrow || 0) - amount, 
+        lastUpdated: firebaseTimestamp() 
+      });
+      transaction.set(influencerRef, { 
+        ...iData, 
+        balance: (iData.balance || 0) + amount, 
+        lastUpdated: firebaseTimestamp() 
+      });
+      
+      // Record Influencer Transaction
+      const iTransRef = firebaseDoc(firebaseCollection(db, 'transactions'));
+      transaction.set(iTransRef, {
+        userId: gigData.studentId, amount, type: 'credit', status: 'completed',
+        description: `Earnings: ${gigData.title}`, relatedUserId: gigData.brandId, createdAt: firebaseTimestamp()
+      });
+
+      transaction.update(gigRef, { status: 'completed' });
+      return { data: { success: true } };
+    });
+  }
+
   const colRef = firebaseCollection(db, parts[0]);
   let enrichedData = { ...data, createdAt: new Date().toISOString() };
 
@@ -216,7 +260,6 @@ post: async (path: string, data: any) => {
           const userDoc = await firebaseGetDoc(firebaseDoc(db, 'users', currentUser.uid));
           const senderProfile = userDoc.exists() ? (userDoc.data() as any) : {};
           
-          // Use auth data as fallback if profile document is missing or incomplete
           const senderName = senderProfile.name || senderProfile.fullName || currentUser.displayName || 'User';
           const senderRole = senderProfile.role || 'Member';
           
@@ -254,6 +297,46 @@ post: async (path: string, data: any) => {
 },
 patch: async (path: string, data: any = {}) => {
   const parts = path.replace(/^\//, '').split('/');
+  
+  // Wallet Logic: Accept Application (Balance -> Escrow)
+  if (parts[0] === 'gigs' && parts[2] === 'applications' && data.status === 'accepted') {
+    const gigId = parts[1];
+    return await runTransaction(db, async (transaction) => {
+      const gigRef = firebaseDoc(db, 'gigs', gigId);
+      const gigSnap = await transaction.get(gigRef);
+      const gigData = gigSnap.data() as any;
+      const amount = Number(gigData.reward);
+
+      const brandWalletRef = firebaseDoc(db, 'wallets', gigData.brandId);
+      const bSnap = await transaction.get(brandWalletRef);
+
+      if (!bSnap.exists() || bSnap.data().balance < amount) {
+        throw new Error('Insufficient balance in brand wallet. Please top up first.');
+      }
+
+      const bData = bSnap.exists() ? (bSnap.data() as any) : { balance: 0, pending: 0, escrow: 0 };
+      transaction.update(brandWalletRef, {
+        balance: (bData.balance || 0) - amount,
+        escrow: (bData.escrow || 0) + amount,
+        lastUpdated: firebaseTimestamp()
+      });
+
+      // Record Brand Transaction
+      const bTransRef = firebaseDoc(firebaseCollection(db, 'transactions'));
+      transaction.set(bTransRef, {
+        userId: gigData.brandId, amount, type: 'debit', status: 'escrow',
+        description: `Payment locked: ${gigData.title}`, createdAt: firebaseTimestamp()
+      });
+
+      // Update Gig and Application
+      transaction.update(gigRef, { status: 'in_progress', studentId: data.studentId });
+      const appRef = firebaseDoc(db, 'applications', parts[3]);
+      transaction.update(appRef, { status: 'accepted' });
+
+      return { data: { success: true } };
+    });
+  }
+
   if (parts.length >= 2) {
     const docRef = firebaseDoc(db, parts[0], parts[1]);
     if (data) {

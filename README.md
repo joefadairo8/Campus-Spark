@@ -94,7 +94,16 @@ service cloud.firestore {
 
 ---
 
-## 🔧 Recent Updates (April 2026)
+### Professional Creator Workspace (May 2026)
+- 🚀 **Influencer Dashboard Overhaul**: Transformed the student dashboard into a professional creator hub.
+- 💰 **Wallet & Earning Strip**: Integrated real-time Available vs Pending balance visibility in the dashboard header.
+- 📦 **Campaign Execution Flow**: Added "My Campaigns" view for influencers to manage work, submit deliverables, and track approval status.
+- 🏧 **Withdrawal System**: Implemented bank-based withdrawal request flow for influencers.
+- ✅ **Theme Architecture Stabilization**: Replaced hardcoded Tailwind color classes with a centralized CSS variable system (`--bg-primary`, `--text-primary`, etc.) for perfect consistency across Light and Dark modes.
+- ✅ **Improved Accessibility**: Resolved visibility issues in Light Mode where certain texts and buttons were previously "invisible" or low-contrast.
+- ✅ **Unified Design System**: Standardized all UI components (cards, modals, inputs) to react dynamically to theme changes without layout shifts.
+- ✅ **Neutral Pro-Creator Aesthetic**: Refined the UI to be role-neutral, ensuring the platform feels premium for both students and professional brands.
+- ✅ **Solid Button Standardization**: Converted all ghost, outlined, and muted buttons to solid **spark-black** or **spark-red** to ensure perfect visibility and high contrast in all theme modes.
 
 ### Bug Fixes
 - ✅ Fixed missing `apiClient` export in `firebase.ts` that was causing app-wide crashes
@@ -123,6 +132,7 @@ service cloud.firestore {
 ### Firebase Setup
 - ✅ Created Cloud Firestore database (us-central1)
 - ✅ Configured Firestore security rules for all collections
+- ✅ Added `campaignAllocations` and `wallets` collections for financial tracking
 
 ---
 
@@ -154,5 +164,5 @@ https://campus-spark-3a55d.web.app
 ---
 
 ---
-*Last Updated: April 2026*
+*Last Updated: April 29, 2026*
 *Created with ❤️ for the Nigerian Campus Community.*

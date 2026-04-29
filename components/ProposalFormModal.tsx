@@ -119,14 +119,14 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
 
     return (
         <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-300">
-            <div className="bg-white w-full max-w-2xl rounded-[2rem] sm:rounded-[4rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300 my-auto">
+            <div className="bg-[var(--bg-primary)] w-full max-w-2xl rounded-[2rem] sm:rounded-[4rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300 my-auto border border-[var(--border-color)]">
                 {/* Close Button */}
                 <button
                     onClick={onClose}
                     disabled={submitting}
-                    className="absolute top-6 right-6 sm:top-8 sm:right-8 w-12 h-12 bg-gray-100 hover:bg-red-50 rounded-2xl flex items-center justify-center transition-all z-10 disabled:opacity-50"
+                    className="absolute top-6 right-6 sm:top-8 sm:right-8 w-12 h-12 bg-[var(--bg-primary)] border border-[var(--border-color)] hover:bg-red-50 rounded-2xl flex items-center justify-center transition-all z-10 disabled:opacity-50"
                 >
-                    <span className="text-2xl text-spark-gray hover:text-spark-red">×</span>
+                    <span className="text-2xl text-[var(--text-secondary)] hover:text-spark-red">×</span>
                 </button>
 
                 {/* Header */}
@@ -138,14 +138,14 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
                 {/* Form */}
                 <form onSubmit={handleSubmit} className="p-6 sm:p-12 max-h-[60vh] overflow-y-auto">
                     {error && (
-                        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl">
-                            <p className="text-red-600 font-bold text-sm">{error}</p>
+                        <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl">
+                            <p className="text-red-700 dark:text-red-400 font-bold text-sm">{error}</p>
                         </div>
                     )}
 
                     {/* Message Field */}
                     <div className="mb-6">
-                        <label className="block text-[10px] font-black text-spark-gray uppercase tracking-widest mb-2">
+                        <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">
                             Proposal Message <span className="text-spark-red">*</span>
                         </label>
                         <textarea
@@ -153,7 +153,7 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
                             onChange={(e) => setMessage(e.target.value)}
                             placeholder="Describe your partnership proposal..."
                             rows={5}
-                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:border-spark-red focus:outline-none font-bold text-spark-black resize-none"
+                            className="w-full px-4 py-3 border-2 border-[var(--border-color)] bg-[var(--bg-primary)] rounded-2xl focus:border-spark-red focus:outline-none font-bold text-[var(--text-primary)] resize-none"
                             disabled={submitting}
                             required
                         />
@@ -161,7 +161,7 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
 
                     {/* Budget Field */}
                     <div className="mb-6">
-                        <label className="block text-[10px] font-black text-spark-gray uppercase tracking-widest mb-2">
+                        <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">
                             Budget (Optional)
                         </label>
                         <input
@@ -169,14 +169,14 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
                             value={budget}
                             onChange={(e) => setBudget(e.target.value)}
                             placeholder="e.g., ₦50,000 - ₦100,000"
-                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:border-spark-red focus:outline-none font-bold text-spark-black"
+                            className="w-full px-4 py-3 border-2 border-[var(--border-color)] bg-[var(--bg-primary)] rounded-2xl focus:border-spark-red focus:outline-none font-bold text-[var(--text-primary)]"
                             disabled={submitting}
                         />
                     </div>
 
                     {/* Timeline Field */}
                     <div className="mb-8">
-                        <label className="block text-[10px] font-black text-spark-gray uppercase tracking-widest mb-2">
+                        <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">
                             Timeline (Optional)
                         </label>
                         <input
@@ -184,21 +184,21 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
                             value={timeline}
                             onChange={(e) => setTimeline(e.target.value)}
                             placeholder="e.g., 3 months, 6 weeks"
-                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:border-spark-red focus:outline-none font-bold text-spark-black"
+                            className="w-full px-4 py-3 border-2 border-[var(--border-color)] bg-[var(--bg-primary)] rounded-2xl focus:border-spark-red focus:outline-none font-bold text-[var(--text-primary)]"
                             disabled={submitting}
                         />
                     </div>
 
                     {/* Document Upload Field */}
                     <div className="mb-8">
-                        <label className="block text-[10px] font-black text-spark-gray uppercase tracking-widest mb-2">
+                        <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">
                             Proposal Document (Optional, Max 5MB)
                         </label>
                         <input
                             type="file"
                             accept=".pdf,.doc,.docx"
                             onChange={handleFileChange}
-                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:border-spark-red focus:outline-none font-bold text-spark-gray file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-spark-red/10 file:text-spark-red hover:file:bg-spark-red/20 transition-all"
+                            className="w-full px-4 py-3 border-2 border-[var(--border-color)] bg-[var(--bg-primary)] rounded-2xl focus:border-spark-red focus:outline-none font-bold text-[var(--text-secondary)] file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-spark-red/10 file:text-spark-red hover:file:bg-spark-red/20 transition-all"
                             disabled={submitting}
                         />
                     </div>
@@ -207,7 +207,7 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
                     <button
                         type="submit"
                         disabled={submitting || !message.trim()}
-                        className="w-full py-6 bg-spark-black text-white font-black text-xl rounded-2xl hover:bg-spark-red transition-all shadow-xl shadow-red-100 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full py-6 bg-[var(--text-primary)] text-[var(--bg-primary)] font-black text-xl rounded-2xl hover:bg-spark-red hover:text-white transition-all shadow-xl flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {submitting ? (
                             <>

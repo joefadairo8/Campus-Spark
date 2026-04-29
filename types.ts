@@ -21,6 +21,15 @@ export enum UserType {
   Ambassadors = 'For Student & Professional Influencers',
 }
 
+export interface Opportunity {
+  id: string;
+  title: string;
+  amount: string;
+  type: 'Campaign' | 'Sponsorship' | 'Role' | 'Ambassador';
+  category: string;
+  company?: string;
+}
+
 export enum UserRole {
   Brand = 'Brand',
   StudentOrg = 'Student/Professional Organization',

@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { NavLink, Feature, HowItWorksContent, Testimonial, FaqItem, UserType } from './types';
+import { NavLink, Feature, HowItWorksContent, Testimonial, FaqItem, UserType, Opportunity } from './types';
 
 export const SparkIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
@@ -23,11 +23,9 @@ const UsersIcon = ({ className }: { className?: string }) => (
 );
 
 export const NAV_LINKS: NavLink[] = [
-    { label: 'How It Works', href: 'how-it-works' },
+    { label: 'About Us', href: 'about' },
     { label: 'For Brands', href: 'for-brands' },
     { label: 'For Students', href: 'for-students' },
-    { label: 'About Us', href: 'about' },
-    { label: 'Blog', href: 'blog' },
     { label: 'Opportunities', href: 'careers' },
     { label: 'Contact', href: 'contact' },
 ];
@@ -103,6 +101,13 @@ export const FAQ_ITEMS: FaqItem[] = [
 ];
 
 // Mock data for campus campaigns and gigs - REMOVED for production readiness
+
+export const LIVE_OPPORTUNITIES: Opportunity[] = [
+    { id: '1', title: 'Promote Fintech App', amount: '₦20,000', type: 'Campaign', category: 'Fintech', company: 'NeoBank' },
+    { id: '2', title: 'Campus Tech Event', amount: '₦150,000', type: 'Sponsorship', category: 'Technology', company: 'GlobalDev' },
+    { id: '3', title: 'NGO Awareness Drive', amount: '₦80,000', type: 'Campaign', category: 'Social Impact', company: 'HealthFirst' },
+    { id: '4', title: 'Brand Ambassador', amount: '₦50,000/mo', type: 'Ambassador', category: 'Lifestyle', company: 'SparkStyle' },
+];
 
 export const STATES = ["All", "Lagos", "Oyo", "Ogun", "Abuja", "Enugu", "Kaduna", "Rivers", "Edo"];
 export const UNIVERSITIES = ["All", "University of Lagos", "Obafemi Awolowo University", "Covenant University", "University of Ibadan"];

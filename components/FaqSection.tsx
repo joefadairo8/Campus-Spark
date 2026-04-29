@@ -4,20 +4,20 @@ import { FaqItem } from '../types';
 
 const AccordionItem: React.FC<{ item: FaqItem; isOpen: boolean; onClick: () => void; }> = ({ item, isOpen, onClick }) => {
     return (
-        <div className="border-b border-gray-100 last:border-0">
+        <div className="border-b border-[var(--border-color)] last:border-0">
             <button
                 onClick={onClick}
-                className="w-full flex justify-between items-center text-left py-6 px-4 hover:bg-red-50/30 transition-colors focus:outline-none rounded-xl"
+                className="w-full flex justify-between items-center text-left py-6 px-4 hover:bg-spark-red/5 transition-colors focus:outline-none rounded-2xl"
             >
-                <span className="text-lg font-bold text-spark-black">{item.question}</span>
-                <span className={`flex-shrink-0 ml-4 p-1 rounded-full bg-red-50 text-spark-red transform transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`}>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                <span className={`text-base font-bold transition-colors ${isOpen ? 'text-spark-red' : 'text-[var(--text-primary)]'}`}>{item.question}</span>
+                <span className={`flex-shrink-0 ml-4 p-2 rounded-xl transition-all duration-500 ${isOpen ? 'rotate-180 bg-spark-red/10 text-spark-red' : 'bg-spark-red/5 text-[var(--text-secondary)]'}`}>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
                 </span>
             </button>
             <div
-                className={`overflow-hidden transition-all duration-300 ease-in-out ${isOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}
+                className={`overflow-hidden transition-all duration-500 ease-in-out ${isOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}
             >
-                <div className="p-6 text-spark-gray leading-relaxed pt-0">
+                <div className="p-6 text-[var(--text-secondary)] leading-relaxed pt-0 text-sm font-medium">
                     {item.answer}
                 </div>
             </div>
@@ -33,17 +33,17 @@ const FaqSection: React.FC = () => {
     };
 
     return (
-        <section id="faq" className="py-24 bg-white">
-            <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <section id="faq" className="py-24 bg-[var(--bg-primary)]">
+            <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="text-center mb-16">
-                    <h2 className="text-3xl font-extrabold text-spark-black sm:text-4xl">
-                        Frequently Asked Questions
+                    <h2 className="text-3xl md:text-5xl font-fancy font-black text-[var(--text-primary)] mb-4">
+                        Got <span className="text-gradient-red italic">Questions?</span>
                     </h2>
-                    <p className="mt-4 max-w-2xl mx-auto text-xl text-spark-gray">
-                        Everything you need to know about Campus Spark.
+                    <p className="max-w-xl mx-auto text-base text-[var(--text-secondary)] font-medium">
+                        Everything you need to know about Spark.
                     </p>
                 </div>
-                <div className="bg-white rounded-3xl border border-gray-100 shadow-xl shadow-gray-100/50 p-4">
+                <div className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] p-2 shadow-sm">
                     {FAQ_ITEMS.map((item, index) => (
                         <AccordionItem
                             key={index}
