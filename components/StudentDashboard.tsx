@@ -14,8 +14,9 @@ const StudentDashboard: React.FC<{
     onNavigate: (page: string) => void, 
     onLogout: () => void,
     isDarkMode: boolean,
-    toggleTheme: () => void
-}> = ({ onNavigate, onLogout, isDarkMode, toggleTheme }) => {
+    toggleTheme: () => void,
+    user: any
+}> = ({ onNavigate, onLogout, isDarkMode, toggleTheme, user }) => {
     const [currentSection, setCurrentSection] = useState('dashboard');
     const [activeTab, setActiveTab] = useState('gigs');
 
@@ -141,10 +142,8 @@ const StudentDashboard: React.FC<{
             try {
                 let items: any[] = [];
                 if (activeTab === 'gigs') {
-                    console.log('Fetching gigs with status=open...');
-                    const res = await apiClient.get('gigs?status=open');
-                    console.log('Gigs API response:', res.data);
-                    items = res.data;
+                    const res = await apiClient.get('gigs');
+                    items = (res.data || []).filter((g: any) => g.status === 'open');
                 } else if (activeTab === 'brands') {
                     const res = await apiClient.get(`users?role=${encodeURIComponent(UserRole.Brand)}`);
                     items = res.data;
@@ -370,17 +369,17 @@ const StudentDashboard: React.FC<{
                             return (
                                 <div key={gig.id} className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] shadow-sm hover:shadow-xl transition-all flex flex-col p-8 group">
                                     <div className="flex justify-between items-start mb-6">
-                                        <div className="w-12 h-12 bg-spark-red/10 rounded-xl flex items-center justify-center text-xl font-black text-spark-red border border-spark-red/10">{gig.brand?.charAt(0) || '⚡'}</div>
+                                        <div className="w-12 h-12 bg-spark-red/10 rounded-xl flex items-center justify-center text-xl font-black text-spark-red border border-spark-red/10">{(gig.brand || gig.brandName || '⚡').charAt(0)}</div>
                                         <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${statusBadge.classes}`}>{statusBadge.label}</span>
                                     </div>
                                     <h3 className="font-black text-xl mb-1 group-hover:text-spark-red transition-colors text-[var(--text-primary)]">{gig.title}</h3>
-                                    <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-3">{gig.brand}</p>
-                                    <p className="text-[var(--text-secondary)] text-sm mb-6 flex-1 line-clamp-3">{gig.description}</p>
+                                    <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-3">{gig.brand || gig.brandName || 'Brand'}</p>
+                                    <p className="text-[var(--text-secondary)] text-sm mb-6 flex-1 line-clamp-3">{gig.description || gig.brief || 'No description provided.'}</p>
                                     
                                     <div className="bg-[var(--bg-secondary)] dark:bg-spark-black/20 rounded-2xl p-4 mb-6 space-y-2">
                                         <div className="flex justify-between text-[10px] font-black uppercase text-[var(--text-secondary)]">
                                             <span>Reward</span>
-                                            <span className="text-[var(--text-primary)]">₦{gig.reward?.toLocaleString()}</span>
+                                            <span className="text-[var(--text-primary)]">₦{(gig.reward || gig.budget || 0).toLocaleString()}</span>
                                         </div>
                                         <div className="flex justify-between text-[10px] font-black uppercase text-[var(--text-secondary)]">
                                             <span>Deadline</span>

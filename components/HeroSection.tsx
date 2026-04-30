@@ -44,16 +44,6 @@ const HeroSection: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavig
             </button>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center gap-6 mt-16 animate-in slide-in-from-bottom duration-1000 delay-300">
-            <div className="flex items-center gap-3 bg-[var(--bg-primary)]/40 backdrop-blur-md px-5 py-2.5 rounded-2xl border border-[var(--border-color)]">
-                <Smartphone className="w-5 h-5 text-spark-red" />
-                <span className="text-xs font-black text-[var(--text-primary)] uppercase tracking-widest">Mobile Ready</span>
-            </div>
-            <div className="flex items-center gap-3 bg-[var(--bg-primary)]/40 backdrop-blur-md px-5 py-2.5 rounded-2xl border border-[var(--border-color)]">
-                <TrendingUp className="w-5 h-5 text-spark-red" />
-                <span className="text-xs font-black text-[var(--text-primary)] uppercase tracking-widest">Growth Focused</span>
-            </div>
-          </div>
 
           <div className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-12 opacity-50">
              <div className="flex flex-col items-center">

@@ -12,11 +12,12 @@ import { WalletService, CampaignAllocation } from '../WalletService';
 import { Calendar, Wallet, BarChart3, Lock, Plus, Minus, Mail, Users, Megaphone, Inbox, TrendingUp, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
 
 const BrandDashboard: React.FC<{ 
-    onNavigate: (page: string) => void, 
+    onNavigate: (page: string) => void,
     onLogout: () => void,
     isDarkMode: boolean,
-    toggleTheme: () => void
-}> = ({ onNavigate, onLogout, isDarkMode, toggleTheme }) => {
+    toggleTheme: () => void,
+    user: any
+}> = ({ onNavigate, onLogout, isDarkMode, toggleTheme, user }) => {
     const [currentView, setCurrentView] = useState('directory');
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedState, setSelectedState] = useState('All');
@@ -168,6 +169,17 @@ const BrandDashboard: React.FC<{
             setWalletData({ available: w.balance || 0, locked: w.escrow || 0 });
         } catch (e) { /* silent */ }
     };
+
+    // Load all campaigns for this brand
+    const fetchCampaigns = useCallback(async () => {
+        if (!brandProfile?.id) return;
+        try {
+            const res = await apiClient.get(`gigs?brandId=${brandProfile.id}`);
+            setCampaigns(res.data || []);
+        } catch (e) {
+            console.error("Error fetching campaigns:", e);
+        }
+    }, [brandProfile?.id]);
 
     // Load all allocations for this brand from Firestore
     const fetchAllAllocations = async (brandId: string) => {
@@ -354,7 +366,7 @@ const BrandDashboard: React.FC<{
             await syncWalletStrip(brandProfile.id);
             
             // 3. Add to local state & select it for allocation
-            setCampaigns([newCampaign, ...campaigns]);
+            await fetchCampaigns();
             setAllocationForm({ ...allocationForm, campaignId: newCampaign.id });
             setShowCreateInModal(false);
             setInlineCreateForm({ title: '', brief: '', budget: '', deadline: '', category: 'Awareness' });
@@ -378,10 +390,9 @@ const BrandDashboard: React.FC<{
 
 
     const fetchBrandData = async () => {
-        const user = auth.currentUser;
         if (user) {
-            const userDoc = await getDoc(doc(db, "users", (user as any).uid || (user as any).id));
-            if (userDoc.exists()) setBrandProfile({ id: (user as any).uid || (user as any).id, ...userDoc.data() });
+            const userDoc = await getDoc(doc(db, "users", user.uid || user.id));
+            if (userDoc.exists()) setBrandProfile({ id: user.uid || user.id, ...userDoc.data() });
         }
     };
 
@@ -396,17 +407,20 @@ const BrandDashboard: React.FC<{
     };
 
     useEffect(() => {
-        fetchBrandData();
-        fetchProposals();
-    }, []);
+        if (user) {
+            fetchBrandData();
+            fetchProposals();
+        }
+    }, [user]);
 
-    // When profile loads, sync wallet strip and allocations
+    // When profile loads, sync wallet strip, campaigns and allocations
     useEffect(() => {
         if (brandProfile?.id) {
             syncWalletStrip(brandProfile.id);
+            fetchCampaigns();
             fetchAllAllocations(brandProfile.id);
         }
-    }, [brandProfile?.id]);
+    }, [brandProfile?.id, fetchCampaigns]);
 
     useEffect(() => {
         fetchWallet();
@@ -432,15 +446,8 @@ const BrandDashboard: React.FC<{
                 return;
             } else if (currentView === 'campaigns') {
                 setLoading(true);
-                try {
-                    // Use the newly supported brand filter
-                    const res = await apiClient.get(`gigs?brand=${encodeURIComponent(brandProfile?.name || '')}`);
-                    setCampaigns(res.data);
-                } catch (e) {
-                    console.error("Error fetching campaigns:", e);
-                } finally {
-                    setLoading(false);
-                }
+                await fetchCampaigns();
+                setLoading(false);
                 return;
             }
 
@@ -1089,6 +1096,10 @@ const BrandDashboard: React.FC<{
                                         </div>
                                         <form className="space-y-5" onSubmit={async (e) => {
                                             e.preventDefault();
+                                            if (!brandProfile?.id) {
+                                                alert('Error: Brand profile not loaded. Please wait a moment and try again.');
+                                                return;
+                                            }
                                             setCampaignSubmitting(true);
                                             try {
                                                 if (editingGig) {
@@ -1107,8 +1118,13 @@ const BrandDashboard: React.FC<{
                                                     const gigRes = await apiClient.post('gigs', {
                                                         title: campaignForm.title,
                                                         description: campaignForm.brief,
+                                                        brief: campaignForm.brief,
                                                         reward: Number(campaignForm.budget),
-                                                        brand: brandProfile?.name || campaignForm.title,
+                                                        budget: Number(campaignForm.budget),
+                                                        brandName: brandProfile.name || brandProfile.companyName || 'Brand',
+                                                        status: 'open',
+                                                        brandId: brandProfile.id,
+                                                        createdAt: new Date().toISOString()
                                                     });
                                                     const newCampaign = {
                                                         id: gigRes.data.id,
@@ -1116,7 +1132,9 @@ const BrandDashboard: React.FC<{
                                                         gigId: gigRes.data.id,
                                                         createdAt: new Date().toISOString()
                                                     };
-                                                    setCampaigns(prev => [newCampaign, ...prev]);
+                                                    await fetchCampaigns();
+                                                    setShowCampaignModal(false);
+                                                    setCampaignForm({ title: '', brief: '', budget: '', deadline: '', category: 'Awareness' });
                                                     alert('Campaign launched successfully!');
                                                 }
                                                 setShowCampaignModal(false);

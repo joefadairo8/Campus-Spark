@@ -23,26 +23,29 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-export const analytics = getAnalytics(app);
+export const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null;
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 
 // Local storage parity for existing components (optional but helpful)
 const setUser = (user: any) => {
+  if (typeof window === 'undefined') return;
   if (user) localStorage.setItem('user', JSON.stringify(user));
   else localStorage.removeItem('user');
 };
 
 // Listen for auth changes to sync localStorage
-onAuthStateChanged(auth, (user) => {
-  if (user) {
-    // Note: We'll fetch the full user profile from Firestore later if needed
-    setUser(user);
-  } else {
-    setUser(null);
-  }
-});
+if (typeof window !== 'undefined') {
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      // Note: We'll fetch the full user profile from Firestore later if needed
+      setUser(user);
+    } else {
+      setUser(null);
+    }
+  });
+}
 
 // Wrapper functions to maintain backward compatibility with existing components
 export const signInWithEmailAndPassword = async (_auth: any, email: string, password: any) => {
@@ -160,6 +163,7 @@ export const apiClient = {
   const colRef = firebaseCollection(db, parts[0]);
   let constraints: any[] = [];
 
+  // Special handling for legacy role filters
   if (params.role) {
     const ambassadorRoles = [
       'Student/Professional Influencer',
@@ -174,27 +178,30 @@ export const apiClient = {
       constraints.push(firebaseWhere('role', '==', params.role));
     }
   }
-  if (params.status) {
-    constraints.push(firebaseWhere('status', '==', params.status));
-  }
-  if (params.studentId) {
-    constraints.push(firebaseWhere('studentId', '==', params.studentId));
-  }
+
+  // Handle all other parameters dynamically as '==' filters
+  Object.keys(params).forEach(key => {
+    if (key === 'role') return; // Already handled
+    
+    // Special case for proposal involvement
+    if (key === 'senderId' && params.recipientId && parts[0] === 'proposals') {
+        // Handled below for composite 'or' query
+        return;
+    }
+    if (key === 'recipientId' && params.senderId && parts[0] === 'proposals') {
+        // Handled below
+        return;
+    }
+
+    constraints.push(firebaseWhere(key, '==', params[key]));
+  });
   
-  // Handle senderId and recipientId filters
+  // Handle senderId and recipientId OR logic for proposals
   if (params.senderId && params.recipientId && parts[0] === 'proposals') {
-    // If both are provided for proposals, we usually mean "involved in either"
     constraints.push(firebaseOr(
       firebaseWhere('senderId', '==', params.senderId),
       firebaseWhere('recipientId', '==', params.recipientId)
     ));
-  } else {
-    if (params.senderId) {
-      constraints.push(firebaseWhere('senderId', '==', params.senderId));
-    }
-    if (params.recipientId) {
-      constraints.push(firebaseWhere('recipientId', '==', params.recipientId));
-    }
   }
 
   const q = constraints.length > 0
@@ -209,6 +216,12 @@ export const apiClient = {
 post: async (path: string, data: any) => {
   const parts = path.replace(/^\//, '').split('/');
   
+  // Strip undefined fields to prevent Firestore crashes
+  const cleanData = Object.fromEntries(
+    Object.entries(data).filter(([_, v]) => v !== undefined)
+  );
+
+  let enrichedData = { ...cleanData, createdAt: new Date().toISOString() };
   // Wallet Logic: Approve Report (Escrow -> Influencer)
   if (parts[0] === 'gigs' && parts[2] === 'approve-report') {
     const gigId = parts[1];
@@ -251,7 +264,6 @@ post: async (path: string, data: any) => {
   }
 
   const colRef = firebaseCollection(db, parts[0]);
-  let enrichedData = { ...data, createdAt: new Date().toISOString() };
 
     if (parts[0] === 'proposals') {
       const currentUser = auth.currentUser;
@@ -340,7 +352,11 @@ patch: async (path: string, data: any = {}) => {
   if (parts.length >= 2) {
     const docRef = firebaseDoc(db, parts[0], parts[1]);
     if (data) {
-      await firebaseUpdateDoc(docRef, data);
+      // Strip undefined fields
+      const cleanPatchData = Object.fromEntries(
+        Object.entries(data).filter(([_, v]) => v !== undefined)
+      );
+      await firebaseUpdateDoc(docRef, cleanPatchData);
     }
     return { data: { success: true } };
   }
@@ -349,8 +365,12 @@ put: async (path: string, data: any) => {
   const parts = path.replace(/^\//, '').split('/');
   if (parts.length === 2) {
     const docRef = firebaseDoc(db, parts[0], parts[1]);
-    await firebaseUpdateDoc(docRef, data);
-    return { data: { id: parts[1], ...data } };
+    // Strip undefined fields
+    const cleanPutData = Object.fromEntries(
+      Object.entries(data).filter(([_, v]) => v !== undefined)
+    );
+    await firebaseUpdateDoc(docRef, cleanPutData);
+    return { data: { id: parts[1], ...cleanPutData } };
   }
 },
 delete: async (path: string) => {

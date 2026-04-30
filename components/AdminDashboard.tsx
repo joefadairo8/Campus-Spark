@@ -44,8 +44,9 @@ const AdminDashboard: React.FC<{
     onNavigate: (page: string) => void, 
     onLogout: () => void,
     isDarkMode: boolean,
-    toggleTheme: () => void
-}> = ({ onNavigate, onLogout, isDarkMode, toggleTheme }) => {
+    toggleTheme: () => void,
+    user: any
+}> = ({ onNavigate, onLogout, isDarkMode, toggleTheme, user }) => {
     const [stats, setStats] = useState<AdminStats | null>(null);
     const [recentUsers, setRecentUsers] = useState<RecentUser[]>([]);
     const [partnerships, setPartnerships] = useState<Partnership[]>([]);

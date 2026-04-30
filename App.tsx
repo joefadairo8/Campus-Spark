@@ -127,10 +127,10 @@ const App: React.FC = () => {
     switch (currentPage) {
       case 'login': return <LoginPage onNavigate={navigateTo} />;
       case 'create-account': return <CreateAccountPage onNavigate={navigateTo} />;
-      case 'brand-dashboard': return <BrandDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} />;
-      case 'student-dashboard': return <StudentDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} />;
-      case 'org-dashboard': return <OrgDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} />;
-      case 'admin-dashboard': return <AdminDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} />;
+      case 'brand-dashboard': return <BrandDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} user={user} />;
+      case 'student-dashboard': return <StudentDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} user={user} />;
+      case 'org-dashboard': return <OrgDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} user={user} />;
+      case 'admin-dashboard': return <AdminDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} user={user} />;
       case 'how-it-works':
       case 'about': return <AboutPage onNavigate={navigateTo} />;
       case 'for-brands': return <BrandsPage onNavigate={navigateTo} />;
@@ -143,7 +143,7 @@ const App: React.FC = () => {
           <>
             <HeroSection onNavigate={navigateTo} />
             <RoleSelectionSection onNavigate={navigateTo} />
-            <LiveOpportunitiesSection />
+            <LiveOpportunitiesSection onNavigate={navigateTo} />
             <FeaturesSection />
             <HowItWorksSection />
             <TrustSection />

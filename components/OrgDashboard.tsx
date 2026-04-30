@@ -14,8 +14,9 @@ const OrgDashboard: React.FC<{
     onNavigate: (page: string) => void, 
     onLogout: () => void,
     isDarkMode: boolean,
-    toggleTheme: () => void
-}> = ({ onNavigate, onLogout, isDarkMode, toggleTheme }) => {
+    toggleTheme: () => void,
+    user: any
+}> = ({ onNavigate, onLogout, isDarkMode, toggleTheme, user }) => {
     const [currentView, setCurrentView] = useState('events');
     const [wallet, setWallet] = useState<any>(null);
     const [transactions, setTransactions] = useState<any[]>([]);
