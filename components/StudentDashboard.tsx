@@ -117,11 +117,10 @@ const StudentDashboard: React.FC<{
     };
 
     useEffect(() => {
-        const init = async () => {
-            await fetchUserData();
-        };
-        init();
-    }, []);
+        if (user) {
+            fetchUserData();
+        }
+    }, [user]);
 
     useEffect(() => {
         if (userProfile?.id) {
@@ -129,7 +128,7 @@ const StudentDashboard: React.FC<{
             fetchMyApplications();
             fetchMyCampaigns();
         }
-    }, [userProfile]);
+    }, [userProfile?.id]);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -142,8 +141,37 @@ const StudentDashboard: React.FC<{
             try {
                 let items: any[] = [];
                 if (activeTab === 'gigs') {
-                    const res = await apiClient.get('gigs');
-                    items = (res.data || []).filter((g: any) => g.status === 'open');
+                    // Unified Opportunities: Fetch both Gigs and Events
+                    const [gigsRes, eventsRes] = await Promise.all([
+                        apiClient.get('gigs'),
+                        apiClient.get('events')
+                    ]);
+                    
+                    const openGigs = (gigsRes.data || []).filter((g: any) => 
+                        !g.status || g.status.toLowerCase() === 'open'
+                    ).map((g: any) => ({
+                        ...g,
+                        category: 'Campaign',
+                        displayTitle: g.title,
+                        displayBrand: g.brand || g.brandName,
+                        displayReward: g.reward || g.budget,
+                        displayLocation: g.location || g.university || 'Nationwide'
+                    }));
+
+                    const publishedEvents = (eventsRes.data || []).filter((e: any) => 
+                        !e.status || e.status.toLowerCase() === 'published'
+                    ).map((e: any) => ({
+                        ...e,
+                        category: 'Event',
+                        displayTitle: e.name,
+                        displayBrand: e.hostName,
+                        displayReward: e.targetSponsorship,
+                        displayLocation: e.university || 'Campus'
+                    }));
+
+                    items = [...openGigs, ...publishedEvents].sort((a: any, b: any) => 
+                        new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime()
+                    );
                 } else if (activeTab === 'brands') {
                     const res = await apiClient.get(`users?role=${encodeURIComponent(UserRole.Brand)}`);
                     items = res.data;
@@ -268,7 +296,8 @@ const StudentDashboard: React.FC<{
         setPitchSubmitting(true);
         try {
             await apiClient.post(`gigs/${applyingToGig.id}/apply`, { pitch: pitchText });
-            alert(`Application submitted for "${applyingToGig.title}"! The brand will review your pitch.`);
+            const campaignTitle = applyingToGig.displayTitle || applyingToGig.title || 'Campaign';
+            alert(`Application submitted for "${campaignTitle}"! The brand will review your pitch.`);
             setApplyingToGig(null);
             setPitchText('');
             await fetchMyApplications();
@@ -369,21 +398,30 @@ const StudentDashboard: React.FC<{
                             return (
                                 <div key={gig.id} className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] shadow-sm hover:shadow-xl transition-all flex flex-col p-8 group">
                                     <div className="flex justify-between items-start mb-6">
-                                        <div className="w-12 h-12 bg-spark-red/10 rounded-xl flex items-center justify-center text-xl font-black text-spark-red border border-spark-red/10">{(gig.brand || gig.brandName || '⚡').charAt(0)}</div>
-                                        <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${statusBadge.classes}`}>{statusBadge.label}</span>
+                                        <div className="w-12 h-12 bg-spark-red/10 rounded-xl flex items-center justify-center text-xl font-black text-spark-red border border-spark-red/10">{(gig.displayBrand || gig.brand || gig.brandName || '⚡').charAt(0)}</div>
+                                        <div className="flex flex-col items-end gap-2">
+                                            <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${statusBadge.classes}`}>{statusBadge.label}</span>
+                                            {activeTab === 'gigs' && (
+                                                <span className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest ${
+                                                    gig.category === 'Campaign' ? 'bg-spark-red/10 text-spark-red' : 'bg-blue-500/10 text-blue-500'
+                                                }`}>
+                                                    {gig.category}
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
-                                    <h3 className="font-black text-xl mb-1 group-hover:text-spark-red transition-colors text-[var(--text-primary)]">{gig.title}</h3>
-                                    <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-3">{gig.brand || gig.brandName || 'Brand'}</p>
+                                    <h3 className="font-black text-xl mb-1 group-hover:text-spark-red transition-colors text-[var(--text-primary)]">{gig.displayTitle || gig.title}</h3>
+                                    <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-3">{gig.displayBrand || gig.brand || gig.brandName || 'Brand'}</p>
                                     <p className="text-[var(--text-secondary)] text-sm mb-6 flex-1 line-clamp-3">{gig.description || gig.brief || 'No description provided.'}</p>
                                     
                                     <div className="bg-[var(--bg-secondary)] dark:bg-spark-black/20 rounded-2xl p-4 mb-6 space-y-2">
                                         <div className="flex justify-between text-[10px] font-black uppercase text-[var(--text-secondary)]">
-                                            <span>Reward</span>
-                                            <span className="text-[var(--text-primary)]">₦{(gig.reward || gig.budget || 0).toLocaleString()}</span>
+                                            <span>{gig.category === 'Event' ? 'Target Sponsorship' : 'Reward'}</span>
+                                            <span className="text-[var(--text-primary)]">₦{(gig.displayReward || gig.reward || gig.budget || 0).toLocaleString()}</span>
                                         </div>
                                         <div className="flex justify-between text-[10px] font-black uppercase text-[var(--text-secondary)]">
-                                            <span>Deadline</span>
-                                            <span className="text-[var(--text-primary)]">{gig.deadline || 'Ongoing'}</span>
+                                            <span>{gig.category === 'Event' ? 'Event Date' : 'Deadline'}</span>
+                                            <span className="text-[var(--text-primary)]">{gig.deadline || gig.date || 'Ongoing'}</span>
                                         </div>
                                     </div>
 
@@ -396,8 +434,11 @@ const StudentDashboard: React.FC<{
                                             {myApp.status === 'pending' ? 'Application Pending' : 'Application Closed'}
                                         </div>
                                     ) : (
-                                        <button onClick={() => handleOpenApplyModal(gig)} className="w-full py-4 bg-[var(--text-primary)] text-[var(--bg-primary)] font-black rounded-2xl hover:bg-spark-red hover:text-white transition-all text-sm shadow-lg shadow-black/5">
-                                            Apply to Campaign
+                                        <button 
+                                            onClick={() => gig.category === 'Event' ? handleContactHost(gig) : handleOpenApplyModal(gig)} 
+                                            className="w-full py-4 bg-[var(--text-primary)] text-[var(--bg-primary)] font-black rounded-2xl hover:bg-spark-red hover:text-white transition-all text-sm shadow-lg shadow-black/5"
+                                        >
+                                            {gig.category === 'Event' ? 'Contact Host' : 'Apply to Campaign'}
                                         </button>
                                     )}
                                 </div>

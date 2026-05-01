@@ -174,12 +174,28 @@ const BrandDashboard: React.FC<{
     const fetchCampaigns = useCallback(async () => {
         if (!brandProfile?.id) return;
         try {
-            const res = await apiClient.get(`gigs?brandId=${brandProfile.id}`);
-            setCampaigns(res.data || []);
+            // Fetch by ID (New standard)
+            const resId = await apiClient.get(`gigs?brandId=${brandProfile.id}`);
+            let allCampaigns = resId.data || [];
+
+            // Fetch by Email (Legacy fallback)
+            if (brandProfile.email) {
+                const resEmail = await apiClient.get(`gigs?brandEmail=${brandProfile.email}`);
+                const legacyCampaigns = resEmail.data || [];
+                
+                // Merge and de-duplicate
+                legacyCampaigns.forEach((lc: any) => {
+                    if (!allCampaigns.find((c: any) => c.id === lc.id)) {
+                        allCampaigns.push(lc);
+                    }
+                });
+            }
+
+            setCampaigns(allCampaigns);
         } catch (e) {
             console.error("Error fetching campaigns:", e);
         }
-    }, [brandProfile?.id]);
+    }, [brandProfile?.id, brandProfile?.email]);
 
     // Load all allocations for this brand from Firestore
     const fetchAllAllocations = async (brandId: string) => {
@@ -355,6 +371,7 @@ const BrandDashboard: React.FC<{
                 category: inlineCreateForm.category,
                 status: 'open',
                 brandId: brandProfile.id,
+                brandEmail: brandProfile.email || user.email,
                 brandName: brandProfile.name || brandProfile.companyName || 'Brand',
                 createdAt: new Date().toISOString()
             };
@@ -392,7 +409,10 @@ const BrandDashboard: React.FC<{
     const fetchBrandData = async () => {
         if (user) {
             const userDoc = await getDoc(doc(db, "users", user.uid || user.id));
-            if (userDoc.exists()) setBrandProfile({ id: user.uid || user.id, ...userDoc.data() });
+            if (userDoc.exists()) {
+                const data = userDoc.data();
+                setBrandProfile({ ...data, id: user.uid || user.id, email: data.email || user.email });
+            }
         }
     };
 
@@ -1115,7 +1135,7 @@ const BrandDashboard: React.FC<{
                                                     alert('Campaign updated successfully!');
                                                 } else {
                                                     // POST to backend: creates a real Gig that students can apply for
-                                                    const gigRes = await apiClient.post('gigs', {
+                                                    const payload = {
                                                         title: campaignForm.title,
                                                         description: campaignForm.brief,
                                                         brief: campaignForm.brief,
@@ -1124,15 +1144,19 @@ const BrandDashboard: React.FC<{
                                                         brandName: brandProfile.name || brandProfile.companyName || 'Brand',
                                                         status: 'open',
                                                         brandId: brandProfile.id,
-                                                        createdAt: new Date().toISOString()
-                                                    });
-                                                    const newCampaign = {
-                                                        id: gigRes.data.id,
-                                                        ...campaignForm,
-                                                        gigId: gigRes.data.id,
+                                                        brandEmail: brandProfile.email || auth.currentUser?.email,
+                                                        category: campaignForm.category,
+                                                        deadline: campaignForm.deadline,
                                                         createdAt: new Date().toISOString()
                                                     };
-                                                    await fetchCampaigns();
+                                                    const gigRes = await apiClient.post('gigs', payload);
+                                                    
+                                                    const newCampaign = {
+                                                        id: gigRes.data.id,
+                                                        ...payload
+                                                    };
+                                                    // Optimistic update: Add to local state immediately
+                                                    setCampaigns(prev => [newCampaign, ...prev]);
                                                     setShowCampaignModal(false);
                                                     setCampaignForm({ title: '', brief: '', budget: '', deadline: '', category: 'Awareness' });
                                                     alert('Campaign launched successfully!');

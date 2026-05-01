@@ -5,24 +5,65 @@ import { apiClient } from '../firebase';
 import { Wallet, TrendingUp, Key, Search, Rocket, ChevronRight } from 'lucide-react';
 
 const CareersPage: React.FC<{ onNavigate: (page: string) => void, user?: any }> = ({ onNavigate, user }) => {
-  const [gigs, setGigs] = useState<any[]>([]);
+  const [opportunities, setOpportunities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const isInfluencer = user?.role === 'Ambassador/Influencer' || user?.role === 'Student/Professional Influencer';
 
   useEffect(() => {
-    const fetchGigs = async () => {
+    const fetchOpportunities = async () => {
       try {
-        const res = await apiClient.get('gigs');
-        const openGigs = (res.data || []).filter((g: any) => g.status === 'open');
-        setGigs(openGigs);
+        let gigs: any[] = [];
+        let events: any[] = [];
+
+        try {
+          const res = await apiClient.get('gigs');
+          gigs = res.data || [];
+        } catch (e) {
+          console.error('Error fetching gigs:', e);
+        }
+
+        try {
+          const res = await apiClient.get('events');
+          events = res.data || [];
+        } catch (e) {
+          console.error('Error fetching events:', e);
+        }
+
+        const openGigs = gigs.filter((g: any) => 
+          !g.status || (g.status.toLowerCase() !== 'closed' && g.status.toLowerCase() !== 'draft')
+        ).map((g: any) => ({
+          ...g,
+          type: 'Campaign',
+          displayTitle: g.title,
+          displayBrand: g.brand || g.brandName,
+          displayReward: g.reward || g.budget,
+          displayLocation: g.location || g.university || 'Nationwide'
+        }));
+
+        const publishedEvents = events.filter((e: any) => 
+          !e.status || (e.status.toLowerCase() !== 'closed' && e.status.toLowerCase() !== 'draft')
+        ).map((e: any) => ({
+          ...e,
+          type: 'Event',
+          displayTitle: e.name,
+          displayBrand: e.hostName,
+          displayReward: e.targetSponsorship,
+          displayLocation: e.university || 'Campus'
+        }));
+
+        const all = [...openGigs, ...publishedEvents].sort((a: any, b: any) => 
+          new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime()
+        );
+
+        setOpportunities(all);
       } catch (err) {
-        console.error('Failed to fetch gigs:', err);
+        console.error('Failed to fetch opportunities:', err);
       } finally {
         setLoading(false);
       }
     };
-    fetchGigs();
+    fetchOpportunities();
   }, []);
 
   const mockBrands = [
@@ -91,7 +132,7 @@ const CareersPage: React.FC<{ onNavigate: (page: string) => void, user?: any }> 
         </div>
       </section>
 
-      {/* Main Gigs List */}
+      {/* Main Opportunities List */}
       <section id="open-gigs" className="py-24 bg-[var(--bg-primary)]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row md:items-end justify-between mb-16 gap-6">
@@ -99,48 +140,79 @@ const CareersPage: React.FC<{ onNavigate: (page: string) => void, user?: any }> 
               <h2 className="text-2xl md:text-4xl font-fancy font-black text-[var(--text-primary)] mb-4">
                 Current <span className="text-gradient-red italic">Opportunities</span>
               </h2>
-              <p className="text-base text-[var(--text-secondary)] font-medium">Top brands are scouting for talent. Pick a path and contact us to apply.</p>
-            </div>
-            <div className="flex gap-2 bg-spark-red/5 p-1 rounded-2xl border border-spark-red/10">
-                <button className="px-6 py-2 bg-spark-red text-white text-[10px] font-black uppercase tracking-widest rounded-xl">All</button>
-                <button className="px-6 py-2 bg-spark-black text-white text-[10px] font-black uppercase tracking-widest rounded-xl">Gigs</button>
-                <button className="px-6 py-2 bg-spark-black text-white text-[10px] font-black uppercase tracking-widest rounded-xl">Events</button>
+              <p className="text-base text-[var(--text-secondary)] font-medium">Top brands and organizations are scouting for talent. Pick a path and contact us to apply.</p>
             </div>
           </div>
 
           <div className="grid gap-6">
-            {gigs.length > 0 ? (
+            {opportunities.length > 0 ? (
                 <div className="grid gap-6">
-                  {gigs.map((gig) => (
+                  {opportunities.map((opp) => (
                     <div 
-                      key={gig.id} 
+                      key={opp.id} 
                       className="group p-8 border border-[var(--border-color)] rounded-[2.5rem] bg-[var(--bg-primary)] hover:border-spark-red/30 transition-all flex flex-col lg:flex-row items-center gap-10 cursor-pointer card-hover shadow-sm shadow-black/5" 
-                      onClick={() => onNavigate(user ? 'student-dashboard' : 'login')}
+                      onClick={() => onNavigate(user ? (opp.type === 'Campaign' ? 'student-dashboard' : 'org-dashboard') : 'login')}
                     >
                       <div className="w-20 h-20 bg-spark-red/5 rounded-[1.5rem] flex items-center justify-center p-4 border border-spark-red/10 flex-shrink-0 group-hover:scale-110 transition-transform text-xl font-black text-spark-red">
-                        {(gig.brand || gig.brandName || 'S').charAt(0)}
+                        {(opp.displayBrand || 'S').charAt(0)}
                       </div>
 
                       <div className="flex-1 text-center lg:text-left">
                         <div className="flex flex-wrap justify-center lg:justify-start gap-3 mb-3">
-                          <span className="px-3 py-1 bg-spark-red/10 text-spark-red text-[9px] font-black uppercase tracking-widest rounded-full">{gig.brand || gig.brandName || 'Brand Opportunity'}</span>
-                          <span className="px-3 py-1 bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-secondary)] text-[9px] font-black uppercase tracking-widest rounded-full">{gig.location || gig.university || 'Nationwide'}</span>
+                          <span className={`px-3 py-1 text-[9px] font-black uppercase tracking-widest rounded-full ${
+                            opp.type === 'Campaign' ? 'bg-spark-red/10 text-spark-red' : 'bg-blue-500/10 text-blue-500'
+                          }`}>
+                            {opp.type}
+                          </span>
+                          <span className="px-3 py-1 bg-spark-black text-white text-[9px] font-black uppercase tracking-widest rounded-full">
+                            {opp.displayBrand || 'Partner'}
+                          </span>
+                          <span className="px-3 py-1 bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-secondary)] text-[9px] font-black uppercase tracking-widest rounded-full">
+                            {opp.displayLocation}
+                          </span>
                         </div>
-                        <h3 className="text-xl font-bold text-[var(--text-primary)] mb-2 group-hover:text-spark-red transition-colors">{gig.title}</h3>
-                        <p className="text-[var(--text-secondary)] text-sm max-w-xl font-medium line-clamp-2">{gig.description || gig.brief || 'No description provided.'}</p>
+                        <h3 className="text-xl font-bold text-[var(--text-primary)] mb-2 group-hover:text-spark-red transition-colors">{opp.displayTitle}</h3>
+                        <p className="text-[var(--text-secondary)] text-sm max-w-xl font-medium line-clamp-2">{opp.description || opp.brief || 'No description provided.'}</p>
                       </div>
 
                       <div className="flex flex-col items-center lg:items-end gap-4 flex-shrink-0 w-full lg:w-auto">
                         <div className="text-center lg:text-right">
-                          <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Benefit/Stipend</p>
+                          <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">
+                            {opp.type === 'Campaign' ? 'Benefit/Stipend' : 'Target Sponsorship'}
+                          </p>
                           <p className="text-xl font-black text-[var(--text-primary)]">
-                            ₦{(gig.reward || gig.budget || 0).toLocaleString()}
+                            ₦{(opp.displayReward || 0).toLocaleString()}
                           </p>
                         </div>
-                        <button className="w-full lg:w-auto bg-gradient-red text-white font-bold py-3 px-8 rounded-xl text-sm group-hover:scale-105 transition-all flex items-center justify-center gap-2">
-                          {user ? 'View in Dashboard' : 'Login to Apply'}
-                          <ChevronRight className="w-4 h-4" />
-                        </button>
+                        <div className="flex gap-2 w-full lg:w-auto">
+                          <button className="flex-1 lg:flex-none bg-gradient-red text-white font-bold py-3 px-8 rounded-xl text-sm group-hover:scale-105 transition-all flex items-center justify-center gap-2">
+                            {user ? 'View details' : 'Login to Apply'}
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                          
+                          {/* TEMP: Admin delete for orphans */}
+                          {(!opp.hostId && !opp.brandId) && (
+                            <button 
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (window.confirm('Delete this orphaned record?')) {
+                                  try {
+                                    const coll = opp.type === 'Campaign' ? 'gigs' : 'events';
+                                    await apiClient.delete(`${coll}/${opp.id}`);
+                                    setOpportunities(prev => prev.filter(item => item.id !== opp.id));
+                                    alert('Deleted successfully');
+                                  } catch (err) {
+                                    alert('Failed to delete. You might not have permission.');
+                                  }
+                                }
+                              }}
+                              className="p-3 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all flex items-center justify-center"
+                              title="Delete Orphaned Data"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -150,8 +222,8 @@ const CareersPage: React.FC<{ onNavigate: (page: string) => void, user?: any }> 
                   <div className="w-20 h-20 bg-spark-red/10 rounded-3xl flex items-center justify-center mx-auto mb-6 text-spark-red">
                     <Rocket className="w-10 h-10" />
                   </div>
-                  <h3 className="text-xl font-bold text-[var(--text-primary)] mb-2">New Gigs Landing Soon</h3>
-                  <p className="text-[var(--text-secondary)] text-sm font-medium">We're currently finalizing new campaigns. Check back shortly!</p>
+                  <h3 className="text-xl font-bold text-[var(--text-primary)] mb-2">New Opportunities Landing Soon</h3>
+                  <p className="text-[var(--text-secondary)] text-sm font-medium">We're currently finalizing new campaigns and events. Check back shortly!</p>
                 </div>
               )}
           </div>

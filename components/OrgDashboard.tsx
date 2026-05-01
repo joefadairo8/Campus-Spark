@@ -84,12 +84,35 @@ const OrgDashboard: React.FC<{
     };
 
     const fetchMyEvents = async () => {
-        const user = auth.currentUser;
-        if (!user) return;
+        const currentUser = auth.currentUser;
+        if (!currentUser?.uid) return;
         setLoading(true);
         try {
-            const res = await apiClient.get(`events?hostEmail=${user.email}`);
-            setMyEvents(res.data);
+            // Fetch by ID (New standard)
+            const resId = await apiClient.get(`events?hostId=${currentUser.uid}`);
+            let allMyEvents = resId.data || [];
+
+            // Legacy fallbacks (Email-based)
+            const emailsToTry = new Set<string>();
+            if (currentUser.email) emailsToTry.add(currentUser.email);
+            if (orgProfile?.email) emailsToTry.add(orgProfile.email);
+            if (orgProfile?.hostEmail) emailsToTry.add(orgProfile.hostEmail);
+
+            for (const email of emailsToTry) {
+                try {
+                    const resEmail = await apiClient.get(`events?hostEmail=${encodeURIComponent(email)}`);
+                    const legacyEvents = resEmail.data || [];
+                    legacyEvents.forEach((le: any) => {
+                        if (!allMyEvents.find((e: any) => e.id === le.id)) {
+                            allMyEvents.push(le);
+                        }
+                    });
+                } catch (e) {
+                    console.warn(`Fallback fetch failed for ${email}:`, e);
+                }
+            }
+
+            setMyEvents(allMyEvents);
         } catch (err) {
             console.error("Error fetching org events:", err);
         } finally {
@@ -121,22 +144,25 @@ const OrgDashboard: React.FC<{
     };
 
     useEffect(() => {
-        fetchOrgData();
-        fetchMyEvents();
-        fetchProposals();
-        fetchBrands();
-    }, []);
+        if (user) {
+            fetchOrgData();
+        }
+    }, [user]);
+
+    useEffect(() => {
+        if (orgProfile?.id) {
+            fetchMyEvents();
+            fetchProposals();
+            fetchBrands();
+        }
+    }, [orgProfile?.id]);
 
     useEffect(() => {
         fetchWallet();
-    }, [currentView, orgProfile]);
+    }, [currentView, orgProfile?.id]);
 
     useEffect(() => {
-        if (currentView === 'proposals') {
-            fetchProposals();
-        } else if (currentView === 'brands') {
-            fetchBrands();
-        } else if (currentView === 'ambassadors') {
+        if (currentView === 'ambassadors') {
             const fetchAmbassadors = async () => {
                 setLoading(true);
                 try {
@@ -178,19 +204,26 @@ const OrgDashboard: React.FC<{
         try {
             const orgName = orgProfile?.name || "Student Organization";
             const uni = orgProfile?.university || "Unknown";
-            await apiClient.post('events', {
+            const payload = {
                 name: formData.name.trim(),
                 date: formData.date,
                 description: formData.description.trim(),
                 targetSponsorship: Number(formData.targetSponsorship),
                 hostName: orgName,
+                hostId: user.uid,
+                hostEmail: user.email,
                 university: uni,
                 status: 'published',
-            });
-
+                createdAt: new Date().toISOString()
+            };
+            const res = await apiClient.post('events', payload);
+            
             setShowCreateModal(false);
             setFormData({ name: '', date: '', description: '', targetSponsorship: '' });
-            fetchMyEvents();
+            
+            // Optimistic update: Add to local state immediately so it doesn't 'vanish' due to latency
+            const newEvent = { id: res.data.id, ...payload };
+            setMyEvents(prev => [newEvent, ...prev]);
         } catch (err: any) {
             console.error("Error creating event:", err);
             alert(err.response?.data?.error || "Failed to create event. Please check all fields and try again.");
