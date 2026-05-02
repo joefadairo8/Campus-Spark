@@ -20,6 +20,7 @@ import CareersPage from './components/CareersPage';
 import ContactPage from './components/ContactPage';
 import LoginPage from './components/LoginPage';
 import CreateAccountPage from './components/CreateAccountPage';
+import AdminLoginPage from './components/AdminLoginPage';
 import RoleSelectionSection from './components/RoleSelectionSection';
 import LiveOpportunitiesSection from './components/LiveOpportunitiesSection';
 import TrustSection from './components/TrustSection';
@@ -54,7 +55,14 @@ const App: React.FC = () => {
           const userDocRef = firebaseDoc(db, 'users', firebaseUser.uid);
           const userSnap = await firebaseGetDoc(userDocRef);
           if (userSnap.exists()) {
-            const profile = { id: firebaseUser.uid, ...userSnap.data() };
+            const profileData = userSnap.data() as any;
+            if (profileData.status === 'suspended') {
+              await auth.signOut();
+              alert('ACCESS DENIED: Your account has been suspended by a platform administrator.');
+              setUser(null);
+              return;
+            }
+            const profile = { id: firebaseUser.uid, ...profileData };
             setUser(profile);
             localStorage.setItem('user', JSON.stringify(profile));
           } else {
@@ -84,11 +92,11 @@ const App: React.FC = () => {
     const validPages = [
       'login', 'create-account', 'brand-dashboard', 'student-dashboard',
       'org-dashboard', 'admin-dashboard', 'for-brands',
-      'for-students', 'about', 'careers', 'contact'
+      'for-students', 'about', 'careers', 'contact', 'admin-login'
     ];
 
     if (path === 'admin') {
-      setCurrentPage('login');
+      setCurrentPage('admin-login');
     } else if (validPages.includes(path)) {
       setCurrentPage(path);
     }
@@ -107,7 +115,8 @@ const App: React.FC = () => {
     'org-dashboard',
     'admin-dashboard',
     'login',
-    'create-account'
+    'create-account',
+    'admin-login'
   ].includes(currentPage);
 
   const handleLogout = async () => {
@@ -126,6 +135,7 @@ const App: React.FC = () => {
   const renderPageContent = () => {
     switch (currentPage) {
       case 'login': return <LoginPage onNavigate={navigateTo} />;
+      case 'admin-login': return <AdminLoginPage onNavigate={navigateTo} />;
       case 'create-account': return <CreateAccountPage onNavigate={navigateTo} />;
       case 'brand-dashboard': return <BrandDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} user={user} />;
       case 'student-dashboard': return <StudentDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} user={user} />;

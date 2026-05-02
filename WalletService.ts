@@ -34,6 +34,10 @@ export interface CampaignAllocation {
     updatedAt?: any;
 }
 
+export const REVENUE_WALLET_ID = 'PLATFORM_REVENUE_HUB';
+export const LISTING_FEE = 20000;
+export const SERVICE_FEE_PCT = 0.1;
+
 export const WalletService = {
     /**
      * Get or create a wallet for a user
@@ -132,35 +136,60 @@ export const WalletService = {
         return await fsRunTransaction(db, async (transaction) => {
             const brandRef = fsDoc(db, 'wallets', brandId);
             const influencerRef = fsDoc(db, 'wallets', influencerId);
+            const systemRef = fsDoc(db, 'wallets', REVENUE_WALLET_ID);
             
             const bSnap = await transaction.get(brandRef);
             const iSnap = await transaction.get(influencerRef);
+            const sSnap = await transaction.get(systemRef);
 
             const bData = bSnap.data() as Wallet;
             const iData = iSnap.exists() ? iSnap.data() as Wallet : { balance: 0, pending: 0, escrow: 0 };
+            const sData = sSnap.exists() ? sSnap.data() as Wallet : { balance: 0, pending: 0, escrow: 0 };
+
+            const serviceFee = amount * SERVICE_FEE_PCT;
+            const influencerPay = amount - serviceFee;
 
             // 1. Deduct from Brand Escrow
             transaction.update(brandRef, {
-                escrow: bData.escrow - amount,
+                escrow: (bData.escrow || 0) - amount,
                 lastUpdated: fsTimestamp()
             });
 
-            // 2. Add to Influencer Balance
+            // 2. Add to Influencer (90%)
             transaction.set(influencerRef, {
                 ...iData,
-                balance: iData.balance + amount,
+                balance: (iData.balance || 0) + influencerPay,
+                escrow: Math.max(0, (iData.escrow || 0) - amount),
                 lastUpdated: fsTimestamp()
             });
 
-            // 3. Record Transactions
+            // 3. Add to System Revenue (10%)
+            transaction.set(systemRef, {
+                ...sData,
+                balance: (sData.balance || 0) + serviceFee,
+                lastUpdated: fsTimestamp()
+            });
+
+            // 4. Record Transactions
             const iTransRef = fsDoc(fsCollection(db, 'transactions'));
             transaction.set(iTransRef, {
                 userId: influencerId,
-                amount,
+                amount: influencerPay,
                 type: 'credit',
                 status: 'completed',
-                description: `Earnings from gig: ${gigTitle}`,
+                description: `Earnings from gig: ${gigTitle} (After 10% platform fee)`,
                 relatedUserId: brandId,
+                createdAt: fsTimestamp()
+            });
+
+            const sTransRef = fsDoc(fsCollection(db, 'transactions'));
+            transaction.set(sTransRef, {
+                userId: REVENUE_WALLET_ID,
+                amount: serviceFee,
+                type: 'credit',
+                status: 'completed',
+                description: `Service fee from ${gigTitle} (Influencer: ${influencerId})`,
+                relatedUserId: influencerId,
                 createdAt: fsTimestamp()
             });
         });
@@ -169,15 +198,17 @@ export const WalletService = {
     /**
      * Refund an allocation back from escrow to available balance (When influencer is rejected)
      */
-    async refundAllocation(brandId: string, amount: number, description: string) {
+    async refundAllocation(brandId: string, amount: number, description: string, influencerId?: string) {
         return await fsRunTransaction(db, async (transaction) => {
-            const walletRef = fsDoc(db, 'wallets', brandId);
+            // 1. ALL READS FIRST
             const walletSnap = await transaction.get(walletRef);
             
             const currentWallet = walletSnap.exists() 
                 ? walletSnap.data() as Wallet 
                 : { balance: 0, pending: 0, escrow: 0 };
 
+            // 2. ALL WRITES AFTER
+            // Refund Brand Wallet
             transaction.set(walletRef, {
                 ...currentWallet,
                 balance: currentWallet.balance + amount,
@@ -185,6 +216,10 @@ export const WalletService = {
                 lastUpdated: fsTimestamp()
             });
 
+            // Note: Influencer escrow is handled via client-side calculation from allocations
+            // This avoids 'Missing or insufficient permissions' when a brand tries to read/write influencer wallets.
+
+            // Record Transaction for Brand
             const transRef = fsDoc(fsCollection(db, 'transactions'));
             transaction.set(transRef, {
                 userId: brandId,
@@ -200,17 +235,28 @@ export const WalletService = {
     // ─── Campaign Allocation Firestore CRUD ──────────────────────────────────
 
     /**
-     * Create a new campaign allocation in Firestore
+     * Create a new campaign allocation in Firestore & update influencer escrow
      */
     async createAllocation(allocation: Omit<CampaignAllocation, 'id' | 'createdAt'>): Promise<CampaignAllocation> {
-        const colRef = fsCollection(db, 'campaignAllocations');
-        const payload = {
-            ...allocation,
-            createdAt: fsTimestamp(),
-            updatedAt: fsTimestamp(),
-        };
-        const docRef = await fsAddDoc(colRef, payload);
-        return { id: docRef.id, ...payload };
+        return await fsRunTransaction(db, async (transaction) => {
+            const colRef = fsCollection(db, 'campaignAllocations');
+            const docRef = fsDoc(colRef);
+            
+            // 1. NO READS NEEDED for influencer wallet (Avoids permission issues)
+
+            // 2. ALL WRITES AFTER
+            const payload = {
+                ...allocation,
+                createdAt: fsTimestamp(),
+                updatedAt: fsTimestamp(),
+            };
+            
+            // Create the allocation doc
+            transaction.set(docRef, payload);
+
+            // Note: Influencer's 'Locked Funds' will be calculated in the UI from this record
+            return { id: docRef.id, ...payload } as CampaignAllocation;
+        });
     },
 
     /**
@@ -218,9 +264,14 @@ export const WalletService = {
      */
     async getAllocationsForCampaign(campaignId: string): Promise<CampaignAllocation[]> {
         const colRef = fsCollection(db, 'campaignAllocations');
-        const q = fsQuery(colRef, fsWhere('campaignId', '==', campaignId), fsOrderBy('createdAt', 'desc'));
+        const q = fsQuery(colRef, fsWhere('campaignId', '==', campaignId));
         const snap = await fsGetDocs(q);
-        return snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as CampaignAllocation[];
+        const results = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as CampaignAllocation[];
+        return results.sort((a, b) => {
+            const dateA = a.createdAt?.seconds || 0;
+            const dateB = b.createdAt?.seconds || 0;
+            return dateB - dateA;
+        });
     },
 
     /**
@@ -340,4 +391,124 @@ export const WalletService = {
             });
         });
     },
+
+    /**
+     * Charge flat listing fee for a new campaign
+     */
+    async chargeListingFee(brandId: string, campaignTitle: string) {
+        return await fsRunTransaction(db, async (transaction) => {
+            const brandRef = fsDoc(db, 'wallets', brandId);
+            const systemRef = fsDoc(db, 'wallets', REVENUE_WALLET_ID);
+            
+            const bSnap = await transaction.get(brandRef);
+            const sSnap = await transaction.get(systemRef);
+
+            const bData = bSnap.data() as Wallet;
+            const sData = sSnap.exists() ? sSnap.data() as Wallet : { balance: 0, pending: 0, escrow: 0 };
+
+            if (!bSnap.exists() || bData.balance < LISTING_FEE) {
+                throw new Error(`Insufficient balance for listing fee (₦${LISTING_FEE.toLocaleString()}).`);
+            }
+
+            // 1. Deduct from Brand
+            transaction.update(brandRef, {
+                balance: bData.balance - LISTING_FEE,
+                lastUpdated: fsTimestamp()
+            });
+
+            // 2. Add to System
+            transaction.set(systemRef, {
+                ...sData,
+                balance: (sData.balance || 0) + LISTING_FEE,
+                lastUpdated: fsTimestamp()
+            });
+
+            // 3. Record Transactions
+            const bTransRef = fsDoc(fsCollection(db, 'transactions'));
+            transaction.set(bTransRef, {
+                userId: brandId,
+                amount: LISTING_FEE,
+                type: 'debit',
+                status: 'completed',
+                description: `Campaign Listing Fee: ${campaignTitle}`,
+                createdAt: fsTimestamp()
+            });
+
+            const sTransRef = fsDoc(fsCollection(db, 'transactions'));
+            transaction.set(sTransRef, {
+                userId: REVENUE_WALLET_ID,
+                amount: LISTING_FEE,
+                type: 'credit',
+                status: 'completed',
+                description: `Listing Fee from ${campaignTitle} (Brand: ${brandId})`,
+                relatedUserId: brandId,
+                createdAt: fsTimestamp()
+            });
+        });
+    },
+
+    /**
+     * Release sponsorship funds to an organization with 10% platform fee
+     */
+    async releaseSponsorshipFunds(brandId: string, orgId: string, amount: number, eventName: string) {
+        return await fsRunTransaction(db, async (transaction) => {
+            const brandRef = fsDoc(db, 'wallets', brandId);
+            const orgRef = fsDoc(db, 'wallets', orgId);
+            const systemRef = fsDoc(db, 'wallets', REVENUE_WALLET_ID);
+            
+            const bSnap = await transaction.get(brandRef);
+            const oSnap = await transaction.get(orgRef);
+            const sSnap = await transaction.get(systemRef);
+
+            const bData = bSnap.data() as Wallet;
+            const oData = oSnap.exists() ? oSnap.data() as Wallet : { balance: 0, pending: 0, escrow: 0 };
+            const sData = sSnap.exists() ? sSnap.data() as Wallet : { balance: 0, pending: 0, escrow: 0 };
+
+            const serviceFee = amount * SERVICE_FEE_PCT;
+            const orgPay = amount - serviceFee;
+
+            // 1. Deduct from Brand Escrow
+            transaction.update(brandRef, {
+                escrow: (bData.escrow || 0) - amount,
+                lastUpdated: fsTimestamp()
+            });
+
+            // 2. Add to Org (90%)
+            transaction.set(orgRef, {
+                ...oData,
+                balance: (oData.balance || 0) + orgPay,
+                lastUpdated: fsTimestamp()
+            });
+
+            // 3. Add to System (10%)
+            transaction.set(systemRef, {
+                ...sData,
+                balance: (sData.balance || 0) + serviceFee,
+                lastUpdated: fsTimestamp()
+            });
+
+            // 4. Record Transactions
+            const oTransRef = fsDoc(fsCollection(db, 'transactions'));
+            transaction.set(oTransRef, {
+                userId: orgId,
+                amount: orgPay,
+                type: 'credit',
+                status: 'completed',
+                description: `Sponsorship Funds: ${eventName} (After 10% platform fee)`,
+                relatedUserId: brandId,
+                createdAt: fsTimestamp()
+            });
+
+            const sTransRef = fsDoc(fsCollection(db, 'transactions'));
+            transaction.set(sTransRef, {
+                userId: REVENUE_WALLET_ID,
+                amount: serviceFee,
+                type: 'credit',
+                status: 'completed',
+                description: `Sponsorship Commission: ${eventName} (Org: ${orgId})`,
+                relatedUserId: orgId,
+                createdAt: fsTimestamp()
+            });
+        });
+    }
 };

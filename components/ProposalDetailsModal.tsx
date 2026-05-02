@@ -6,6 +6,7 @@ interface ProposalDetailsModalProps {
     proposal: any;
     onUpdateStatus: (id: string, status: 'accepted' | 'rejected' | 'reviewing') => Promise<void>;
     isSender: boolean;
+    onReleaseSponsorship?: (proposal: any) => Promise<void>;
 }
 
 export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOpen, onClose, proposal, onUpdateStatus, isSender }) => {
@@ -157,6 +158,29 @@ export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOp
                                 >
                                     Accept Proposal
                                 </button>
+                            )}
+
+                            {proposal.status === 'accepted' && !isSender && proposal.sender?.role === 'Organization' && onReleaseSponsorship && (
+                                <div className="w-full flex flex-col gap-3">
+                                    <button
+                                        onClick={() => onReleaseSponsorship(proposal)}
+                                        disabled={updating}
+                                        className="w-full px-6 py-4 bg-green-600 text-white font-black rounded-2xl hover:bg-green-700 transition-all shadow-xl shadow-green-100 flex items-center justify-center gap-2"
+                                    >
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                        Release Sponsorship Funds
+                                    </button>
+                                    <p className="text-[10px] text-center font-bold text-[var(--text-secondary)]">A 10% platform fee will be deducted from the released amount.</p>
+                                </div>
+                            )}
+
+                            {proposal.status === 'paid' && (
+                                <div className="w-full text-center p-4 bg-green-50 rounded-2xl border border-green-100">
+                                    <p className="text-green-600 font-black text-sm uppercase tracking-widest flex items-center justify-center gap-2">
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+                                        Sponsorship Funds Released
+                                    </p>
+                                </div>
                             )}
                         </div>
                     )}

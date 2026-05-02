@@ -88,6 +88,14 @@ const LoginPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigat
                     const userDoc = await getDoc(doc(db, "users", user.uid));
                     if (userDoc.exists()) {
                         const data = userDoc.data();
+                        
+                        if (data.status === 'suspended') {
+                            await auth.signOut();
+                            setError('ACCESS DENIED: This account has been suspended for violating platform policies.');
+                            setLoading(false);
+                            return;
+                        }
+
                         const role = data.role;
 
                         switch (role) {

@@ -1,0 +1,134 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─────────────────────────────────────────────────────
+    // HELPERS
+    // ─────────────────────────────────────────────────────
+    function isAuth() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isAuth() && request.auth.uid == userId;
+    }
+    function hasFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    function isAdmin() {
+      return isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin';
+    }
+
+    // ─────────────────────────────────────────────────────
+    // USERS — authenticated read, self-only write
+    // ─────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read: if isAuth();
+      allow create: if isOwner(userId) && hasFields(['email', 'role']);
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────
+    // GIGS (CAMPAIGNS) — PUBLIC read, brand-owned write
+    // Public read so landing page & Opportunities page work
+    // for visitors who are not logged in.
+    //
+    // SCHEMA: { title, brandId, brandEmail, brandName, status, reward, createdAt }
+    // KEY RULE: brandId MUST equal the Firebase UID of the creator.
+    //   → This guarantees `where('brandId','==', uid)` always works.
+    // ─────────────────────────────────────────────────────
+    match /gigs/{gigId} {
+      allow read: if true;   // public – anyone can browse campaigns
+
+      allow create: if isAuth()
+        && request.resource.data.brandId == request.auth.uid
+        && hasFields(['title', 'brandId', 'brandName', 'status', 'reward', 'createdAt']);
+
+      allow update, delete: if isAuth()
+        && (resource.data.brandId == request.auth.uid || isAdmin());
+    }
+
+    // ─────────────────────────────────────────────────────
+    // EVENTS — PUBLIC read, host-owned write
+    //
+    // SCHEMA: { name, hostId, hostName, createdAt }
+    // KEY RULE: hostId MUST equal the Firebase UID of the creator.
+    // ─────────────────────────────────────────────────────
+    match /events/{eventId} {
+      allow read: if true;   // public – visitors can see campus events
+
+      allow create: if isAuth()
+        && request.resource.data.hostId == request.auth.uid
+        && hasFields(['name', 'hostId', 'hostName', 'createdAt']);
+
+      allow update, delete: if isAuth()
+        && (resource.data.hostId == request.auth.uid || isAdmin());
+    }
+
+    // ─────────────────────────────────────────────────────
+    // GIG APPLICATIONS (sub-collection)
+    // ─────────────────────────────────────────────────────
+    match /gigs/{gigId}/applications/{appId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+        && request.resource.data.studentId == request.auth.uid;
+      allow update: if isAuth();   // brand accepts/rejects
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────
+    // APPLICATIONS (top-level fallback collection)
+    // ─────────────────────────────────────────────────────
+    match /applications/{appId} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────
+    // PROPOSALS
+    // ─────────────────────────────────────────────────────
+    match /proposals/{proposalId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+        && request.resource.data.senderId == request.auth.uid;
+      allow update: if isAuth();
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────
+    // WALLETS — any authenticated user can read/write
+    // (needed for cross-user payment transactions where
+    //  the brand transfers to the influencer's wallet)
+    // ─────────────────────────────────────────────────────
+    match /wallets/{userId} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────
+    // TRANSACTIONS — authenticated create + owner read
+    // ─────────────────────────────────────────────────────
+    match /transactions/{transactionId} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update, delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────
+    // ALLOCATIONS
+    // ─────────────────────────────────────────────────────
+    match /allocations/{allocationId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+        && request.resource.data.brandId == request.auth.uid;
+      allow update: if isAuth()
+        && resource.data.brandId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+  }
+}

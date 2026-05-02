@@ -9,7 +9,7 @@ import { ProposalFormModal } from './ProposalFormModal';
 import { ProposalDetailsModal } from './ProposalDetailsModal';
 import { EventDetailsModal } from './EventDetailsModal';
 import { WalletService, CampaignAllocation } from '../WalletService';
-import { Calendar, Wallet, BarChart3, Lock, Plus, Minus, Mail, Users, Megaphone, Inbox, TrendingUp, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import { Calendar, Wallet, BarChart3, Lock, Plus, Minus, Mail, Users, Megaphone, Inbox, TrendingUp, ArrowUpRight, ArrowDownLeft, Activity } from 'lucide-react';
 
 const BrandDashboard: React.FC<{ 
     onNavigate: (page: string) => void,
@@ -40,6 +40,17 @@ const BrandDashboard: React.FC<{
     const [campaignSubmitting, setCampaignSubmitting] = useState(false);
     const [selectedCampaign, setSelectedCampaign] = useState<any>(null);
     const [editingGig, setEditingGig] = useState<any>(null);
+    const [topUpAmount, setTopUpAmount] = useState('5000');
+
+    useEffect(() => {
+        const script = document.createElement("script");
+        script.src = "https://js.paystack.co/v1/inline.js";
+        script.async = true;
+        document.body.appendChild(script);
+        return () => {
+            document.body.removeChild(script);
+        }
+    }, []);
     const [viewingApplicants, setViewingApplicants] = useState<any>(null); // Campaign whose applicants are being viewed
     const [applicants, setApplicants] = useState<any[]>([]);
     const [applicantsLoading, setApplicantsLoading] = useState(false);
@@ -63,6 +74,7 @@ const BrandDashboard: React.FC<{
     const [detailLoading, setDetailLoading] = useState(false);
     const [activeCampaignContext, setActiveCampaignContext] = useState<any>(null); // for directory overview panel
     const [releaseSubmitting, setReleaseSubmitting] = useState<string | null>(null); // allocation id being released
+    const [viewingReport, setViewingReport] = useState<any>(null);
 
     const fetchApplicants = async (campaign: any) => {
         setViewingApplicants(campaign);
@@ -89,37 +101,11 @@ const BrandDashboard: React.FC<{
                 setCampaigns(prev => prev.map(c => c.id === viewingApplicants.id ? { ...c, status: 'in_progress' } : c));
             }
         } catch (err: any) {
-            alert(err.response?.data?.error || 'Failed to update application.');
+            alert(err.message || 'Failed to update application.');
         }
     };
 
-    const handleReportApproval = async (campaignId: string) => {
-        try {
-            await apiClient.post(`gigs/${campaignId}/approve-report`, {});
-            alert('Report approved! Campaign is now marked as completed.');
-            // Refresh
-            const res = await apiClient.get(`gigs/${campaignId}/applications`);
-            setApplicants(res.data);
-            setCampaigns(prev => prev.map(c => c.id === campaignId ? { ...c, status: 'completed' } : c));
-        } catch (err: any) {
-            alert(err.response?.data?.error || 'Failed to approve report.');
-        }
-    };
 
-    const handleReportRejection = async (campaignId: string) => {
-        const feedback = prompt("Enter feedback for the student (why is the report rejected?):");
-        if (feedback === null) return;
-        try {
-            await apiClient.post(`gigs/${campaignId}/reject-report`, { feedback });
-            alert('Report rejected. Student has been notified.');
-            // Refresh
-            const res = await apiClient.get(`gigs/${campaignId}/applications`);
-            setApplicants(res.data);
-            setCampaigns(prev => prev.map(c => c.id === campaignId ? { ...c, status: 'in_progress' } : c));
-        } catch (err: any) {
-            alert(err.response?.data?.error || 'Failed to reject report.');
-        }
-    };
 
     const handleDeleteCampaign = async (id: string) => {
         if (!window.confirm("Are you sure you want to delete this campaign? This action cannot be undone.")) return;
@@ -145,20 +131,25 @@ const BrandDashboard: React.FC<{
     };
 
     const fetchWallet = async () => {
-        if (currentView === 'wallet' && brandProfile?.id) {
-            setWalletLoading(true);
-            try {
-                const w = await WalletService.getOrCreateWallet(brandProfile.id);
-                setWallet(w);
-                setWalletData({ available: w.balance || 0, locked: w.escrow || 0 });
-                const q = query(collection(db, 'transactions'), where('userId', '==', brandProfile.id), orderBy('createdAt', 'desc'), limit(10));
-                const transSnap = await getDocs(q);
-                setTransactions(transSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-            } catch (e) {
-                console.error("Wallet fetch error:", e);
-            } finally {
-                setWalletLoading(false);
-            }
+        if (!brandProfile?.id) return;
+        setWalletLoading(true);
+        try {
+            const w = await WalletService.getOrCreateWallet(brandProfile.id);
+            setWallet(w);
+            setWalletData({ available: w.balance || 0, locked: w.escrow || 0 });
+            
+            const q = query(collection(db, 'transactions'), where('userId', '==', brandProfile.id), limit(20));
+            const transSnap = await getDocs(q);
+            const sortedTrans = transSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => {
+                const dateA = a.createdAt?.seconds || 0;
+                const dateB = b.createdAt?.seconds || 0;
+                return dateB - dateA;
+            });
+            setTransactions(sortedTrans);
+        } catch (e) {
+            console.error("Wallet fetch error:", e);
+        } finally {
+            setWalletLoading(false);
         }
     };
 
@@ -172,18 +163,21 @@ const BrandDashboard: React.FC<{
 
     // Load all campaigns for this brand
     const fetchCampaigns = useCallback(async () => {
-        if (!brandProfile?.id) return;
+        const brandId = brandProfile?.id;
+        const brandEmail = brandProfile?.email;
+        if (!brandId) return;
+        console.log('[fetchCampaigns] Querying brandId:', brandId, '| email:', brandEmail);
         try {
-            // Fetch by ID (New standard)
-            const resId = await apiClient.get(`gigs?brandId=${brandProfile.id}`);
+            // PRIMARY: Fetch by brandId
+            const resId = await apiClient.get(`gigs?brandId=${brandId}`);
             let allCampaigns = resId.data || [];
+            console.log('[fetchCampaigns] Results by brandId:', allCampaigns.length);
 
-            // Fetch by Email (Legacy fallback)
-            if (brandProfile.email) {
-                const resEmail = await apiClient.get(`gigs?brandEmail=${brandProfile.email}`);
+            // SECONDARY: Fetch by brandEmail
+            if (brandEmail) {
+                const resEmail = await apiClient.get(`gigs?brandEmail=${encodeURIComponent(brandEmail)}`);
                 const legacyCampaigns = resEmail.data || [];
-                
-                // Merge and de-duplicate
+                console.log('[fetchCampaigns] Results by brandEmail:', legacyCampaigns.length);
                 legacyCampaigns.forEach((lc: any) => {
                     if (!allCampaigns.find((c: any) => c.id === lc.id)) {
                         allCampaigns.push(lc);
@@ -191,9 +185,21 @@ const BrandDashboard: React.FC<{
                 });
             }
 
+            // TERTIARY FALLBACK: full collection scan filtered client-side
+            if (allCampaigns.length === 0) {
+                console.warn('[fetchCampaigns] Indexed queries returned 0 — doing full scan fallback.');
+                const allRes = await apiClient.get('gigs');
+                const allGigs: any[] = allRes.data || [];
+                allCampaigns = allGigs.filter((g: any) =>
+                    g.brandId === brandId ||
+                    (brandEmail && g.brandEmail === brandEmail)
+                );
+                console.log('[fetchCampaigns] Full-scan results:', allCampaigns.length);
+            }
+
             setCampaigns(allCampaigns);
         } catch (e) {
-            console.error("Error fetching campaigns:", e);
+            console.error('[fetchCampaigns] Error:', e);
         }
     }, [brandProfile?.id, brandProfile?.email]);
 
@@ -254,7 +260,9 @@ const BrandDashboard: React.FC<{
         try {
             await WalletService.createAllocation({
                 campaignId: campaign.id,
+                campaignTitle: campaign.title,
                 brandId: brandProfile.id,
+                brandName: brandProfile.name || brandProfile.brandName,
                 influencerId: allocationTarget.id,
                 influencerName: allocationTarget.name,
                 influencerUniversity: allocationTarget.university,
@@ -289,7 +297,7 @@ const BrandDashboard: React.FC<{
     // Release payment → move escrow to influencer wallet, update allocation status
     const handleReleasePayment = async (allocation: CampaignAllocation) => {
         if (!brandProfile?.id || !allocation.id) return;
-        if (!window.confirm(`Release ₦${allocation.amount.toLocaleString()} to ${allocation.influencerName}?`)) return;
+        if (!window.confirm(`Release ₦${allocation.amount.toLocaleString()} to ${allocation.influencerName}? (10% platform fee will be deducted)`)) return;
         setReleaseSubmitting(allocation.id);
         try {
             await WalletService.releaseFundsToInfluencer(
@@ -313,6 +321,52 @@ const BrandDashboard: React.FC<{
         }
     };
 
+    const handleReleaseSponsorship = async (proposal: any) => {
+        if (!brandProfile?.id || !proposal.id) return;
+        const amount = Number(proposal.budget);
+        if (isNaN(amount) || amount <= 0) {
+            alert("This proposal does not have a valid budget amount.");
+            return;
+        }
+        
+        if (walletData.available < amount) {
+            alert(`Insufficient wallet balance. You need ₦${amount.toLocaleString()} in your available balance to release these funds.`);
+            return;
+        }
+
+        if (!window.confirm(`Release ₦${amount.toLocaleString()} sponsorship to ${proposal.sender?.name}? (10% platform fee will be deducted)`)) return;
+        
+        try {
+            // We need to move funds from brand to org with 10% fee
+            // But first we must lock them? No, we can just release directly from balance if brand has it
+            // The service has releaseSponsorshipFunds which deducts from Brand Escrow.
+            // So we must LOCK first.
+            
+            setLoading(true);
+            // 1. Lock funds
+            await WalletService.lockFundsForGig(brandProfile.id, proposal.senderId, amount, `Sponsorship: ${proposal.message.substring(0, 30)}...`);
+            
+            // 2. Release funds
+            await WalletService.releaseSponsorshipFunds(
+                brandProfile.id,
+                proposal.senderId,
+                amount,
+                proposal.message.substring(0, 30)
+            );
+            
+            // 3. Mark proposal as paid/completed in a custom way or just status accepted
+            await apiClient.patch(`proposals/${proposal.id}`, { status: 'paid' });
+            
+            alert("Sponsorship funds released successfully!");
+            await syncWalletStrip(brandProfile.id);
+            await fetchProposals();
+        } catch (e: any) {
+            alert(e.message || 'Failed to release sponsorship.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     // Reject allocation → refund to available balance, mark rejected
     const handleRejectAllocation = async (allocation: CampaignAllocation) => {
         if (!brandProfile?.id || !allocation.id) return;
@@ -321,7 +375,8 @@ const BrandDashboard: React.FC<{
             await WalletService.refundAllocation(
                 brandProfile.id,
                 allocation.amount,
-                `Refund: ${allocation.influencerName} removed from campaign`
+                `Refund: ${allocation.influencerName} removed from campaign`,
+                allocation.influencerId
             );
             await WalletService.updateAllocationStatus(allocation.id, 'rejected');
             await syncWalletStrip(brandProfile.id);
@@ -353,15 +408,23 @@ const BrandDashboard: React.FC<{
     const handleInlineCreateCampaign = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!brandProfile?.id) return;
+        
+        const amount = Number(inlineCreateForm.budget);
+        const totalRequired = amount + 20000; // Listing fee
+
+        if (walletData.available < totalRequired) {
+            alert(`Insufficient wallet balance. You need ₦${totalRequired.toLocaleString()} (₦${amount.toLocaleString()} budget + ₦20,000 listing fee) but only have ₦${walletData.available.toLocaleString()}.`);
+            return;
+        }
+
+        if (!window.confirm(`Launch campaign? A flat listing fee of ₦20,000 will be charged.`)) return;
+
         setInlineCreateSubmitting(true);
         try {
-            // Check wallet balance first
-            const amount = Number(inlineCreateForm.budget);
-            if (walletData.available < amount) {
-                alert(`Insufficient wallet balance. You need ₦${amount.toLocaleString()} but only have ₦${walletData.available.toLocaleString()}.`);
-                return;
-            }
-            // 1. Create campaign in Firestore
+            // 1. Charge listing fee
+            await WalletService.chargeListingFee(brandProfile.id, inlineCreateForm.title);
+
+            // 2. Create campaign in Firestore
             const payload = {
                 title: inlineCreateForm.title,
                 brief: inlineCreateForm.brief,
@@ -378,16 +441,16 @@ const BrandDashboard: React.FC<{
             const docRef = await apiClient.post('gigs', payload);
             const newCampaign = { id: docRef.data.id, ...payload };
             
-            // 2. Lock budget in escrow
+            // 3. Lock budget in escrow
             await WalletService.lockCampaignBudget(brandProfile.id, newCampaign.id, amount, newCampaign.title);
             await syncWalletStrip(brandProfile.id);
             
-            // 3. Add to local state & select it for allocation
+            // 4. Add to local state & select it for allocation
             await fetchCampaigns();
             setAllocationForm({ ...allocationForm, campaignId: newCampaign.id });
             setShowCreateInModal(false);
             setInlineCreateForm({ title: '', brief: '', budget: '', deadline: '', category: 'Awareness' });
-            
+            alert("Campaign launched and listing fee charged!");
         } catch (err: any) {
             console.error("Create error:", err);
             alert(err.message || "Failed to create campaign");
@@ -573,6 +636,36 @@ const BrandDashboard: React.FC<{
                             );
                         })()}
 
+                        {/* ── Recent Activity Quick View ── */}
+                        <div className="bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-[2.5rem] p-8 shadow-sm">
+                            <div className="flex items-center justify-between mb-6">
+                                <h3 className="text-xl font-black text-[var(--text-primary)]">Recent Activity</h3>
+                                <button onClick={() => setCurrentView('wallet')} className="text-[10px] font-black text-spark-red uppercase tracking-widest hover:underline">View All Transactions</button>
+                            </div>
+                            <div className="space-y-4">
+                                {transactions.length === 0 ? (
+                                    <p className="text-[var(--text-secondary)] text-sm italic py-4">No recent activity found.</p>
+                                ) : (
+                                    transactions.slice(0, 3).map((trans: any, i) => (
+                                        <div key={i} className="flex items-center justify-between p-4 bg-[var(--bg-secondary)] rounded-2xl hover:bg-[var(--bg-tertiary)] transition-all">
+                                            <div className="flex items-center gap-4">
+                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${trans.type === 'credit' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                                                    {trans.type === 'credit' ? <Plus className="w-4 h-4" /> : <Minus className="w-4 h-4" />}
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-black text-[var(--text-primary)]">{trans.description}</p>
+                                                    <p className="text-[10px] text-[var(--text-secondary)] font-bold">{trans.createdAt?.seconds ? new Date(trans.createdAt.seconds * 1000).toLocaleDateString() : 'Just now'}</p>
+                                                </div>
+                                            </div>
+                                            <p className={`text-sm font-black ${trans.type === 'credit' ? 'text-green-600' : 'text-spark-red'}`}>
+                                                {trans.type === 'credit' ? '+' : '-'} ₦{Number(trans.amount).toLocaleString()}
+                                            </p>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+
                         {/* ── Search Bar ── */}
                         <div className="bg-[var(--bg-primary)] p-6 rounded-[2rem] shadow-sm border border-[var(--border-color)] flex flex-col xl:flex-row gap-6 items-center">
                             <div className="relative flex-1 w-full">
@@ -686,7 +779,7 @@ const BrandDashboard: React.FC<{
                                 <div className="grid md:grid-cols-3 gap-8">
                                     {[
                                         { label: 'Available Balance', value: `₦${(wallet?.balance || 0).toLocaleString()}`, icon: <Wallet className="w-6 h-6" />, color: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' },
-                                        { label: 'Total Spent', value: `₦0.00`, icon: <TrendingUp className="w-6 h-6" />, color: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/20' },
+                                        { label: 'Total Spent', value: `₦${transactions.reduce((acc, t) => acc + (t.type === 'debit' ? (Number(t.amount) || 0) : 0), 0).toLocaleString()}`, icon: <TrendingUp className="w-6 h-6" />, color: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/20' },
                                         { label: 'Locked in Escrow', value: `₦${(wallet?.escrow || 0).toLocaleString()}`, icon: <Lock className="w-6 h-6" />, color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' },
                                     ].map((stat, i) => (
                                         <div key={i} className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm">
@@ -697,39 +790,90 @@ const BrandDashboard: React.FC<{
                                     ))}
                                 </div>
 
-                                {/* Wallet Actions */}
                                 <div className="bg-spark-black rounded-[2.5rem] p-10 text-white shadow-xl flex flex-col md:flex-row items-center justify-between gap-8">
                                     <div>
                                         <h3 className="text-2xl font-black mb-2 text-white">Top Up Your Wallet</h3>
                                         <p className="text-gray-400 font-medium">Add funds to launch new campaigns and hire influencers instantly.</p>
                                     </div>
-                                    <button 
-                                        onClick={async () => {
-                                            if (!brandProfile?.id) return;
-                                            const amount = Number(prompt("Enter amount to top up (₦):", "5000"));
-                                            if (!amount || amount <= 0) return;
-
-                                            const handler = (window as any).PaystackPop.setup({
-                                                key: 'pk_test_YOUR_PAYSTACK_PUBLIC_KEY', // Replace with your real public key
-                                                email: brandProfile.email || 'brand@campushub.africa',
-                                                amount: amount * 100, // Paystack uses Kobo
-                                                currency: 'NGN',
-                                                callback: async (response: any) => {
-                                                    // Payment Successful
-                                                    await WalletService.topUpWallet(brandProfile.id, amount, response.reference);
-                                                    alert(`Successfully topped up ₦${amount.toLocaleString()}!`);
-                                                    fetchWallet();
-                                                },
-                                                onClose: () => {
-                                                    console.log('Payment window closed');
+                                    <div className="flex flex-col sm:flex-row items-center gap-4">
+                                        <div className="relative w-full sm:w-48">
+                                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">₦</span>
+                                            <input 
+                                                type="number" 
+                                                value={topUpAmount}
+                                                onChange={e => setTopUpAmount(e.target.value)}
+                                                className="w-full pl-8 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white font-black outline-none focus:border-spark-red transition-all"
+                                                placeholder="Amount"
+                                            />
+                                        </div>
+                                        <button 
+                                            onClick={async () => {
+                                                if (!brandProfile?.id) return;
+                                                const amount = Number(topUpAmount);
+                                                if (!amount || amount <= 0) {
+                                                    alert("Please enter a valid amount.");
+                                                    return;
                                                 }
-                                            });
-                                            handler.openIframe();
+
+                                            const PaystackPop = (window as any).PaystackPop;
+                                            if (!PaystackPop) {
+                                                alert("CRITICAL: PaystackPop not found on window object.");
+                                                return;
+                                            }
+
+                                            try {
+                                                const reference = `REF-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+                                                console.log('[Paystack] Initializing with ref:', reference);
+                                                
+                                                const handler = PaystackPop.setup({
+                                                    key: 'pk_test_5ee439620d8a49acc254131ede19b9063d8fe95f', 
+                                                    email: brandProfile.email || user?.email || 'brand@campushub.africa',
+                                                    amount: amount * 100,
+                                                    currency: 'NGN',
+                                                    ref: reference,
+                                                    metadata: {
+                                                        userId: brandProfile.id,
+                                                        custom_fields: [
+                                                            {
+                                                                display_name: "Wallet Top-up",
+                                                                variable_name: "wallet_topup",
+                                                                value: brandProfile.id
+                                                            }
+                                                        ]
+                                                    },
+                                                    callback: function(response: any) {
+                                                        alert("Payment successful! Updating wallet...");
+                                                        // Use an IIFE for the async part to satisfy Paystack's function check
+                                                        (async () => {
+                                                            try {
+                                                                setWalletLoading(true);
+                                                                await WalletService.topUpWallet(brandProfile.id, amount, response.reference);
+                                                                alert(`Wallet updated: ₦${amount.toLocaleString()} added.`);
+                                                                await fetchWallet();
+                                                                await syncWalletStrip(brandProfile.id);
+                                                            } catch (err: any) {
+                                                                alert("Error updating wallet: " + err.message);
+                                                            } finally {
+                                                                setWalletLoading(false);
+                                                            }
+                                                        })();
+                                                    },
+                                                    onClose: () => {
+                                                        console.log('[Paystack] Modal closed');
+                                                    }
+                                                });
+                                                
+                                                alert("Opening Paystack payment window...");
+                                                handler.openIframe();
+                                            } catch (e: any) {
+                                                alert("Paystack Setup Error: " + e.message);
+                                            }
                                         }}
-                                        className="px-10 py-5 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all shadow-lg whitespace-nowrap"
+                                        className="px-10 py-5 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all shadow-lg whitespace-nowrap active:scale-95"
                                     >
                                         + Add Funds
                                     </button>
+                                    </div>
                                 </div>
 
                                 {/* Transactions Table */}
@@ -920,17 +1064,33 @@ const BrandDashboard: React.FC<{
                                                             {alloc.status === 'rejected' || alloc.status === 'paid' ? (
                                                                 <span className="text-[10px] text-[var(--text-secondary)] italic">{alloc.status === 'paid' ? 'Payment released' : 'Refunded'}</span>
                                                             ) : (
-                                                                <div className="flex gap-2">
-                                                                    {alloc.status !== 'approved' && (
-                                                                        <button onClick={() => handleApproveAllocation(alloc)} className="px-3 py-1.5 bg-spark-black text-white rounded-lg text-[10px] font-black uppercase hover:bg-gray-800 transition-colors">Approve</button>
+                                                                <div className="flex flex-col gap-2">
+                                                                    {alloc.submission && (
+                                                                        <div className="mb-2 p-3 bg-[var(--bg-primary)] rounded-xl border border-spark-red/20 shadow-sm">
+                                                                            <p className="text-[10px] font-black text-spark-red uppercase mb-1">Submission Received</p>
+                                                                            <p className="text-xs italic text-[var(--text-primary)] line-clamp-1 mb-2">"{alloc.submission.text}"</p>
+                                                                            <button 
+                                                                                onClick={() => setViewingReport(alloc)}
+                                                                                className="text-[10px] font-black text-spark-red uppercase hover:underline"
+                                                                            >
+                                                                                View Full Report
+                                                                            </button>
+                                                                        </div>
                                                                     )}
-                                                                    {(alloc.status === 'approved') && (
-                                                                        <button disabled={releaseSubmitting === alloc.id} onClick={() => handleReleasePayment(alloc)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center gap-1">
-                                                                            {releaseSubmitting === alloc.id ? <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin"/> : null}
-                                                                            Release Pay
-                                                                        </button>
-                                                                    )}
-                                                                    <button onClick={() => handleRejectAllocation(alloc)} className="px-3 py-1.5 bg-spark-red text-white rounded-lg text-[10px] font-black uppercase hover:bg-red-700 transition-colors">Reject</button>
+                                                                    <div className="flex gap-2">
+                                                                        {alloc.status !== 'approved' && (
+                                                                            <button onClick={() => handleApproveAllocation(alloc)} className="px-3 py-1.5 bg-spark-black text-white rounded-lg text-[10px] font-black uppercase hover:bg-gray-800 transition-colors">
+                                                                                {alloc.status === 'submitted' ? 'Approve Report' : 'Approve'}
+                                                                            </button>
+                                                                        )}
+                                                                        {(alloc.status === 'approved') && (
+                                                                            <button disabled={releaseSubmitting === alloc.id} onClick={() => handleReleasePayment(alloc)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center gap-1">
+                                                                                {releaseSubmitting === alloc.id ? <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin"/> : null}
+                                                                                Release Pay
+                                                                            </button>
+                                                                        )}
+                                                                        <button onClick={() => handleRejectAllocation(alloc)} className="px-3 py-1.5 bg-spark-red text-white rounded-lg text-[10px] font-black uppercase hover:bg-red-700 transition-colors">Reject</button>
+                                                                    </div>
                                                                 </div>
                                                             )}
                                                         </td>
@@ -951,7 +1111,7 @@ const BrandDashboard: React.FC<{
                         <div className="flex justify-between items-center">
                             <div>
                                 <h3 className="text-2xl font-black text-[var(--text-primary)]">My Campaigns</h3>
-                                <p className="text-[var(--text-secondary)] mt-1">Create and manage your influencer marketing campaigns.</p>
+                                <p className="text-[var(--text-secondary)] mt-1">Create and manage your influencer marketing campaigns. <span className="text-spark-red font-bold">₦20,000 listing fee applies.</span></p>
                             </div>
                             <button onClick={() => setShowCampaignModal(true)} className="bg-spark-red text-white px-6 py-3 rounded-xl font-black shadow-lg shadow-red-100 hover:bg-red-700 transition-all active:scale-95">
                                 + New Campaign
@@ -1077,10 +1237,26 @@ const BrandDashboard: React.FC<{
                                                                 )}
                                                             </div>
 
-                                                            {viewingApplicants.status === 'reviewing' && app.status === 'accepted' && (
-                                                                <div className="flex gap-3 border-t border-gray-50 pt-4">
-                                                                    <button onClick={() => handleReportApproval(viewingApplicants.id)} className="flex-1 py-3 bg-spark-black text-white font-black rounded-xl hover:bg-gray-800 transition-all text-xs">Approve Report & Pay</button>
-                                                                    <button onClick={() => handleReportRejection(viewingApplicants.id)} className="flex-1 py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all text-xs">Reject & Request Revision</button>
+                                                            {app.status === 'accepted' && (
+                                                                <div className="mt-4 p-4 bg-green-50 rounded-xl border border-green-100 flex items-center gap-3">
+                                                                    <div className="w-10 h-10 bg-green-500 text-white rounded-xl flex items-center justify-center flex-shrink-0">
+                                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className="text-[10px] font-black text-green-700 uppercase tracking-widest leading-relaxed">Application Accepted</p>
+                                                                        <p className="text-xs text-green-800 font-bold mt-1">Manage this influencer's execution and release payment in the <button onClick={() => { setViewingApplicants(null); setCurrentView('campaigns'); openCampaignDetail(viewingApplicants); }} className="underline hover:text-green-600">Campaign Details</button> view.</p>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            {app.status === 'submitted' && (
+                                                                <div className="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-100 flex items-center gap-3">
+                                                                    <div className="w-10 h-10 bg-blue-500 text-white rounded-xl flex items-center justify-center flex-shrink-0">
+                                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className="text-[10px] font-black text-blue-700 uppercase tracking-widest leading-relaxed">Report Submitted</p>
+                                                                        <p className="text-xs text-blue-800 font-bold mt-1">Review the report and release payment in the <button onClick={() => { setViewingApplicants(null); setCurrentView('campaigns'); openCampaignDetail(viewingApplicants); }} className="underline hover:text-blue-600">Campaign Details</button> view.</p>
+                                                                    </div>
                                                                 </div>
                                                             )}
                                                         </div>
@@ -1103,14 +1279,14 @@ const BrandDashboard: React.FC<{
                         {showCampaignModal && (
                             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                                 <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md" onClick={() => { setShowCampaignModal(false); setEditingGig(null); }}></div>
-                                <div className="relative bg-[var(--bg-primary)] w-full max-w-xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
-                                    <div className="p-10">
+                                <div className="relative bg-[var(--bg-primary)] w-full max-w-xl rounded-[2.5rem] shadow-2xl animate-in zoom-in-95 duration-300">
+                                    <div className="p-10 modal-content-scroll">
                                         <div className="flex justify-between items-start mb-8">
                                             <div>
                                                 <h2 className="text-2xl font-black text-[var(--text-primary)]">{editingGig ? 'Edit Campaign' : 'New Campaign'}</h2>
                                                 <p className="text-[var(--text-secondary)] mt-1">{editingGig ? 'Update your campaign details.' : 'Fill in the details for your campaign brief.'}</p>
                                             </div>
-                                            <button onClick={() => { setShowCampaignModal(false); setEditingGig(null); }} className="w-10 h-10 bg-spark-black text-white rounded-full flex items-center justify-center hover:bg-gray-800">
+                                            <button onClick={() => { setShowCampaignModal(false); setEditingGig(null); }} className="w-10 h-10 bg-[var(--bg-secondary)] text-[var(--text-primary)] rounded-full flex items-center justify-center hover:bg-spark-red hover:text-white transition-all">
                                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                                             </button>
                                         </div>
@@ -1135,6 +1311,25 @@ const BrandDashboard: React.FC<{
                                                     alert('Campaign updated successfully!');
                                                 } else {
                                                     // POST to backend: creates a real Gig that students can apply for
+                                                    const amount = Number(campaignForm.budget);
+                                                    const totalRequired = amount + 20000;
+
+                                                    if (walletData.available < totalRequired) {
+                                                        alert(`Insufficient balance. You need ₦${totalRequired.toLocaleString()} (₦${amount.toLocaleString()} budget + ₦20,000 listing fee).`);
+                                                        setCampaignSubmitting(false);
+                                                        return;
+                                                    }
+
+                                                    if (!window.confirm("Launch campaign? A flat listing fee of ₦20,000 will be charged.")) {
+                                                        setCampaignSubmitting(false);
+                                                        return;
+                                                    }
+
+                                                    // 1. Charge listing fee
+                                                    await WalletService.chargeListingFee(brandProfile.id, campaignForm.title);
+
+                                                    const resolvedBrandId = user?.uid || brandProfile.id;
+                                                    const resolvedBrandEmail = user?.email || brandProfile.email;
                                                     const payload = {
                                                         title: campaignForm.title,
                                                         description: campaignForm.brief,
@@ -1143,23 +1338,23 @@ const BrandDashboard: React.FC<{
                                                         budget: Number(campaignForm.budget),
                                                         brandName: brandProfile.name || brandProfile.companyName || 'Brand',
                                                         status: 'open',
-                                                        brandId: brandProfile.id,
-                                                        brandEmail: brandProfile.email || auth.currentUser?.email,
+                                                        brandId: resolvedBrandId,
+                                                        brandEmail: resolvedBrandEmail,
                                                         category: campaignForm.category,
                                                         deadline: campaignForm.deadline,
                                                         createdAt: new Date().toISOString()
                                                     };
+                                                    
                                                     const gigRes = await apiClient.post('gigs', payload);
                                                     
-                                                    const newCampaign = {
-                                                        id: gigRes.data.id,
-                                                        ...payload
-                                                    };
-                                                    // Optimistic update: Add to local state immediately
+                                                    // 2. Lock budget in escrow
+                                                    await WalletService.lockCampaignBudget(resolvedBrandId, gigRes.data.id, amount, campaignForm.title);
+                                                    await syncWalletStrip(resolvedBrandId);
+
+                                                    const newCampaign = { id: gigRes.data.id, ...payload };
                                                     setCampaigns(prev => [newCampaign, ...prev]);
-                                                    setShowCampaignModal(false);
-                                                    setCampaignForm({ title: '', brief: '', budget: '', deadline: '', category: 'Awareness' });
-                                                    alert('Campaign launched successfully!');
+                                                    alert('Campaign launched and listing fee charged!');
+                                                    setTimeout(() => fetchCampaigns(), 1500);
                                                 }
                                                 setShowCampaignModal(false);
                                                 setEditingGig(null);
@@ -1197,11 +1392,21 @@ const BrandDashboard: React.FC<{
                                                     <input required type="date" value={campaignForm.deadline} onChange={e => setCampaignForm(p => ({ ...p, deadline: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] rounded-2xl font-bold outline-none border-2 border-transparent focus:border-spark-red" />
                                                 </div>
                                             </div>
-                                            <div className="flex gap-4 pt-2">
-                                                <button type="button" onClick={() => { setShowCampaignModal(false); setEditingGig(null); }} className="flex-1 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-gray-800">Cancel</button>
-                                                <button type="submit" disabled={campaignSubmitting} className="flex-[2] py-4 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 shadow-xl shadow-red-200 flex items-center justify-center gap-2 disabled:opacity-50">
-                                                    {campaignSubmitting ? <><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>{editingGig ? 'Updating...' : 'Creating...'}</> : editingGig ? 'Update Campaign' : 'Launch Campaign'}
-                                                </button>
+                                            <div className="flex flex-col gap-4 pt-2">
+                                                {!editingGig && (
+                                                    <div className="p-4 bg-red-50 rounded-2xl border border-red-100 flex items-center gap-3">
+                                                        <div className="w-10 h-10 bg-spark-red text-white rounded-xl flex items-center justify-center flex-shrink-0">
+                                                            <Activity className="w-5 h-5" />
+                                                        </div>
+                                                        <p className="text-[10px] font-black text-spark-red uppercase tracking-widest leading-relaxed">A flat listing fee of ₦20,000 will be charged upon launching this campaign.</p>
+                                                    </div>
+                                                )}
+                                                <div className="flex gap-4">
+                                                    <button type="button" onClick={() => { setShowCampaignModal(false); setEditingGig(null); }} className="flex-1 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-gray-800 transition-all">Cancel</button>
+                                                    <button type="submit" disabled={campaignSubmitting} className="flex-[2] py-4 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 shadow-xl shadow-red-200 flex items-center justify-center gap-2 disabled:opacity-50 transition-all active:scale-95">
+                                                        {campaignSubmitting ? <><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>{editingGig ? 'Updating...' : 'Creating...'}</> : editingGig ? 'Update Campaign' : 'Launch Campaign'}
+                                                    </button>
+                                                </div>
                                             </div>
                                         </form>
                                     </div>
@@ -1357,6 +1562,7 @@ const BrandDashboard: React.FC<{
                 proposal={selectedProposal}
                 onUpdateStatus={handleUpdateStatus}
                 isSender={selectedProposal?.senderId === brandProfile?.id}
+                onReleaseSponsorship={handleReleaseSponsorship}
             />
 
             <EventDetailsModal
@@ -1450,6 +1656,52 @@ const BrandDashboard: React.FC<{
                                 </>
                             )}
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Report Viewer Modal */}
+            {viewingReport && (
+                <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md z-[300] flex items-center justify-center p-4 animate-in fade-in duration-300">
+                    <div className="bg-[var(--bg-primary)] w-full max-w-xl rounded-[2.5rem] border border-[var(--border-color)] p-10 shadow-2xl animate-in zoom-in-95 duration-300">
+                        <div className="flex justify-between items-center mb-8">
+                            <h3 className="text-2xl font-black text-[var(--text-primary)]">Execution Report</h3>
+                            <button onClick={() => setViewingReport(null)} className="text-[var(--text-secondary)] hover:text-spark-red transition-colors">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            </button>
+                        </div>
+                        <div className="flex items-center gap-4 mb-8 p-4 bg-[var(--bg-secondary)] rounded-2xl">
+                            <div className="w-12 h-12 rounded-xl bg-spark-red text-white flex items-center justify-center font-black text-lg">
+                                {viewingReport.influencerName?.charAt(0)}
+                            </div>
+                            <div>
+                                <h4 className="font-black text-[var(--text-primary)]">{viewingReport.influencerName}</h4>
+                                <p className="text-[10px] font-black text-spark-red uppercase tracking-widest">{viewingReport.influencerUniversity}</p>
+                            </div>
+                        </div>
+                        <div className="space-y-6">
+                            <div>
+                                <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Campaign Submission</label>
+                                <div className="p-6 bg-[var(--bg-secondary)] rounded-2xl border border-[var(--border-color)] text-[var(--text-primary)] leading-relaxed italic">
+                                    "{viewingReport.submission?.text}"
+                                </div>
+                            </div>
+                            {viewingReport.submission?.link && (
+                                <div>
+                                    <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Evidence Link</label>
+                                    <a 
+                                        href={viewingReport.submission.link} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer" 
+                                        className="flex items-center gap-2 p-4 bg-spark-red/5 text-spark-red rounded-xl font-black text-sm hover:bg-spark-red/10 transition-all"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+                                        Open Execution Proof
+                                    </a>
+                                </div>
+                            )}
+                        </div>
+                        <button onClick={() => setViewingReport(null)} className="w-full mt-10 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all">Close Viewer</button>
                     </div>
                 </div>
             )}

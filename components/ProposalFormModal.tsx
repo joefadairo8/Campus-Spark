@@ -136,7 +136,7 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
                 </div>
 
                 {/* Form */}
-                <form onSubmit={handleSubmit} className="p-6 sm:p-12 max-h-[60vh] overflow-y-auto">
+                <form onSubmit={handleSubmit} className="p-6 sm:p-12 modal-content-scroll">
                     {error && (
                         <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl">
                             <p className="text-red-700 dark:text-red-400 font-bold text-sm">{error}</p>

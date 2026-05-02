@@ -39,6 +39,17 @@ const OrgDashboard: React.FC<{
     const [editingEvent, setEditingEvent] = useState<any>(null);
     const [editFormData, setEditFormData] = useState({ name: '', date: '', description: '', targetSponsorship: '' });
     const [editSubmitting, setEditSubmitting] = useState(false);
+    const [topUpAmount, setTopUpAmount] = useState('10000');
+
+    useEffect(() => {
+        const script = document.createElement("script");
+        script.src = "https://js.paystack.co/v1/inline.js";
+        script.async = true;
+        document.body.appendChild(script);
+        return () => {
+            document.body.removeChild(script);
+        }
+    }, []);
 
     // Form State
     const [formData, setFormData] = useState({
@@ -98,6 +109,7 @@ const OrgDashboard: React.FC<{
             if (orgProfile?.email) emailsToTry.add(orgProfile.email);
             if (orgProfile?.hostEmail) emailsToTry.add(orgProfile.hostEmail);
 
+            console.log('[fetchMyEvents] Querying hostId:', currentUser.uid);
             for (const email of emailsToTry) {
                 try {
                     const resEmail = await apiClient.get(`events?hostEmail=${encodeURIComponent(email)}`);
@@ -110,6 +122,19 @@ const OrgDashboard: React.FC<{
                 } catch (e) {
                     console.warn(`Fallback fetch failed for ${email}:`, e);
                 }
+            }
+
+            // TERTIARY FALLBACK: Full collection scan filtered client-side
+            if (allMyEvents.length === 0) {
+                console.warn('[fetchMyEvents] Indexed queries returned 0 — doing full scan fallback.');
+                const allRes = await apiClient.get('events');
+                const allEventsList: any[] = allRes.data || [];
+                allMyEvents = allEventsList.filter((e: any) => 
+                    e.hostId === currentUser.uid || 
+                    (currentUser.email && e.hostEmail === currentUser.email) ||
+                    (orgProfile?.email && e.hostEmail === orgProfile.email)
+                );
+                console.log('[fetchMyEvents] Full-scan results:', allMyEvents.length);
             }
 
             setMyEvents(allMyEvents);
@@ -313,7 +338,7 @@ const OrgDashboard: React.FC<{
                                 <div className="grid md:grid-cols-3 gap-8">
                                     {[
                                         { label: 'Available Balance', value: `₦${(wallet?.balance || 0).toLocaleString()}`, icon: <Wallet className="w-6 h-6" />, color: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' },
-                                        { label: 'Total Sponsoship', value: `₦0.00`, icon: <TrendingUp className="w-6 h-6" />, color: 'bg-spark-purple/10 text-spark-purple border border-spark-purple/20' },
+                                        { label: 'Total Sponsorship', value: `₦${transactions.reduce((acc, t) => acc + (t.type === 'credit' ? (Number(t.amount) || 0) : 0), 0).toLocaleString()}`, icon: <TrendingUp className="w-6 h-6" />, color: 'bg-spark-purple/10 text-spark-purple border border-spark-purple/20' },
                                         { label: 'Locked in Escrow', value: `₦${(wallet?.escrow || 0).toLocaleString()}`, icon: <Lock className="w-6 h-6" />, color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' },
                                     ].map((stat, i) => (
                                         <div key={i} className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm">
@@ -325,38 +350,77 @@ const OrgDashboard: React.FC<{
                                 </div>
 
                                 {/* Wallet Actions */}
-                                <div className="bg-spark-purple rounded-[2.5rem] p-10 text-white shadow-xl flex flex-col md:flex-row items-center justify-between gap-8">
+                                <div className="bg-spark-black rounded-[2.5rem] p-10 text-white shadow-xl flex flex-col md:flex-row items-center justify-between gap-8">
                                     <div>
                                         <h3 className="text-2xl font-black mb-2 text-white">Organization Finances</h3>
                                         <p className="text-purple-100 font-medium">Manage sponsorship funds and pay for campus event resources.</p>
+                                        <p className="text-[10px] font-black text-spark-red uppercase tracking-widest mt-2">Note: A 10% platform fee applies to all sponsorship funds received.</p>
                                     </div>
-                                    <button 
-                                        onClick={async () => {
-                                            if (!orgProfile?.id) return;
-                                            const amount = Number(prompt("Enter amount to top up (₦):", "10000"));
-                                            if (!amount || amount <= 0) return;
-
-                                            const handler = (window as any).PaystackPop.setup({
-                                                key: 'pk_test_YOUR_PAYSTACK_PUBLIC_KEY', // Replace with your real public key
-                                                email: orgProfile.email || 'org@campushub.africa',
-                                                amount: amount * 100, // Paystack uses Kobo
-                                                currency: 'NGN',
-                                                callback: async (response: any) => {
-                                                    // Payment Successful
-                                                    await WalletService.topUpWallet(orgProfile.id, amount, response.reference);
-                                                    alert(`Successfully topped up ₦${amount.toLocaleString()}!`);
-                                                    fetchWallet();
-                                                },
-                                                onClose: () => {
-                                                    console.log('Payment window closed');
+                                    <div className="flex flex-col sm:flex-row items-center gap-4">
+                                        <div className="relative w-full sm:w-48">
+                                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">₦</span>
+                                            <input 
+                                                type="number" 
+                                                value={topUpAmount}
+                                                onChange={e => setTopUpAmount(e.target.value)}
+                                                className="w-full pl-8 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white font-black outline-none focus:border-spark-red transition-all"
+                                                placeholder="Amount"
+                                            />
+                                        </div>
+                                        <button 
+                                            onClick={async () => {
+                                                if (!orgProfile?.id) return;
+                                                const amount = Number(topUpAmount);
+                                                if (!amount || amount <= 0) {
+                                                    alert("Please enter a valid amount.");
+                                                    return;
                                                 }
-                                            });
-                                            handler.openIframe();
+
+                                            const PaystackPop = (window as any).PaystackPop;
+                                            if (!PaystackPop) {
+                                                alert("CRITICAL: PaystackPop not found on window object.");
+                                                return;
+                                            }
+
+                                            try {
+                                                const reference = `REF-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+                                                const handler = PaystackPop.setup({
+                                                    key: 'pk_test_5ee439620d8a49acc254131ede19b9063d8fe95f',
+                                                    email: orgProfile.email || 'org@campushub.africa',
+                                                    amount: amount * 100, // Paystack uses Kobo
+                                                    currency: 'NGN',
+                                                    ref: reference,
+                                                    callback: function(response: any) {
+                                                        alert("Payment successful! Updating wallet...");
+                                                        (async () => {
+                                                            try {
+                                                                setWalletLoading(true);
+                                                                await WalletService.topUpWallet(orgProfile.id, amount, response.reference);
+                                                                alert(`Successfully topped up ₦${amount.toLocaleString()}!`);
+                                                                fetchWallet();
+                                                            } catch (err: any) {
+                                                                alert("Error updating wallet: " + err.message);
+                                                            } finally {
+                                                                setWalletLoading(false);
+                                                            }
+                                                        })();
+                                                    },
+                                                    onClose: () => {
+                                                        console.log('[Paystack] Modal closed');
+                                                    }
+                                                });
+                                                
+                                                alert("Opening Paystack payment window...");
+                                                handler.openIframe();
+                                            } catch (e: any) {
+                                                alert("Paystack Setup Error: " + e.message);
+                                            }
                                         }}
                                         className="px-10 py-5 bg-spark-black text-white font-black rounded-2xl hover:bg-gray-800 transition-all shadow-lg whitespace-nowrap"
                                     >
                                         + Add Funds
                                     </button>
+                                    </div>
                                 </div>
 
                                 {/* Transactions Table */}
@@ -915,8 +979,8 @@ const OrgDashboard: React.FC<{
             {editingEvent && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
                     <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md" onClick={() => setEditingEvent(null)}></div>
-                    <div className="relative bg-[var(--bg-primary)] w-full max-w-xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
-                        <div className="p-10">
+                    <div className="relative bg-[var(--bg-primary)] w-full max-w-xl rounded-[2.5rem] shadow-2xl animate-in zoom-in-95 duration-300">
+                        <div className="p-10 modal-content-scroll">
                             <div className="flex justify-between items-start mb-8">
                                 <div>
                                     <h2 className="text-3xl font-black text-[var(--text-primary)] leading-tight">Edit Event</h2>
