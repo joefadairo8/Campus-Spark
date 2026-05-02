@@ -7,6 +7,8 @@ interface ProposalFormModalProps {
     recipientId: string;
     initialMessage?: string;
     onSubmit: (data: { recipientId: string; message: string; budget?: string; timeline?: string; documentUrl?: string; documentName?: string; }) => Promise<void>;
+    title?: string;
+    isSponsorship?: boolean;
 }
 
 export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
@@ -15,7 +17,9 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
     recipientName,
     recipientId,
     initialMessage = '',
-    onSubmit
+    onSubmit,
+    title = 'Partnership Proposal',
+    isSponsorship = false
 }) => {
     const [message, setMessage] = useState(initialMessage);
     const [budget, setBudget] = useState('');
@@ -42,7 +46,12 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
         e.preventDefault();
 
         if (!message.trim()) {
-            setError('Please enter a proposal message');
+            setError(isSponsorship ? 'Please describe your sponsorship intent' : 'Please enter a proposal message');
+            return;
+        }
+
+        if (isSponsorship && !budget.trim()) {
+            setError('Please enter a sponsorship amount');
             return;
         }
 
@@ -130,9 +139,9 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
                 </button>
 
                 {/* Header */}
-                <div className="bg-gradient-to-br from-spark-red to-red-600 p-8 sm:p-12">
-                    <h2 className="text-3xl sm:text-4xl font-black text-white mb-2">Partnership Proposal</h2>
-                    <p className="text-white/90 font-bold">Send a proposal to {recipientName}</p>
+                <div className={`bg-gradient-to-br ${isSponsorship ? 'from-green-600 to-green-800' : 'from-spark-red to-red-600'} p-8 sm:p-12`}>
+                    <h2 className="text-3xl sm:text-4xl font-black text-white mb-2">{title}</h2>
+                    <p className="text-white/90 font-bold">{isSponsorship ? 'Directly sponsor' : 'Send a proposal to'} {recipientName}</p>
                 </div>
 
                 {/* Form */}
@@ -207,15 +216,15 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
                     <button
                         type="submit"
                         disabled={submitting || !message.trim()}
-                        className="w-full py-6 bg-[var(--text-primary)] text-[var(--bg-primary)] font-black text-xl rounded-2xl hover:bg-spark-red hover:text-white transition-all shadow-xl flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className={`w-full py-6 font-black text-xl rounded-2xl transition-all shadow-xl flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${isSponsorship ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-[var(--text-primary)] text-[var(--bg-primary)] hover:bg-spark-red hover:text-white'}`}
                     >
                         {submitting ? (
                             <>
                                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                Sending Proposal...
+                                {isSponsorship ? 'Processing Payment...' : 'Sending Proposal...'}
                             </>
                         ) : (
-                            'Send Proposal'
+                            isSponsorship ? 'Send & Pay Sponsorship' : 'Send Proposal'
                         )}
                     </button>
                 </form>

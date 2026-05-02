@@ -9,7 +9,7 @@ import { ProposalFormModal } from './ProposalFormModal';
 import { ProposalDetailsModal } from './ProposalDetailsModal';
 import { EventDetailsModal } from './EventDetailsModal';
 import { WalletService, CampaignAllocation } from '../WalletService';
-import { Calendar, Wallet, BarChart3, Lock, Plus, Minus, Mail, Users, Megaphone, Inbox, TrendingUp, ArrowUpRight, ArrowDownLeft, Activity } from 'lucide-react';
+import { Calendar, Wallet, BarChart3, Lock, Plus, Minus, Mail, Users, Megaphone, Inbox, TrendingUp, ArrowUpRight, ArrowDownLeft, Activity, Handshake, Building2, Search } from 'lucide-react';
 
 const BrandDashboard: React.FC<{ 
     onNavigate: (page: string) => void,
@@ -75,6 +75,9 @@ const BrandDashboard: React.FC<{
     const [activeCampaignContext, setActiveCampaignContext] = useState<any>(null); // for directory overview panel
     const [releaseSubmitting, setReleaseSubmitting] = useState<string | null>(null); // allocation id being released
     const [viewingReport, setViewingReport] = useState<any>(null);
+    const [eventBeingSponsored, setEventBeingSponsored] = useState<any>(null);
+    const [partners, setPartners] = useState<any[]>([]);
+    const [partnersLoading, setPartnersLoading] = useState(false);
 
     const fetchApplicants = async (campaign: any) => {
         setViewingApplicants(campaign);
@@ -138,14 +141,15 @@ const BrandDashboard: React.FC<{
             setWallet(w);
             setWalletData({ available: w.balance || 0, locked: w.escrow || 0 });
             
-            const q = query(collection(db, 'transactions'), where('userId', '==', brandProfile.id), limit(20));
+            const q = query(
+                collection(db, 'transactions'), 
+                where('userId', '==', brandProfile.id), 
+                orderBy('createdAt', 'desc'),
+                limit(30)
+            );
             const transSnap = await getDocs(q);
-            const sortedTrans = transSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => {
-                const dateA = a.createdAt?.seconds || 0;
-                const dateB = b.createdAt?.seconds || 0;
-                return dateB - dateA;
-            });
-            setTransactions(sortedTrans);
+            const mappedTrans = transSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            setTransactions(mappedTrans);
         } catch (e) {
             console.error("Wallet fetch error:", e);
         } finally {
@@ -297,23 +301,25 @@ const BrandDashboard: React.FC<{
     // Release payment → move escrow to influencer wallet, update allocation status
     const handleReleasePayment = async (allocation: CampaignAllocation) => {
         if (!brandProfile?.id || !allocation.id) return;
-        if (!window.confirm(`Release ₦${allocation.amount.toLocaleString()} to ${allocation.influencerName}? (10% platform fee will be deducted)`)) return;
+        if (!window.confirm(`Release ₦${allocation.amount.toLocaleString()} to ${allocation.influencerName}?`)) return;
+        
         setReleaseSubmitting(allocation.id);
         try {
-            await WalletService.releaseFundsToInfluencer(
+            await WalletService.releaseAllocationPayment(
                 brandProfile.id,
-                allocation.influencerId,
-                allocation.amount,
+                allocation.id,
                 selectedCampaignDetail?.title || 'Campaign'
             );
-            await WalletService.updateAllocationStatus(allocation.id, 'paid');
+            
             await syncWalletStrip(brandProfile.id);
             await fetchAllAllocations(brandProfile.id);
-            // Refresh detail
+            
+            // Refresh detail view
             if (selectedCampaignDetail) {
                 const updated = await WalletService.getAllocationsForCampaign(selectedCampaignDetail.id);
                 setDetailAllocations(updated);
             }
+            alert('Payment successfully released!');
         } catch (e: any) {
             alert(e.message || 'Failed to release payment.');
         } finally {
@@ -334,7 +340,7 @@ const BrandDashboard: React.FC<{
             return;
         }
 
-        if (!window.confirm(`Release ₦${amount.toLocaleString()} sponsorship to ${proposal.sender?.name}? (10% platform fee will be deducted)`)) return;
+        if (!window.confirm(`Release ₦${amount.toLocaleString()} sponsorship to ${proposal.sender?.name}?`)) return;
         
         try {
             // We need to move funds from brand to org with 10% fee
@@ -404,6 +410,23 @@ const BrandDashboard: React.FC<{
             alert(e.message || 'Failed to approve.');
         }
     };
+
+    // Reject report (move status back to revision/in_progress)
+    const handleRejectReport = async (allocation: CampaignAllocation) => {
+        if (!allocation.id) return;
+        if (!window.confirm('Reject this report? The influencer will be notified to revise their submission.')) return;
+        try {
+            await WalletService.updateAllocationStatus(allocation.id, 'revision');
+            await fetchAllAllocations(brandProfile.id);
+            if (selectedCampaignDetail) {
+                const updated = await WalletService.getAllocationsForCampaign(selectedCampaignDetail.id);
+                setDetailAllocations(updated);
+            }
+            alert('Report rejected. Influencer can now resubmit.');
+        } catch (e: any) {
+            alert(e.message || 'Failed to reject report.');
+        }
+    };
     // Handle inline campaign creation from the allocation modal
     const handleInlineCreateCampaign = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -462,6 +485,7 @@ const BrandDashboard: React.FC<{
     const sidebarItems = [
         { id: 'directory', label: 'Talent Directory', icon: <Users className="w-5 h-5" /> },
         { id: 'campaigns', label: 'My Campaigns', icon: <Megaphone className="w-5 h-5" /> },
+        { id: 'partnerships', label: 'Partner Hub', icon: <Handshake className="w-5 h-5" /> },
         { id: 'wallet', label: 'Wallet & Billing', icon: <Wallet className="w-5 h-5" /> },
         { id: 'proposals', label: 'Offers & Proposals', icon: <Inbox className="w-5 h-5" /> },
         { id: 'events', label: 'Campus Events', icon: <Calendar className="w-5 h-5" /> },
@@ -553,7 +577,27 @@ const BrandDashboard: React.FC<{
                 setLoading(false);
             }
         };
-        fetchData();
+
+        const fetchPartners = async () => {
+            setPartnersLoading(true);
+            try {
+                const roles = [UserRole.Organization, 'Organization', 'Brand', UserRole.Brand];
+                const q = query(collection(db, "users"), where("role", "in", roles), limit(50));
+                const querySnapshot = await getDocs(q);
+                const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
+                setPartners(data.filter(p => p.id !== brandProfile?.id));
+            } catch (err) {
+                console.error("Error fetching partners:", err);
+            } finally {
+                setPartnersLoading(false);
+            }
+        };
+
+        if (currentView === 'partnerships') {
+            fetchPartners();
+        } else {
+            fetchData();
+        }
     }, [currentView, brandProfile]);
 
     const handleOpenProposalModal = (student: any) => {
@@ -564,25 +608,65 @@ const BrandDashboard: React.FC<{
 
     const handleContactHost = (event: any) => {
         console.log('Contacting host for event:', event);
-        if (!event.host) {
-            alert('Cannot contact host: Host information is missing for this event.');
+        const hostId = event.host?.id || event.hostId;
+        const hostName = event.host?.name || event.hostName || "Organization";
+
+        if (!hostId) {
+            alert('Cannot contact host: Host information (ID) is missing for this event.');
             return;
         }
-        setProposalRecipient({ id: event.host.id, name: event.host.name || event.hostName });
-        setProposalInitialMessage(`Hi ${event.hostName}, we are interested in sponsoring your event "${event.name}".`);
+        setEventBeingSponsored(event);
+        setProposalRecipient({ id: hostId, name: hostName });
+        setProposalInitialMessage(`Hi ${hostName}, we are interested in sponsoring your event "${event.name}".`);
         setShowProposalModal(true);
         setSelectedEvent(null); // Close event modal
     };
 
     const handleSendProposal = async (data: { recipientId: string; message: string; budget?: string; timeline?: string; documentUrl?: string; documentName?: string; }) => {
         try {
-            await apiClient.post('proposals', data);
-            alert("Partnership proposal sent successfully!");
+            // If it's an event sponsorship with a budget, we deduct from brand wallet
+            if (eventBeingSponsored && data.budget) {
+                // Extract numbers from budget string (e.g., "₦50,000" -> 50000)
+                const amount = Number(data.budget.replace(/[^0-9.]/g, ''));
+                if (!isNaN(amount) && amount > 0) {
+                    if (walletData.available < amount) {
+                        if (window.confirm(`Insufficient balance. You need ₦${amount.toLocaleString()} to sponsor this event. Would you like to top up your wallet now?`)) {
+                            setCurrentView('wallet');
+                            setShowProposalModal(false);
+                        }
+                        return;
+                    }
+                    
+                    if (window.confirm(`Confirm sponsorship payment of ₦${amount.toLocaleString()} for "${eventBeingSponsored.name}"? This will be credited to the organization immediately (minus platform fees).`)) {
+                        await WalletService.paySponsorship(
+                            brandProfile.id, 
+                            data.recipientId, 
+                            amount, 
+                            eventBeingSponsored.name
+                        );
+                        // Record the proposal with payment info
+                        await apiClient.post('proposals', { ...data, status: 'paid', amount });
+                        alert(`Sponsorship of ₦${amount.toLocaleString()} sent and credited to the organization!`);
+                        syncWalletStrip(brandProfile.id);
+                    } else {
+                        return; // user cancelled
+                    }
+                } else {
+                    await apiClient.post('proposals', data);
+                    alert("Partnership proposal sent successfully!");
+                }
+            } else {
+                await apiClient.post('proposals', data);
+                alert("Partnership proposal sent successfully!");
+            }
+
             setShowProposalModal(false);
             setProposalRecipient(null);
+            setEventBeingSponsored(null);
             fetchProposals();
-        } catch (error) {
+        } catch (error: any) {
             console.error("Proposal error:", error);
+            alert(error.message || "Failed to send proposal.");
             throw error;
         }
     };
@@ -604,6 +688,63 @@ const BrandDashboard: React.FC<{
 
     const renderContent = () => {
         switch (currentView) {
+            case 'partnerships':
+                return (
+                    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                            <div>
+                                <h2 className="text-4xl font-black text-[var(--text-primary)]">Partner Hub</h2>
+                                <p className="text-[var(--text-secondary)] mt-1">Connect directly with Organizations and other Brands for non-sponsorship collaborations.</p>
+                            </div>
+                            <div className="relative w-full md:w-96 group">
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-secondary)] group-focus-within:text-spark-red transition-colors" />
+                                <input 
+                                    type="text" 
+                                    placeholder="Search brands or organizations..." 
+                                    className="w-full pl-12 pr-4 py-4 bg-[var(--bg-primary)] border-2 border-[var(--border-color)] rounded-2xl font-bold outline-none focus:border-spark-red transition-all"
+                                />
+                            </div>
+                        </div>
+
+                        {partnersLoading ? (
+                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
+                        ) : partners.length === 0 ? (
+                            <DashboardPlaceholder 
+                                icon={<Handshake className="w-12 h-12" />}
+                                title="No Partners Available"
+                                message="We couldn't find any organizations or brands at the moment."
+                            />
+                        ) : (
+                            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                                {partners.map((partner) => (
+                                    <div key={partner.id} className="group bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300">
+                                        <div className="h-24 bg-gradient-to-r from-spark-red/5 to-spark-black/5 group-hover:from-spark-red/10 group-hover:to-spark-black/10 transition-colors" />
+                                        <div className="px-8 pb-8 -mt-12">
+                                            <div className="w-20 h-20 bg-[var(--bg-primary)] border-4 border-[var(--bg-primary)] rounded-[1.5rem] shadow-lg flex items-center justify-center text-3xl font-black text-spark-red mb-4">
+                                                {partner.imageUrl ? <img src={partner.imageUrl} className="w-full h-full object-cover" /> : partner.name?.charAt(0)}
+                                            </div>
+                                            <h3 className="text-xl font-black text-[var(--text-primary)] mb-1 group-hover:text-spark-red transition-colors">{partner.name}</h3>
+                                            <p className="text-[10px] font-black text-spark-red uppercase tracking-widest mb-4">{partner.role}</p>
+                                            <p className="text-sm text-[var(--text-secondary)] line-clamp-2 mb-6 min-h-[40px] font-medium leading-relaxed">
+                                                {partner.bio || `Connect with ${partner.name} for strategic partnerships and cross-brand collaborations.`}
+                                            </p>
+                                            <button 
+                                                onClick={() => {
+                                                    setProposalRecipient({ id: partner.id, name: partner.name });
+                                                    setProposalInitialMessage(`Hi ${partner.name}, we would like to explore a partnership with your ${partner.role.toLowerCase()}.`);
+                                                    setShowProposalModal(true);
+                                                }}
+                                                className="w-full py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all transform active:scale-95 flex items-center justify-center gap-2"
+                                            >
+                                                Send Partnership Proposal
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                );
             case 'directory':
                 return (
                     <div className="space-y-6">
@@ -1078,18 +1219,32 @@ const BrandDashboard: React.FC<{
                                                                         </div>
                                                                     )}
                                                                     <div className="flex gap-2">
-                                                                        {alloc.status !== 'approved' && (
-                                                                            <button onClick={() => handleApproveAllocation(alloc)} className="px-3 py-1.5 bg-spark-black text-white rounded-lg text-[10px] font-black uppercase hover:bg-gray-800 transition-colors">
-                                                                                {alloc.status === 'submitted' ? 'Approve Report' : 'Approve'}
-                                                                            </button>
+                                                                        {alloc.status === 'submitted' && (
+                                                                            <>
+                                                                                <button onClick={() => handleApproveAllocation(alloc)} className="px-3 py-1.5 bg-spark-black text-white rounded-lg text-[10px] font-black uppercase hover:bg-gray-800 transition-colors">
+                                                                                    Approve Report
+                                                                                </button>
+                                                                                <button onClick={() => handleRejectReport(alloc)} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-red-700 transition-colors">
+                                                                                    Reject Report
+                                                                                </button>
+                                                                            </>
                                                                         )}
-                                                                        {(alloc.status === 'approved') && (
+                                                                        {alloc.status === 'approved' && (
                                                                             <button disabled={releaseSubmitting === alloc.id} onClick={() => handleReleasePayment(alloc)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center gap-1">
                                                                                 {releaseSubmitting === alloc.id ? <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin"/> : null}
                                                                                 Release Pay
                                                                             </button>
                                                                         )}
-                                                                        <button onClick={() => handleRejectAllocation(alloc)} className="px-3 py-1.5 bg-spark-red text-white rounded-lg text-[10px] font-black uppercase hover:bg-red-700 transition-colors">Reject</button>
+                                                                        {(alloc.status === 'selected' || alloc.status === 'in_progress' || alloc.status === 'revision') && (
+                                                                            <span className="px-3 py-1.5 bg-[var(--bg-secondary)] text-[var(--text-secondary)] rounded-lg text-[10px] font-black uppercase border border-[var(--border-color)]">
+                                                                                {alloc.status === 'revision' ? 'Revision Requested' : 'Work Pending'}
+                                                                            </span>
+                                                                        )}
+                                                                        {alloc.status !== 'paid' && alloc.status !== 'rejected' && (
+                                                                            <button onClick={() => handleRejectAllocation(alloc)} className="px-3 py-1.5 bg-spark-red text-white rounded-lg text-[10px] font-black uppercase hover:bg-red-700 transition-colors">
+                                                                                {alloc.status === 'submitted' ? 'Cancel & Refund' : 'Reject Influencer'}
+                                                                            </button>
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                             )}
@@ -1548,11 +1703,13 @@ const BrandDashboard: React.FC<{
             {showProposalModal && proposalRecipient && (
                 <ProposalFormModal
                     isOpen={showProposalModal}
-                    onClose={() => setShowProposalModal(false)}
+                    onClose={() => { setShowProposalModal(false); setEventBeingSponsored(null); }}
                     recipientName={proposalRecipient.name}
                     recipientId={proposalRecipient.id}
                     initialMessage={proposalInitialMessage}
                     onSubmit={handleSendProposal}
+                    isSponsorship={!!eventBeingSponsored}
+                    title={eventBeingSponsored ? `Sponsor "${eventBeingSponsored.name}"` : 'Partnership Proposal'}
                 />
             )}
 

@@ -107,8 +107,10 @@ const LoginPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigat
                                 onNavigate('org-dashboard');
                                 break;
                             case 'Admin':
-                                onNavigate('admin-dashboard');
-                                break;
+                                await auth.signOut();
+                                setError('SECURITY ALERT: Admin accounts are restricted from regular login. Please use the administrative terminal.');
+                                setLoading(false);
+                                return;
                             default:
                                 onNavigate('student-dashboard');
                                 break;

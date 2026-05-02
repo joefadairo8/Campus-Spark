@@ -62,6 +62,7 @@ const StudentDashboard: React.FC<{
     const tabs = [
         { id: 'gigs', label: 'Opportunities' },
         { id: 'my-campaigns', label: 'My Campaigns', hasBadge: myCampaigns.some(c => c.status === 'selected' || c.status === 'in_progress') },
+        { id: 'ambassador-hub', label: 'Ambassador Hub' },
         { id: 'proposals', label: 'Offers', hasBadge: proposals.some(p => p.status === 'pending' && p.recipientId === userProfile?.id) },
         { id: 'brands', label: 'Explore Brands' },
         { id: 'community', label: 'Network' },
@@ -175,9 +176,12 @@ const StudentDashboard: React.FC<{
                 } else if (activeTab === 'brands') {
                     const res = await apiClient.get(`users?role=${encodeURIComponent(UserRole.Brand)}`);
                     items = res.data;
-                } else if (activeTab === 'organizations') {
-                    const res = await apiClient.get(`users?role=${encodeURIComponent(UserRole.StudentOrg)}`);
-                    items = res.data;
+                } else if (activeTab === 'ambassador-hub') {
+                    const [brandsRes, orgsRes] = await Promise.all([
+                        apiClient.get(`users?role=${encodeURIComponent(UserRole.Brand)}`),
+                        apiClient.get(`users?role=${encodeURIComponent(UserRole.StudentOrg)}`)
+                    ]);
+                    items = [...brandsRes.data, ...orgsRes.data];
                 } else if (activeTab === 'community') {
                     const res = await apiClient.get(`users?role=${encodeURIComponent(UserRole.Ambassador)}`);
                     // Filter out self
@@ -210,14 +214,15 @@ const StudentDashboard: React.FC<{
             const w = await WalletService.getOrCreateWallet(userProfile.id);
             setWallet(w);
             
-            const q = query(collection(db, 'transactions'), where('userId', '==', userProfile.id), limit(20));
+            const q = query(
+                collection(db, 'transactions'), 
+                where('userId', '==', userProfile.id), 
+                orderBy('createdAt', 'desc'),
+                limit(30)
+            );
             const transSnap = await getDocs(q);
-            const sortedTrans = transSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => {
-                const dateA = a.createdAt?.seconds || 0;
-                const dateB = b.createdAt?.seconds || 0;
-                return dateB - dateA;
-            });
-            setTransactions(sortedTrans);
+            const mappedTrans = transSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            setTransactions(mappedTrans);
         } catch (e) {
             console.error("Wallet fetch error:", e);
         } finally {
@@ -325,12 +330,15 @@ const StudentDashboard: React.FC<{
     };
 
     const handleContactHost = (event: any) => {
-        if (!event.host) {
+        const hostId = event.host?.id || event.hostId;
+        const hostName = event.host?.name || event.hostName || "Organization";
+
+        if (!hostId) {
             alert('Cannot contact host: Host information is missing for this event.');
             return;
         }
-        setProposalRecipient({ id: event.host.id, name: event.host.name || event.hostName });
-        setProposalInitialMessage(`Hi ${event.hostName}, I'm interested in volunteering for your event "${event.name}".`);
+        setProposalRecipient({ id: hostId, name: hostName });
+        setProposalInitialMessage(`Hi ${hostName}, I'm interested in volunteering for your event "${event.name}".`);
         setShowProposalModal(true);
         setSelectedEvent(null);
     };
@@ -389,6 +397,38 @@ const StudentDashboard: React.FC<{
         }
 
         switch (activeTab) {
+            case 'ambassador-hub':
+                return (
+                    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                            {data.map((partner: any) => (
+                                <div key={partner.id} className="group bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300">
+                                    <div className={`h-24 bg-gradient-to-r ${partner.role === UserRole.Brand ? 'from-spark-red/5 to-spark-black/5' : 'from-spark-purple/5 to-spark-black/5'} group-hover:opacity-80 transition-opacity`} />
+                                    <div className="px-8 pb-8 -mt-12">
+                                        <div className="w-20 h-20 bg-[var(--bg-primary)] border-4 border-[var(--border-color)] rounded-[1.5rem] shadow-lg flex items-center justify-center text-3xl font-black text-spark-red mb-4 overflow-hidden">
+                                            {partner.imageUrl ? <img src={partner.imageUrl} className="w-full h-full object-cover" alt={partner.name} /> : partner.name?.charAt(0)}
+                                        </div>
+                                        <h3 className="text-xl font-black text-[var(--text-primary)] mb-1">{partner.name}</h3>
+                                        <p className="text-[10px] font-black text-spark-red uppercase tracking-widest mb-4">{partner.role === UserRole.Brand ? 'Brand' : 'Student Organization'}</p>
+                                        <p className="text-sm text-[var(--text-secondary)] line-clamp-2 mb-6 min-h-[40px] font-medium leading-relaxed">
+                                            {partner.bio || `Connect with ${partner.name} to explore brand ambassador roles and campus volunteer opportunities.`}
+                                        </p>
+                                        <button 
+                                            onClick={() => {
+                                                setProposalRecipient({ id: partner.id, name: partner.name });
+                                                setProposalInitialMessage(`Hi ${partner.name}, I'm interested in being an ambassador or volunteer for your ${partner.role === UserRole.Brand ? 'brand' : 'organization'}. Here's why I'd be a great fit...`);
+                                                setShowProposalModal(true);
+                                            }}
+                                            className="w-full py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all flex items-center justify-center gap-2 shadow-lg shadow-black/5 active:scale-95"
+                                        >
+                                            Apply for Role
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
             case 'gigs':
                 return (
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in slide-in-from-bottom-4 duration-500">
@@ -1067,15 +1107,20 @@ const StudentDashboard: React.FC<{
                                 <div className="p-4 bg-[var(--bg-primary)] dark:bg-spark-black/10 border border-[var(--border-color)] rounded-2xl">
                                     <p className="text-[9px] font-black uppercase text-[var(--text-secondary)]">Your Reward</p>
                                     <p className="text-lg font-black text-green-600">₦{selectedCampaign.amount?.toLocaleString()}</p>
+                                    <p className="text-[8px] font-black text-spark-red uppercase mt-1 tracking-widest">A 10% platform service fee will be deducted from this amount.</p>
                                 </div>
                                 <div className="p-4 bg-[var(--bg-primary)] dark:bg-spark-black/10 border border-[var(--border-color)] rounded-2xl">
                                     <p className="text-[9px] font-black uppercase text-[var(--text-secondary)]">Current Status</p>
-                                    <p className="text-lg font-black text-spark-red uppercase tracking-widest text-xs">{selectedCampaign.status === 'selected' ? 'Awaiting Execution' : selectedCampaign.status}</p>
+                                    <p className="text-lg font-black text-spark-red uppercase tracking-widest text-xs">
+                                        {selectedCampaign.status === 'selected' ? 'Awaiting Execution' : 
+                                         selectedCampaign.status === 'revision' ? 'Revision Requested' : 
+                                         selectedCampaign.status}
+                                    </p>
                                 </div>
                             </div>
                         </div>
 
-                        {selectedCampaign.status === 'in_progress' || selectedCampaign.status === 'selected' ? (
+                        {selectedCampaign.status === 'in_progress' || selectedCampaign.status === 'selected' || selectedCampaign.status === 'revision' ? (
                             <form onSubmit={handleSubmitWork} className="space-y-6">
                                 <div>
                                     <label className="block text-[10px] font-black uppercase text-[var(--text-secondary)] mb-2">Evidence Link (Instagram/Twitter Post, Drive, etc.)</label>

@@ -4,7 +4,7 @@ import { db, auth, collection, query, where, getDocs, limit, doc, getDoc, apiCli
 import { UserRole } from '../types';
 import ProfileView from './ProfileView';
 import DashboardPlaceholder from './DashboardPlaceholder';
-import { WalletService } from '../WalletService';
+import { WalletService, REVENUE_WALLET_ID } from '../WalletService';
 import { 
     BarChart3, Users, Megaphone, Building2, Shield, Wallet, 
     Search, ArrowUpRight, ArrowDownLeft, Clock, CheckCircle2, 
@@ -65,11 +65,17 @@ const AdminDashboard: React.FC<{
             setLoading(true);
             const res = await apiClient.get('admin/stats');
             
-            // Also fetch platform revenue wallet balance
-            const revenueWallet = await WalletService.getOrCreateWallet('PLATFORM_REVENUE_WALLET_HUB');
+            // Also fetch platform revenue wallet balance and total escrow
+            const [revenueWallet, walletsSnap] = await Promise.all([
+                WalletService.getOrCreateWallet(REVENUE_WALLET_ID),
+                getDocs(collection(db, 'wallets'))
+            ]);
+
+            const totalEscrowSum = walletsSnap.docs.reduce((acc, d) => acc + (d.data().escrow || 0), 0);
             
             setStats({
                 ...res.data.stats,
+                totalEscrow: totalEscrowSum,
                 platformRevenue: revenueWallet.balance
             });
             setRecentUsers(res.data.recentUsers);
@@ -241,10 +247,10 @@ const AdminDashboard: React.FC<{
                             </div>
                             <div className="p-8">
                                 <div className="space-y-4">
-                                    {allTransactions.filter(t => t.userId === 'PLATFORM_REVENUE_WALLET_HUB').length === 0 ? (
+                                    {allTransactions.filter(t => t.userId === REVENUE_WALLET_ID).length === 0 ? (
                                         <p className="text-center py-10 text-[var(--text-secondary)] italic">No revenue transactions recorded yet.</p>
                                     ) : (
-                                        allTransactions.filter(t => t.userId === 'PLATFORM_REVENUE_WALLET_HUB').map((t, i) => (
+                                        allTransactions.filter(t => t.userId === REVENUE_WALLET_ID).map((t, i) => (
                                             <div key={i} className="flex items-center justify-between p-6 bg-[var(--bg-secondary)] rounded-2xl">
                                                 <div className="flex items-center gap-4">
                                                     <div className="w-10 h-10 bg-green-100 text-green-600 rounded-xl flex items-center justify-center">

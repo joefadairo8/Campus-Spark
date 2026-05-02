@@ -9,7 +9,7 @@ interface ProposalDetailsModalProps {
     onReleaseSponsorship?: (proposal: any) => Promise<void>;
 }
 
-export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOpen, onClose, proposal, onUpdateStatus, isSender }) => {
+export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOpen, onClose, proposal, onUpdateStatus, isSender, onReleaseSponsorship }) => {
     const [updating, setUpdating] = useState(false);
 
     if (!isOpen || !proposal) return null;
@@ -127,14 +127,17 @@ export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOp
                             <p className="text-[var(--text-secondary)] font-bold text-sm">
                                 {proposal.status === 'pending' ? 'Waiting for response...' : `This proposal was ${proposal.status}.`}
                             </p>
+                            {proposal.sender?.role?.includes('Influencer') && (
+                                <p className="text-[10px] text-center font-bold text-spark-red mt-4 uppercase tracking-widest bg-spark-red/5 py-2 rounded-xl">Note: A 10% platform service fee applies to this payment.</p>
+                            )}
                         </div>
                     ) : (
-                        <div className="flex gap-3">
-                            {proposal.status !== 'rejected' && (
+                        <div className="flex gap-3 flex-wrap">
+                            {proposal.status !== 'rejected' && proposal.status !== 'paid' && (
                                 <button
                                     onClick={() => handleAction('rejected')}
                                     disabled={updating}
-                                    className="px-6 py-4 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all flex-1"
+                                    className="px-6 py-4 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all flex-1 min-w-[140px]"
                                 >
                                     Decline
                                 </button>
@@ -144,17 +147,17 @@ export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOp
                                 <button
                                     onClick={() => handleAction('reviewing')}
                                     disabled={updating}
-                                    className="px-6 py-4 bg-[var(--bg-tertiary)] text-[var(--text-primary)] font-black rounded-2xl hover:bg-[var(--bg-secondary)] transition-all flex-1 border border-[var(--border-color)]"
+                                    className="px-6 py-4 bg-[var(--bg-tertiary)] text-[var(--text-primary)] font-black rounded-2xl hover:bg-[var(--bg-secondary)] transition-all flex-1 border border-[var(--border-color)] min-w-[140px]"
                                 >
                                     Mark as Reviewing
                                 </button>
                             )}
 
-                            {proposal.status !== 'accepted' && (
+                            {proposal.status !== 'accepted' && proposal.status !== 'paid' && (
                                 <button
                                     onClick={() => handleAction('accepted')}
                                     disabled={updating}
-                                    className="px-6 py-4 bg-[var(--text-primary)] text-[var(--bg-primary)] font-black rounded-2xl hover:bg-spark-red hover:text-white transition-all shadow-xl shadow-black/5 flex-1"
+                                    className="px-6 py-4 bg-[var(--text-primary)] text-[var(--bg-primary)] font-black rounded-2xl hover:bg-spark-red hover:text-white transition-all shadow-xl shadow-black/5 flex-1 min-w-[140px]"
                                 >
                                     Accept Proposal
                                 </button>
@@ -170,7 +173,6 @@ export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOp
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                         Release Sponsorship Funds
                                     </button>
-                                    <p className="text-[10px] text-center font-bold text-[var(--text-secondary)]">A 10% platform fee will be deducted from the released amount.</p>
                                 </div>
                             )}
 

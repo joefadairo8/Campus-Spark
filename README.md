@@ -102,6 +102,21 @@ service cloud.firestore {
 
 ---
 
+### 🛡️ Direct Sponsorship & Automated Financial Hub (May 2, 2026 - Update)
+- 💸 **Direct Sponsorship Engine**: Brands can now sponsor campus events directly from their wallet balance. The system handles atomic transfers, 10% platform commission deduction, and immediate credit to organizations.
+- 🤝 **Automated Approval Bypass**: Sponsorship payments are now treated as "paid and confirmed" instantly, removing redundant approval steps for organizations once funds are processed.
+- 🏢 **Partner Hub for Brands**: Launched a specialized "Partner Hub" for brands to discover and propose strategic non-sponsorship collaborations with organizations and other brands.
+- 🎓 **Ambassador & Volunteer Hub**: Influencers now have a dedicated space to apply for long-term Brand Ambassador roles or volunteer for specific campus events, separate from campaign gig applications.
+- 🏧 **Immediate Wallet Visibility**: Organizations now feature a real-time "Wallet Strip" in their main dashboard, providing instant visibility into available funds and locked escrow without extra navigation.
+- 📊 **Platform Revenue Engine**: Admins can now monitor platform-wide revenue generation (commissions, listing fees) in real-time through the updated Super Admin Dashboard.
+
+### 🛡️ Campaign Approval & Payment Integrity (May 2, 2026)
+- 🔒 **Mandatory "No Report, No Payout" Workflow**: Funds are now strictly locked in escrow until an influencer submits a detailed execution report and the brand explicitly approves it.
+- 💰 **Automated Escrow Management**: Funds are automatically moved from a Brand's available balance to a locked Escrow account the moment an influencer is assigned/allocated to a campaign.
+- 📋 **Integrated Reporting Interface**: Influencers have a dedicated "Manage Work" portal to provide written reports and evidence links (social media, Drive, etc.) for review.
+- ✅ **Brand-Led Release**: Brands can no longer release payments until a submission is received. The platform now enforces a `Submitted -> Approved -> Paid` lifecycle.
+- 🏦 **Financial Accuracy**: The `WalletService` now uses atomic transactions to handle payouts, platform commissions (10%), and balance updates simultaneously, preventing race conditions.
+
 ### 🛡️ Super Admin & Platform Oversight (May 2026)
 - 🏛️ **Super Admin Hub**: Launched a comprehensive management suite featuring **Network Pulse** (Analytics), **Platform Ledger** (Financial Audit), and **Campaign Monitor**.
 - 🔐 **Secluded Admin Terminal**: Implemented a dedicated administrative gateway at `/admin` with a high-security "System Authority" theme and strict role enforcement.
@@ -148,5 +163,5 @@ https://campus-spark-3a55d.web.app
 ```
 
 ---
-*Last Updated: May 1, 2026*
+*Last Updated: May 2, 2026 (v2.5)*
 *Created with ❤️ for the Nigerian Campus Community.*

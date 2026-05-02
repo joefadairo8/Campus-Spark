@@ -65,7 +65,12 @@ const OrgDashboard: React.FC<{
             try {
                 const w = await WalletService.getOrCreateWallet(orgProfile.id);
                 setWallet(w);
-                const q = query(collection(db, 'transactions'), where('userId', '==', orgProfile.id), orderBy('createdAt', 'desc'), limit(10));
+                const q = query(
+                    collection(db, 'transactions'), 
+                    where('userId', '==', orgProfile.id), 
+                    orderBy('createdAt', 'desc'), 
+                    limit(30)
+                );
                 const transSnap = await getDocs(q);
                 setTransactions(transSnap.docs.map(d => ({ id: d.id, ...d.data() })));
             } catch (e) {
@@ -87,10 +92,25 @@ const OrgDashboard: React.FC<{
     ];
 
     const fetchOrgData = async () => {
-        const user = auth.currentUser;
-        if (user) {
-            const userDoc = await getDoc(doc(db, "users", (user as any).uid || (user as any).id));
-            if (userDoc.exists()) setOrgProfile({ id: user.uid, ...(userDoc.data() as any) });
+        // Use prop user if available, fallback to auth
+        const activeUser = user || auth.currentUser;
+        if (activeUser) {
+            try {
+                const uid = activeUser.uid || activeUser.id;
+                const userDoc = await getDoc(doc(db, "users", uid));
+                if (userDoc.exists()) {
+                    setOrgProfile({ id: uid, ...userDoc.data() });
+                } else {
+                    console.warn('[OrgDashboard] No user doc found for:', uid);
+                    setOrgProfile({ id: uid, role: UserRole.StudentOrg }); // Minimal profile to allow loading
+                }
+            } catch (err) {
+                console.error("Error fetching org profile:", err);
+            } finally {
+                setLoading(false);
+            }
+        } else {
+            setLoading(false);
         }
     };
 
@@ -130,9 +150,10 @@ const OrgDashboard: React.FC<{
                 const allRes = await apiClient.get('events');
                 const allEventsList: any[] = allRes.data || [];
                 allMyEvents = allEventsList.filter((e: any) => 
-                    e.hostId === currentUser.uid || 
-                    (currentUser.email && e.hostEmail === currentUser.email) ||
-                    (orgProfile?.email && e.hostEmail === orgProfile.email)
+                    e.hostId === (currentUser?.uid || orgProfile?.id) || 
+                    (currentUser?.email && e.hostEmail === currentUser.email) ||
+                    (orgProfile?.email && e.hostEmail === orgProfile.email) ||
+                    (orgProfile?.hostEmail && e.hostEmail === orgProfile.hostEmail)
                 );
                 console.log('[fetchMyEvents] Full-scan results:', allMyEvents.length);
             }
@@ -354,7 +375,6 @@ const OrgDashboard: React.FC<{
                                     <div>
                                         <h3 className="text-2xl font-black mb-2 text-white">Organization Finances</h3>
                                         <p className="text-purple-100 font-medium">Manage sponsorship funds and pay for campus event resources.</p>
-                                        <p className="text-[10px] font-black text-spark-red uppercase tracking-widest mt-2">Note: A 10% platform fee applies to all sponsorship funds received.</p>
                                     </div>
                                     <div className="flex flex-col sm:flex-row items-center gap-4">
                                         <div className="relative w-full sm:w-48">
@@ -629,11 +649,13 @@ const OrgDashboard: React.FC<{
                                                     View Proposal
                                                 </button>
                                                 {p.status !== 'pending' && (
-                                                    <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${p.status === 'accepted' ? 'bg-green-50 text-green-600' :
+                                                    <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${
+                                                        p.status === 'accepted' ? 'bg-green-50 text-green-600' :
+                                                        p.status === 'paid' ? 'bg-green-100 text-green-700 border border-green-200' :
                                                         p.status === 'rejected' ? 'bg-red-50 text-red-600' :
-                                                            'bg-blue-50 text-blue-600'
-                                                        }`}>
-                                                        {p.status}
+                                                        'bg-blue-50 text-blue-600'
+                                                    }`}>
+                                                        {p.status === 'paid' ? 'Paid & Confirmed' : p.status}
                                                     </span>
                                                 )}
                                             </div>
@@ -767,6 +789,41 @@ const OrgDashboard: React.FC<{
             isDarkMode={isDarkMode}
             toggleTheme={toggleTheme}
         >
+            {/* Wallet Summary Strip - Always visible for quick access */}
+            {orgProfile && currentView !== 'wallet' && currentView !== 'profile' && (
+                <div className="mb-10 animate-in slide-in-from-top-4 duration-500">
+                    <div className="bg-spark-black text-white rounded-[2.5rem] p-8 shadow-2xl flex flex-col md:flex-row items-center justify-between gap-8 border border-white/5">
+                        <div className="flex items-center gap-6">
+                            <div className="w-16 h-16 bg-white/10 rounded-3xl flex items-center justify-center text-spark-red shadow-inner">
+                                <Wallet className="w-8 h-8" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black text-spark-red uppercase tracking-[0.2em] mb-1">Available Funds</p>
+                                <div className="flex items-baseline gap-2">
+                                    <h2 className="text-4xl font-black">₦{(wallet?.balance || 0).toLocaleString()}</h2>
+                                    <span className="text-green-400 text-xs font-bold flex items-center gap-1">
+                                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> Live
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-4 w-full md:w-auto">
+                            <div className="h-12 w-[1px] bg-white/10 hidden md:block mx-4" />
+                            <div className="flex-1 md:flex-none">
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 text-center md:text-left">Locked (Escrow)</p>
+                                <p className="text-xl font-black text-center md:text-left">₦{(wallet?.escrow || 0).toLocaleString()}</p>
+                            </div>
+                            <button 
+                                onClick={() => setCurrentView('wallet')}
+                                className="px-8 py-4 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all shadow-lg shadow-red-900/20 active:scale-95 text-sm"
+                            >
+                                Finance Hub
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             {selectedBrand && (
                 <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-300">
                     <div className="bg-[var(--bg-primary)] w-full max-w-2xl rounded-[2rem] sm:rounded-[4rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300 my-auto">

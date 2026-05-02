@@ -65,6 +65,13 @@ const App: React.FC = () => {
             const profile = { id: firebaseUser.uid, ...profileData };
             setUser(profile);
             localStorage.setItem('user', JSON.stringify(profile));
+
+            // SECURITY ENFORCEMENT: Admins cannot access regular dashboards
+            const regularDashboards = ['student-dashboard', 'brand-dashboard', 'org-dashboard'];
+            if (profileData.role === 'Admin' && regularDashboards.includes(currentPage)) {
+              setCurrentPage('admin-dashboard');
+              window.history.pushState({}, '', '/admin-dashboard');
+            }
           } else {
             setUser(firebaseUser);
           }
@@ -98,7 +105,16 @@ const App: React.FC = () => {
     if (path === 'admin') {
       setCurrentPage('admin-login');
     } else if (validPages.includes(path)) {
-      setCurrentPage(path);
+      // Basic Role Protection
+      const adminOnly = ['admin-dashboard'];
+      const userStr = localStorage.getItem('user');
+      const storedUser = userStr ? JSON.parse(userStr) : null;
+      
+      if (adminOnly.includes(path) && storedUser?.role !== 'Admin') {
+        setCurrentPage('admin-login');
+      } else {
+        setCurrentPage(path);
+      }
     }
 
     const handlePopState = () => {

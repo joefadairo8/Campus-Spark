@@ -130,10 +130,29 @@ export const WalletService = {
     },
 
     /**
-     * Release funds from Escrow to Influencer (When gig is completed)
+     * Consistently release payment for a specific allocation after report approval.
+     * Enforces that a report must exist and be in a valid state.
      */
-    async releaseFundsToInfluencer(brandId: string, influencerId: string, amount: number, gigTitle: string) {
+    async releaseAllocationPayment(brandId: string, allocationId: string, gigTitle: string) {
         return await fsRunTransaction(db, async (transaction) => {
+            const allocRef = fsDoc(db, 'campaignAllocations', allocationId);
+            const allocSnap = await transaction.get(allocRef);
+            
+            if (!allocSnap.exists()) throw new Error('Allocation record not found.');
+            const allocData = allocSnap.data() as CampaignAllocation;
+            
+            if (allocData.status !== 'approved' && allocData.status !== 'submitted') {
+                throw new Error('Payment can only be released for approved or submitted reports.');
+            }
+            
+            if (!allocData.submission || (!allocData.submission.text && !allocData.submission.link)) {
+                throw new Error('No valid campaign report found. A report must be submitted before payment release.');
+            }
+
+            const influencerId = allocData.influencerId;
+            const amount = allocData.amount;
+
+            // Define wallet refs
             const brandRef = fsDoc(db, 'wallets', brandId);
             const influencerRef = fsDoc(db, 'wallets', influencerId);
             const systemRef = fsDoc(db, 'wallets', REVENUE_WALLET_ID);
@@ -159,6 +178,7 @@ export const WalletService = {
             transaction.set(influencerRef, {
                 ...iData,
                 balance: (iData.balance || 0) + influencerPay,
+                // If the influencer has a conceptual escrow, subtract from it (best effort)
                 escrow: Math.max(0, (iData.escrow || 0) - amount),
                 lastUpdated: fsTimestamp()
             });
@@ -177,7 +197,7 @@ export const WalletService = {
                 amount: influencerPay,
                 type: 'credit',
                 status: 'completed',
-                description: `Earnings from gig: ${gigTitle} (After 10% platform fee)`,
+                description: `Earnings: ${gigTitle} (Report Approved)`,
                 relatedUserId: brandId,
                 createdAt: fsTimestamp()
             });
@@ -188,10 +208,14 @@ export const WalletService = {
                 amount: serviceFee,
                 type: 'credit',
                 status: 'completed',
-                description: `Service fee from ${gigTitle} (Influencer: ${influencerId})`,
+                description: `Service fee: ${gigTitle} (Influencer: ${influencerId})`,
                 relatedUserId: influencerId,
                 createdAt: fsTimestamp()
             });
+
+            // 5. Update Allocation Status
+            transaction.update(allocRef, { status: 'paid', updatedAt: fsTimestamp() });
+            return { success: true };
         });
     },
 
@@ -200,6 +224,7 @@ export const WalletService = {
      */
     async refundAllocation(brandId: string, amount: number, description: string, influencerId?: string) {
         return await fsRunTransaction(db, async (transaction) => {
+            const walletRef = fsDoc(db, 'wallets', brandId);
             // 1. ALL READS FIRST
             const walletSnap = await transaction.get(walletRef);
             
@@ -495,6 +520,85 @@ export const WalletService = {
                 type: 'credit',
                 status: 'completed',
                 description: `Sponsorship Funds: ${eventName} (After 10% platform fee)`,
+                relatedUserId: brandId,
+                createdAt: fsTimestamp()
+            });
+
+            const sTransRef = fsDoc(fsCollection(db, 'transactions'));
+            transaction.set(sTransRef, {
+                userId: REVENUE_WALLET_ID,
+                amount: serviceFee,
+                type: 'credit',
+                status: 'completed',
+                description: `Sponsorship Commission: ${eventName} (Org: ${orgId})`,
+                relatedUserId: orgId,
+                createdAt: fsTimestamp()
+            });
+        });
+    },
+
+    /**
+     * Direct sponsorship payment from Brand Balance to Organization Balance
+     */
+    async paySponsorship(brandId: string, orgId: string, amount: number, eventName: string) {
+        return await fsRunTransaction(db, async (transaction) => {
+            const brandRef = fsDoc(db, 'wallets', brandId);
+            const orgRef = fsDoc(db, 'wallets', orgId);
+            const systemRef = fsDoc(db, 'wallets', REVENUE_WALLET_ID);
+            
+            const bSnap = await transaction.get(brandRef);
+            const oSnap = await transaction.get(orgRef);
+            const sSnap = await transaction.get(systemRef);
+
+            if (!bSnap.exists()) throw new Error("Brand wallet not found.");
+            const bData = bSnap.data() as Wallet;
+            if (bData.balance < amount) throw new Error(`Insufficient balance. You have ₦${bData.balance.toLocaleString()}.`);
+
+            const oData = oSnap.exists() ? oSnap.data() as Wallet : { balance: 0, pending: 0, escrow: 0 };
+            const sData = sSnap.exists() ? sSnap.data() as Wallet : { balance: 0, pending: 0, escrow: 0 };
+
+            const serviceFee = amount * SERVICE_FEE_PCT;
+            const orgPay = amount - serviceFee;
+
+            // 1. Deduct from Brand Balance
+            transaction.update(brandRef, {
+                balance: bData.balance - amount,
+                lastUpdated: fsTimestamp()
+            });
+
+            // 2. Add to Org Balance (90%)
+            transaction.set(orgRef, {
+                ...oData,
+                balance: (oData.balance || 0) + orgPay,
+                lastUpdated: fsTimestamp()
+            }, { merge: true });
+
+            // 3. Add to System Balance (10%)
+            transaction.set(systemRef, {
+                ...sData,
+                balance: (sData.balance || 0) + serviceFee,
+                lastUpdated: fsTimestamp()
+            }, { merge: true });
+
+            // 4. Record Transactions
+            const bTransRef = fsDoc(fsCollection(db, 'transactions'));
+            transaction.set(bTransRef, {
+                userId: brandId,
+                amount: amount,
+                type: 'debit',
+                status: 'completed',
+                description: `Event Sponsorship: ${eventName}`,
+                relatedUserId: orgId,
+                createdAt: fsTimestamp()
+            });
+
+            const oTransRef = fsDoc(fsCollection(db, 'transactions'));
+            transaction.set(oTransRef, {
+                userId: orgId,
+                amount: orgPay,
+                type: 'credit',
+                status: 'completed',
+                description: `Sponsorship Received: ${eventName} (After 10% platform fee)`,
                 relatedUserId: brandId,
                 createdAt: fsTimestamp()
             });
