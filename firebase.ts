@@ -6,7 +6,7 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged
 } from 'firebase/auth';
-import { getFirestore, collection as firebaseCollection, doc as firebaseDoc, getDocs as firebaseGetDocs, getDoc as firebaseGetDoc, setDoc as firebaseSetDoc, addDoc as firebaseAddDoc, updateDoc as firebaseUpdateDoc, deleteDoc as firebaseDeleteDoc, query as firebaseQuery, where as firebaseWhere, or as firebaseOr, limit as firebaseLimit, orderBy as firebaseOrderBy, serverTimestamp as firebaseTimestamp, runTransaction } from 'firebase/firestore';
+import { getFirestore, collection as firebaseCollection, doc as firebaseDoc, getDocs as firebaseGetDocs, getDoc as firebaseGetDoc, setDoc as firebaseSetDoc, addDoc as firebaseAddDoc, updateDoc as firebaseUpdateDoc, deleteDoc as firebaseDeleteDoc, query as firebaseQuery, where as firebaseWhere, or as firebaseOr, limit as firebaseLimit, orderBy as firebaseOrderBy, serverTimestamp as firebaseTimestamp, runTransaction, enableIndexedDbPersistence } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getAnalytics } from "firebase/analytics";
 
@@ -27,6 +27,17 @@ export const analytics = typeof window !== 'undefined' ? getAnalytics(app) : nul
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
+
+// Enable Offline Persistence
+if (typeof window !== 'undefined') {
+  enableIndexedDbPersistence(db).catch((err) => {
+    if (err.code === 'failed-precondition') {
+      console.warn('Firestore persistence failed: Multiple tabs open.');
+    } else if (err.code === 'unimplemented') {
+      console.warn('Firestore persistence failed: Browser not supported.');
+    }
+  });
+}
 
 // Local storage parity for existing components (optional but helpful)
 const setUser = (user: any) => {
@@ -72,22 +83,34 @@ export const orderBy = firebaseOrderBy;
 export const serverTimestamp = firebaseTimestamp;
 
 export const getDocs = async (q: any) => {
-  const querySnapshot = await firebaseGetDocs(q);
-  return {
-    empty: querySnapshot.empty,
-    docs: querySnapshot.docs.map(d => ({
-      id: d.id,
-      data: () => d.data()
-    }))
-  };
+  try {
+    const querySnapshot = await firebaseGetDocs(q);
+    return {
+      empty: querySnapshot.empty,
+      docs: querySnapshot.docs.map(d => ({
+        id: d.id,
+        data: () => d.data()
+      }))
+    };
+  } catch (err: any) {
+    console.error('getDocs error:', err);
+    if (err.code === 'unavailable') return { empty: true, docs: [] };
+    throw err;
+  }
 };
 
 export const getDoc = async (docRef: any) => {
-  const docSnap = await firebaseGetDoc(docRef);
-  return {
-    exists: () => docSnap.exists(),
-    data: () => docSnap.data()
-  };
+  try {
+    const docSnap = await firebaseGetDoc(docRef);
+    return {
+      exists: () => docSnap.exists(),
+      data: () => docSnap.data()
+    };
+  } catch (err: any) {
+    console.error('getDoc error:', err);
+    if (err.code === 'unavailable') return { exists: () => false, data: () => ({}) };
+    throw err;
+  }
 };
 
 export const setDoc = firebaseSetDoc;
@@ -108,29 +131,46 @@ export const apiClient = {
   collection: (name: string) => firebaseCollection(db, name),
   doc: (col: string, id: string) => firebaseDoc(db, col, id),
   getDocs: async (q: any) => {
-    const snapshot = await firebaseGetDocs(q);
-    return {
-      empty: snapshot.empty,
-      docs: snapshot.docs.map(d => ({
-        id: d.id,
-        data: () => d.data()
-      }))
-    };
+    try {
+      const snapshot = await firebaseGetDocs(q);
+      return {
+        empty: snapshot.empty,
+        docs: snapshot.docs.map(d => ({
+          id: d.id,
+          data: () => d.data()
+        }))
+      };
+    } catch (err: any) {
+      console.error('apiClient.getDocs error:', err);
+      if (err.code === 'unavailable') return { empty: true, docs: [] };
+      throw err;
+    }
   },
   getDoc: async (docRef: any) => {
-    const docSnap = await firebaseGetDoc(docRef);
-    return {
-      exists: () => docSnap.exists(),
-      data: () => docSnap.data()
-    };
+    try {
+      const docSnap = await firebaseGetDoc(docRef);
+      return {
+        exists: () => docSnap.exists(),
+        data: () => docSnap.data()
+      };
+    } catch (err: any) {
+      console.error('apiClient.getDoc error:', err);
+      if (err.code === 'unavailable') return { exists: () => false, data: () => ({}) };
+      throw err;
+    }
   },
   setDoc: firebaseSetDoc,
   addDoc: async (colName: any, data: any) => {
-    const colRef = typeof colName === 'string' 
-      ? firebaseCollection(db, colName) 
-      : colName;
-    const docRef = await firebaseAddDoc(colRef, data);
-    return { id: docRef.id };
+    try {
+      const colRef = typeof colName === 'string' 
+        ? firebaseCollection(db, colName) 
+        : colName;
+      const docRef = await firebaseAddDoc(colRef, data);
+      return { id: docRef.id };
+    } catch (err: any) {
+      console.error('apiClient.addDoc error:', err);
+      throw err;
+    }
   },
   updateDoc: firebaseUpdateDoc,
   deleteDoc: firebaseDeleteDoc,
@@ -140,7 +180,8 @@ export const apiClient = {
   orderBy: firebaseOrderBy,
   serverTimestamp: firebaseTimestamp,
   get: async (path: string) => {
-    const [pathPart, queryString] = path.replace(/^\//, '').split('?');
+    try {
+      const [pathPart, queryString] = path.replace(/^\//, '').split('?');
     const parts = pathPart.split('/');
 
     // Parse query params
@@ -263,12 +304,17 @@ export const apiClient = {
       ));
     }
 
-    const q = constraints.length > 0 ? firebaseQuery(colRef, ...constraints) : colRef;
-    const snapshot = await firebaseGetDocs(q as any);
+    const snapshot = constraints.length > 0 ? await firebaseGetDocs(firebaseQuery(colRef, ...constraints)) : await firebaseGetDocs(colRef);
     return { data: snapshot.docs.map((d: any) => ({ id: d.id, ...d.data() })) };
-  },
+  } catch (err: any) {
+    console.error('apiClient.get error:', err);
+    if (err.code === 'unavailable') return { data: [] };
+    throw err;
+  }
+},
   post: async (path: string, data: any) => {
-    const parts = path.replace(/^\//, '').split('/');
+    try {
+      const parts = path.replace(/^\//, '').split('/');
     
     const cleanData = Object.fromEntries(
       Object.entries(data).filter(([_, v]) => v !== undefined)
@@ -395,182 +441,218 @@ export const apiClient = {
     }
   const docRef = await firebaseAddDoc(colRef, enrichedData);
   return { data: { id: docRef.id, ...data } };
+    } catch (err: any) {
+      console.error('apiClient.post error:', err);
+      if (err.code === 'unavailable') {
+        throw new Error('You are currently offline. This action will sync once you reconnect.');
+      }
+      throw err;
+    }
 },
   patch: async (path: string, data: any = {}) => {
-    const parts = path.replace(/^\//, '').split('/');
-    
-    // Determine docRef (handles sub-collections like gigs/ID/applications/APP_ID)
-    let docRef;
-    if (parts.length === 4) {
-      docRef = firebaseDoc(db, parts[0], parts[1], parts[2], parts[3]);
-    } else if (parts.length === 2) {
-      docRef = firebaseDoc(db, parts[0], parts[1]);
-    }
-
-    // Wallet Logic: Accept Application (Balance -> Escrow)
-    if (parts[0] === 'gigs' && parts[2] === 'applications' && data.status === 'accepted') {
-      const gigId = parts[1];
-      const appId = parts[3];
-      console.log('[apiClient.patch] Processing acceptance for App:', appId, 'on Gig:', gigId);
+    try {
+      const parts = path.replace(/^\//, '').split('/');
       
-      return await runTransaction(db, async (transaction) => {
-        // 1. Define all references
-        const appSubRef = firebaseDoc(db, 'gigs', gigId, 'applications', appId);
-        const gigRef = firebaseDoc(db, 'gigs', gigId);
-        
-        // 2. PERFORM ALL READS FIRST
-        const appSnap = await transaction.get(appSubRef);
-        if (!appSnap.exists()) throw new Error('Application document not found in sub-collection.');
-        
-        const appData = appSnap.data() as any;
-        const studentId = appData.studentId || appData.student?.id;
-        if (!studentId) throw new Error('Could not identify student from application data.');
-
-        const gigSnap = await transaction.get(gigRef);
-        if (!gigSnap.exists()) throw new Error('The associated Gig no longer exists.');
-        const gigData = gigSnap.data() as any;
-
-        const brandWalletRef = firebaseDoc(db, 'wallets', gigData.brandId);
-        const bSnap = await transaction.get(brandWalletRef);
-        
-        const influencerWalletRef = firebaseDoc(db, 'wallets', studentId);
-        const iSnap = await transaction.get(influencerWalletRef);
-
-        // 3. START ALL WRITES
-        const rewardAmount = Number(gigData.reward || 0);
-
-        if (!bSnap.exists()) {
-          throw new Error('Your Brand Wallet has not been initialized. Please visit the Finance Hub first.');
-        }
-
-        const bData = bSnap.data() as any;
-        if ((bData.balance || 0) < rewardAmount) {
-          throw new Error(`Insufficient funds. This campaign requires ₦${rewardAmount.toLocaleString()}, but your wallet balance is ₦${(bData.balance || 0).toLocaleString()}.`);
-        }
-
-        transaction.update(brandWalletRef, {
-          balance: (bData.balance || 0) - rewardAmount,
-          escrow: (bData.escrow || 0) + rewardAmount,
-          lastUpdated: firebaseTimestamp()
-        });
-
-        // 4. Record Brand Transaction
-        const bTransRef = firebaseDoc(firebaseCollection(db, 'transactions'));
-        transaction.set(bTransRef, {
-          userId: gigData.brandId,
-          amount: rewardAmount,
-          type: 'debit',
-          status: 'escrow',
-          description: `Campaign Activation: ${gigData.title}`,
-          createdAt: firebaseTimestamp()
-        });
-
-        // 5. Update Gig status
-        transaction.update(gigRef, { 
-          status: 'in_progress', 
-          studentId: studentId,
-          acceptedAppId: appId
-        });
-        
-        // 6. Update Influencer Wallet (Add to Escrow/Locked Funds)
-        const iData = iSnap.exists() ? (iSnap.data() as any) : { balance: 0, pending: 0, escrow: 0 };
-        
-        transaction.set(influencerWalletRef, {
-          ...iData,
-          escrow: (iData.escrow || 0) + rewardAmount,
-          lastUpdated: firebaseTimestamp()
-        }, { merge: true });
-
-        // 7. Record Influencer Transaction (Locked)
-        const iTransRef = firebaseDoc(firebaseCollection(db, 'transactions'));
-        transaction.set(iTransRef, {
-          userId: studentId,
-          amount: rewardAmount,
-          type: 'credit',
-          status: 'escrow',
-          description: `Locked Payment: ${gigData.title}`,
-          relatedUserId: gigData.brandId,
-          createdAt: firebaseTimestamp()
-        });
-
-        // 8. Create Campaign Allocation (for 'My Campaigns' view)
-        const allocRef = firebaseDoc(firebaseCollection(db, 'campaignAllocations'));
-        transaction.set(allocRef, {
-          campaignId: gigId,
-          campaignTitle: gigData.title || 'Active Campaign',
-          brandId: gigData.brandId,
-          brandName: gigData.brandName || gigData.brand || 'Verified Brand',
-          influencerId: studentId,
-          influencerName: appData.student?.name || 'Student',
-          influencerUniversity: appData.student?.university || '',
-          influencerEmail: appData.student?.email || '',
-          amount: rewardAmount,
-          status: 'in_progress',
-          applicationId: appId,
-          createdAt: firebaseTimestamp()
-        });
-
-        // 9. Update Application in sub-collection
-        transaction.update(appSubRef, { status: 'accepted', updatedAt: new Date().toISOString() });
-        
-        // 10. Update Application in top-level collection (best effort, creates if missing)
-        const appTopRef = firebaseDoc(db, 'applications', appId);
-        transaction.set(appTopRef, { status: 'accepted', updatedAt: new Date().toISOString() }, { merge: true });
-
-        return { data: { success: true } };
-      });
-    }
-
-    if (docRef) {
-      const cleanPatchData = Object.fromEntries(
-        Object.entries(data).filter(([_, v]) => v !== undefined)
-      );
-      await firebaseUpdateDoc(docRef, cleanPatchData);
-
-      // Generic Sync for applications (Sub -> Top)
-      // This handles 'rejected', 'reviewing', etc. Syncing 'accepted' is already handled in the transaction above.
-      if (parts.length === 4 && parts[0] === 'gigs' && parts[2] === 'applications') {
-        try {
-          const topRef = firebaseDoc(db, 'applications', parts[3]);
-          await firebaseSetDoc(topRef, { ...cleanPatchData, updatedAt: new Date().toISOString() }, { merge: true });
-        } catch (syncErr) {
-          console.warn('[apiClient.patch] Top-level sync failed (non-critical):', syncErr);
-        }
+      // Determine docRef (handles sub-collections like gigs/ID/applications/APP_ID)
+      let docRef;
+      if (parts.length === 4) {
+        docRef = firebaseDoc(db, parts[0], parts[1], parts[2], parts[3]);
+      } else if (parts.length === 2) {
+        docRef = firebaseDoc(db, parts[0], parts[1]);
       }
 
-      return { data: { success: true } };
+      // Wallet Logic: Accept Application (Allocation from Campaign Budget)
+      if (parts[0] === 'gigs' && parts[2] === 'applications' && data.status === 'accepted') {
+        const gigId = parts[1];
+        const appId = parts[3];
+        const allocationAmount = Number(data.amount || 0); // Amount specified by brand during approval
+        
+        console.log('[apiClient.patch] Processing acceptance for App:', appId, 'on Gig:', gigId, 'Amount:', allocationAmount);
+        
+        return await runTransaction(db, async (transaction) => {
+          // 1. Define all references
+          const appSubRef = firebaseDoc(db, 'gigs', gigId, 'applications', appId);
+          const gigRef = firebaseDoc(db, 'gigs', gigId);
+          
+          // 2. PERFORM ALL READS FIRST
+          const appSnap = await transaction.get(appSubRef);
+          if (!appSnap.exists()) throw new Error('Application document not found in sub-collection.');
+          
+          const appData = appSnap.data() as any;
+          const studentId = appData.studentId || appData.student?.id;
+          if (!studentId) throw new Error('Could not identify student from application data.');
+
+          const gigSnap = await transaction.get(gigRef);
+          if (!gigSnap.exists()) throw new Error('The associated Gig no longer exists.');
+          const gigData = gigSnap.data() as any;
+
+          const brandWalletRef = firebaseDoc(db, 'wallets', gigData.brandId);
+          const bSnap = await transaction.get(brandWalletRef);
+          
+          const influencerWalletRef = firebaseDoc(db, 'wallets', studentId);
+          const iSnap = await transaction.get(influencerWalletRef);
+
+          // 3. START ALL WRITES
+          const rewardAmount = allocationAmount || Number(gigData.reward || 0);
+
+          if (!bSnap.exists()) {
+            throw new Error('Your Brand Wallet has not been initialized. Please visit the Finance Hub first.');
+          }
+
+          const bData = bSnap.data() as any;
+          
+          // If the campaign has a pre-locked budget, draw from Brand Escrow instead of Balance
+          if (gigData.budget || gigData.budgetLocked) {
+             console.log('[apiClient.patch] Drawing from pre-locked budget');
+             // We don't deduct from balance again. We just assign a portion of the Brand's total Escrow to this student allocation.
+          } else {
+            // LEGACY/DIRECT: Deduct from balance
+            if ((bData.balance || 0) < rewardAmount) {
+              throw new Error(`Insufficient funds. This campaign requires ₦${rewardAmount.toLocaleString()}, but your wallet balance is ₦${(bData.balance || 0).toLocaleString()}.`);
+            }
+            transaction.update(brandWalletRef, {
+              balance: (bData.balance || 0) - rewardAmount,
+              escrow: (bData.escrow || 0) + rewardAmount,
+              lastUpdated: firebaseTimestamp()
+            });
+            
+            // Record Brand Transaction
+            const bTransRef = firebaseDoc(firebaseCollection(db, 'transactions'));
+            transaction.set(bTransRef, {
+              userId: gigData.brandId,
+              amount: rewardAmount,
+              type: 'debit',
+              status: 'escrow',
+              description: `Campaign Activation: ${gigData.title}`,
+              createdAt: firebaseTimestamp()
+            });
+          }
+
+          // 5. Update Gig status & Budget
+          const remainingBudget = (Number(gigData.budget || gigData.reward || 0)) - rewardAmount;
+          transaction.update(gigRef, { 
+            status: 'in_progress', 
+            budget: remainingBudget, // Update remaining budget on the campaign
+            studentId: studentId,
+            acceptedAppId: appId
+          });
+          
+          // 6. Update Influencer Wallet (Add to Escrow/Locked Funds)
+          const iData = iSnap.exists() ? (iSnap.data() as any) : { balance: 0, pending: 0, escrow: 0 };
+          
+          transaction.set(influencerWalletRef, {
+            ...iData,
+            escrow: (iData.escrow || 0) + rewardAmount,
+            lastUpdated: firebaseTimestamp()
+          }, { merge: true });
+
+          // 7. Record Influencer Transaction (Locked)
+          const iTransRef = firebaseDoc(firebaseCollection(db, 'transactions'));
+          transaction.set(iTransRef, {
+            userId: studentId,
+            amount: rewardAmount,
+            type: 'credit',
+            status: 'escrow',
+            description: `Locked Payment: ${gigData.title}`,
+            relatedUserId: gigData.brandId,
+            createdAt: firebaseTimestamp()
+          });
+
+          // 8. Create Campaign Allocation (for 'My Campaigns' view)
+          const allocRef = firebaseDoc(firebaseCollection(db, 'campaignAllocations'));
+          transaction.set(allocRef, {
+            campaignId: gigId,
+            campaignTitle: gigData.title || 'Active Campaign',
+            brandId: gigData.brandId,
+            brandName: gigData.brandName || gigData.brand || 'Verified Brand',
+            influencerId: studentId,
+            influencerName: appData.student?.name || 'Student',
+            influencerUniversity: appData.student?.university || '',
+            influencerEmail: appData.student?.email || '',
+            amount: rewardAmount,
+            status: 'in_progress',
+            applicationId: appId,
+            createdAt: firebaseTimestamp()
+          });
+
+          // 9. Update Application in sub-collection
+          transaction.update(appSubRef, { status: 'accepted', updatedAt: new Date().toISOString() });
+          
+          // 10. Update Application in top-level collection (best effort, creates if missing)
+          const appTopRef = firebaseDoc(db, 'applications', appId);
+          transaction.set(appTopRef, { status: 'accepted', updatedAt: new Date().toISOString() }, { merge: true });
+
+          return { data: { success: true } };
+        });
+      }
+
+      if (docRef) {
+        const cleanPatchData = Object.fromEntries(
+          Object.entries(data).filter(([_, v]) => v !== undefined)
+        );
+        await firebaseUpdateDoc(docRef, cleanPatchData);
+
+        // Generic Sync for applications (Sub -> Top)
+        if (parts.length === 4 && parts[0] === 'gigs' && parts[2] === 'applications') {
+          try {
+            const topRef = firebaseDoc(db, 'applications', parts[3]);
+            await firebaseSetDoc(topRef, { ...cleanPatchData, updatedAt: new Date().toISOString() }, { merge: true });
+          } catch (syncErr) {
+            console.warn('[apiClient.patch] Top-level sync failed (non-critical):', syncErr);
+          }
+        }
+
+        return { data: { success: true } };
+      }
+    } catch (err: any) {
+      console.error('apiClient.patch error:', err);
+      if (err.code === 'unavailable') {
+        throw new Error('You are currently offline. This action will sync once you reconnect.');
+      }
+      throw err;
     }
   },
 put: async (path: string, data: any) => {
-  const parts = path.replace(/^\//, '').split('/');
-  if (parts.length === 2) {
-    const docRef = firebaseDoc(db, parts[0], parts[1]);
-    // Strip undefined fields
-    const cleanPutData = Object.fromEntries(
-      Object.entries(data).filter(([_, v]) => v !== undefined)
-    );
-    await firebaseUpdateDoc(docRef, cleanPutData);
-    return { data: { id: parts[1], ...cleanPutData } };
-  }
-},
+    try {
+      const parts = path.replace(/^\//, '').split('/');
+      if (parts.length === 2) {
+        const docRef = firebaseDoc(db, parts[0], parts[1]);
+        // Strip undefined fields
+        const cleanPutData = Object.fromEntries(
+          Object.entries(data).filter(([_, v]) => v !== undefined)
+        );
+        await firebaseUpdateDoc(docRef, cleanPutData);
+        return { data: { id: parts[1], ...cleanPutData } };
+      }
+    } catch (err: any) {
+      console.error('apiClient.put error:', err);
+      if (err.code === 'unavailable') {
+        throw new Error('You are currently offline. This action will sync once you reconnect.');
+      }
+      throw err;
+    }
+  },
   delete: async (path: string) => {
-    console.log('[apiClient.delete] Requested path:', path);
-    const cleanPath = path.replace(/^\/+|\/+$/g, '');
-    const parts = cleanPath.split('/');
-    
-    if (parts.length === 2) {
-      try {
+    try {
+      console.log('[apiClient.delete] Requested path:', path);
+      const cleanPath = path.replace(/^\/+|\/+$/g, '');
+      const parts = cleanPath.split('/');
+      
+      if (parts.length === 2) {
         const docRef = firebaseDoc(db, parts[0], parts[1]);
         await firebaseDeleteDoc(docRef);
         console.log('[apiClient.delete] Successfully deleted document:', cleanPath);
         return { data: { success: true } };
-      } catch (err: any) {
-        console.error('[apiClient.delete] Error deleting document:', cleanPath, err);
-        throw err;
+      } else {
+        console.warn('[apiClient.delete] Invalid path for deletion (expected collection/id):', path);
+        throw new Error(`Invalid deletion path: ${path}. Expected format: collection/id`);
       }
-    } else {
-      console.warn('[apiClient.delete] Invalid path for deletion (expected collection/id):', path);
-      throw new Error(`Invalid deletion path: ${path}. Expected format: collection/id`);
+    } catch (err: any) {
+      console.error('[apiClient.delete] Error deleting document:', path, err);
+      if (err.code === 'unavailable') {
+        return { data: { success: false, error: 'Network unavailable. Deletion queued.' } };
+      }
+      throw err;
     }
   }
 };

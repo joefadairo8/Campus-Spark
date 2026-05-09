@@ -51,6 +51,7 @@ const StudentDashboard: React.FC<{
     // Submission states
     const [selectedCampaign, setSelectedCampaign] = useState<any>(null);
     const [submissionData, setSubmissionData] = useState({ link: '', text: '' });
+    const [metricsFile, setMetricsFile] = useState<File | null>(null);
     const [submittingWork, setSubmittingWork] = useState(false);
 
     const sidebarItems = [
@@ -242,7 +243,8 @@ const StudentDashboard: React.FC<{
             await WalletService.requestWithdrawal(
                 userProfile.id, 
                 Number(withdrawalAmount), 
-                `${bankDetails.bank} | ${bankDetails.account} | ${bankDetails.name}`
+                bankDetails,
+                { name: userProfile.name, email: userProfile.email }
             );
             alert('Withdrawal request submitted successfully!');
             setShowWithdrawModal(false);
@@ -260,15 +262,42 @@ const StudentDashboard: React.FC<{
         if (!selectedCampaign) return;
         setSubmittingWork(true);
         try {
+            let metricsUrl = selectedCampaign.submission?.metricsUrl || '';
+
+            // Handle Cloudinary upload for metrics screenshot
+            if (metricsFile) {
+                const formData = new FormData();
+                formData.append('file', metricsFile);
+                formData.append('upload_preset', 'campus-spark');
+
+                const uploadRes = await fetch('https://api.cloudinary.com/v1_1/dk9tq3oop/auto/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (uploadRes.ok) {
+                    const data = await uploadRes.json();
+                    metricsUrl = data.secure_url;
+                } else {
+                    console.error('Cloudinary metrics upload failed');
+                }
+            }
+
+            const finalSubmission = {
+                ...submissionData,
+                metricsUrl
+            };
+
             // 1. Update the allocation document (for 'My Campaigns' view)
-            await WalletService.updateAllocationSubmission(selectedCampaign.id!, submissionData);
+            await WalletService.updateAllocationSubmission(selectedCampaign.id!, finalSubmission);
             
             // 2. Sync with application document (for Brand's 'Applicants' view)
             if (selectedCampaign.applicationId && selectedCampaign.campaignId) {
                 await apiClient.patch(`gigs/${selectedCampaign.campaignId}/applications/${selectedCampaign.applicationId}`, {
                     status: 'submitted',
-                    report: submissionData.text,
-                    reportLink: submissionData.link,
+                    report: finalSubmission.text,
+                    reportLink: finalSubmission.link,
+                    metricsUrl: finalSubmission.metricsUrl,
                     reportSubmittedAt: new Date().toISOString()
                 });
             }
@@ -276,6 +305,7 @@ const StudentDashboard: React.FC<{
             alert('Work submitted successfully! The brand will review it shortly.');
             setSelectedCampaign(null);
             setSubmissionData({ link: '', text: '' });
+            setMetricsFile(null);
             await fetchMyCampaigns();
         } catch (e) {
             console.error('Submission error:', e);
@@ -505,56 +535,83 @@ const StudentDashboard: React.FC<{
                 );
 
             case 'my-campaigns':
+                const activeCamps = myCampaigns.filter(c => c.status !== 'paid');
+                const completedCamps = myCampaigns.filter(c => c.status === 'paid');
                 return (
-                    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-                        {myCampaigns.length === 0 ? (
-                            <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)]">
-                                <div className="w-20 h-20 bg-spark-red/5 rounded-3xl flex items-center justify-center mx-auto mb-6 text-spark-red">
-                                    <Rocket className="w-10 h-10" />
-                                </div>
-                                <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">No Active Campaigns</h3>
-                                <p className="text-[var(--text-secondary)] font-medium mb-8">Apply to opportunities or accept offers to start earning.</p>
-                                <button onClick={() => setActiveTab('gigs')} className="px-8 py-4 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all shadow-lg shadow-red-100">
-                                    Browse Opportunities
-                                </button>
+                    <div className="space-y-12 animate-in slide-in-from-bottom-4 duration-500">
+                        {/* ── Active Section ── */}
+                        <div>
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="w-2 h-2 rounded-full bg-spark-red animate-pulse"></div>
+                                <h3 className="text-xl font-black text-[var(--text-primary)] uppercase tracking-widest">Active & Ongoing</h3>
                             </div>
-                        ) : (
-                            <div className="grid gap-6">
-                                {myCampaigns.map(camp => (
-                                    <div key={camp.id} className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 hover:shadow-xl transition-all">
-                                        <div className="flex items-center gap-6">
-                                            <div className="w-10 h-10 bg-spark-red/10 rounded-xl flex items-center justify-center font-black text-spark-red shadow-inner">
-                                                <Zap className="w-5 h-5" />
-                                            </div>
-                                            <div>
-                                                <h4 className="text-xl font-black text-[var(--text-primary)]">{camp.campaign?.title || camp.campaignTitle || 'Active Campaign'}</h4>
-                                                <p className="text-xs font-black text-spark-red uppercase tracking-widest">{camp.campaign?.brand || camp.brandName || 'Verified Brand'}</p>
-                                                <div className="flex gap-3 mt-2">
-                                                    <span className="text-[10px] font-black text-[var(--text-secondary)] uppercase">₦{camp.amount?.toLocaleString()}</span>
-                                                    <span className="text-[10px] text-gray-300">•</span>
-                                                    <span className="text-[10px] font-black text-[var(--text-secondary)] uppercase">Due: {camp.campaign?.deadline || '---'}</span>
+                            {activeCamps.length === 0 ? (
+                                <div className="text-center py-16 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)] opacity-60">
+                                    <p className="text-[var(--text-secondary)] font-bold">No active campaigns at the moment.</p>
+                                </div>
+                            ) : (
+                                <div className="grid gap-6">
+                                    {activeCamps.map(camp => (
+                                        <div key={camp.id} className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 hover:shadow-xl transition-all">
+                                            <div className="flex items-center gap-6">
+                                                <div className="w-12 h-12 bg-spark-red/10 rounded-2xl flex items-center justify-center font-black text-spark-red shadow-inner">
+                                                    <Zap className="w-6 h-6" />
+                                                </div>
+                                                <div>
+                                                    <h4 className="text-xl font-black text-[var(--text-primary)]">{camp.campaign?.title || camp.campaignTitle || 'Active Campaign'}</h4>
+                                                    <p className="text-xs font-black text-spark-red uppercase tracking-widest">{camp.campaign?.brand || camp.brandName || 'Verified Brand'}</p>
+                                                    <div className="flex gap-3 mt-2">
+                                                        <span className="text-[10px] font-black text-[var(--text-secondary)] uppercase">₦{(camp.amount || camp.campaign?.reward || 0).toLocaleString()}</span>
+                                                        <span className="text-[10px] text-gray-300">•</span>
+                                                        <span className="text-[10px] font-black text-[var(--text-secondary)] uppercase">Due: {camp.campaign?.deadline || '---'}</span>
+                                                    </div>
                                                 </div>
                                             </div>
+                                            <div className="flex items-center gap-4">
+                                                <span className={`px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border ${
+                                                    camp.status === 'approved' ? 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20' :
+                                                    camp.status === 'submitted' ? 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border-yellow-500/20' :
+                                                    camp.status === 'selected' ? 'bg-spark-red/10 text-spark-red border-spark-red/20' :
+                                                    'bg-[var(--bg-tertiary)] text-[var(--text-secondary)]'
+                                                }`}>
+                                                    {camp.status === 'selected' ? 'Brand Accepted - Start Working' : camp.status.replace('_', ' ')}
+                                                </span>
+                                                <button 
+                                                    onClick={() => setSelectedCampaign(camp)}
+                                                    className="px-8 py-3 bg-[var(--text-primary)] text-[var(--bg-primary)] font-black rounded-xl hover:bg-spark-red hover:text-white transition-all text-xs shadow-sm"
+                                                >
+                                                    Manage Work
+                                                </button>
+                                            </div>
                                         </div>
-                                        <div className="flex items-center gap-4">
-                                            <span className={`px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border ${
-                                                camp.status === 'paid' ? 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20' :
-                                                camp.status === 'approved' ? 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20' :
-                                                camp.status === 'submitted' ? 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border-yellow-500/20' :
-                                                camp.status === 'selected' ? 'bg-spark-red/10 text-spark-red border-spark-red/20' :
-                                                'bg-[var(--bg-tertiary)] text-[var(--text-secondary)]'
-                                            }`}>
-                                                {camp.status === 'selected' ? 'Brand Accepted - Start Working' : camp.status.replace('_', ' ')}
-                                            </span>
-                                            <button 
-                                                onClick={() => setSelectedCampaign(camp)}
-                                                className="px-8 py-3 bg-[var(--text-primary)] text-[var(--bg-primary)] font-black rounded-xl hover:bg-spark-red hover:text-white transition-all text-xs shadow-sm"
-                                            >
-                                                Manage Work
-                                            </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* ── Completed Section ── */}
+                        {completedCamps.length > 0 && (
+                            <div>
+                                <div className="flex items-center gap-3 mb-6">
+                                    <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                                    <h3 className="text-xl font-black text-[var(--text-primary)] uppercase tracking-widest">Completed History</h3>
+                                </div>
+                                <div className="grid gap-4 opacity-80">
+                                    {completedCamps.map(camp => (
+                                        <div key={camp.id} className="bg-[var(--bg-secondary)] rounded-2xl border border-[var(--border-color)] p-6 flex items-center justify-between grayscale-[0.5] hover:grayscale-0 transition-all">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-10 h-10 bg-green-500/10 rounded-xl flex items-center justify-center text-green-600">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+                                                </div>
+                                                <div>
+                                                    <h4 className="font-black text-[var(--text-primary)]">{camp.campaign?.title || camp.campaignTitle}</h4>
+                                                    <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase">Paid: ₦{camp.amount?.toLocaleString()}</p>
+                                                </div>
+                                            </div>
+                                            <span className="px-4 py-1.5 bg-green-500/10 text-green-700 text-[9px] font-black uppercase tracking-widest rounded-full border border-green-500/20">Completed</span>
                                         </div>
-                                    </div>
-                                ))}
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </div>
@@ -797,7 +854,35 @@ const StudentDashboard: React.FC<{
 
         // Default Dashboard View (Tabs)
         return (
-            <div className="space-y-8">
+            <div className="space-y-10">
+                {/* Quick Stats Bar */}
+                {!loading && currentSection === 'dashboard' && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in slide-in-from-top-4 duration-500">
+                        {(() => {
+                            const calculatedEscrow = myCampaigns
+                                .filter(c => ['selected', 'in_progress', 'submitted', 'approved'].includes(c.status))
+                                .reduce((sum, c) => sum + (c.amount || 0), 0);
+                            
+                            const totalEarnings = myCampaigns
+                                .filter(c => c.status === 'paid')
+                                .reduce((sum, c) => sum + (c.amount || 0), 0);
+
+                            return [
+                                { label: 'Available Balance', value: `₦${(wallet?.balance || 0).toLocaleString()}`, icon: <Wallet className="w-5 h-5" />, color: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' },
+                                { label: 'Locked Funds', value: `₦${calculatedEscrow.toLocaleString()}`, icon: <Clock className="w-5 h-5" />, color: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border border-yellow-500/20' },
+                                { label: 'Total Earnings', value: `₦${totalEarnings.toLocaleString()}`, icon: <TrendingUp className="w-5 h-5" />, color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' },
+                            ].map((stat, i) => (
+                                <div key={i} className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm flex items-center justify-between group hover:border-spark-red/30 transition-all">
+                                    <div>
+                                        <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">{stat.label}</p>
+                                        <h4 className="text-2xl font-black text-[var(--text-primary)]">{stat.value}</h4>
+                                    </div>
+                                    <div className={`w-12 h-12 ${stat.color} rounded-2xl flex items-center justify-center`}>{stat.icon}</div>
+                                </div>
+                            ));
+                        })()}
+                    </div>
+                )}
                 {/* Recent Activity Quick View */}
                 <div className="bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-[2.5rem] p-8 shadow-sm">
                     <div className="flex items-center justify-between mb-6">
@@ -1000,6 +1085,66 @@ const StudentDashboard: React.FC<{
                 />
             )}
 
+            {/* Withdraw Modal */}
+            {showWithdrawModal && (
+                <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md z-[300] flex items-center justify-center p-4 animate-in fade-in duration-300">
+                    <div className="bg-[var(--bg-primary)] w-full max-w-md rounded-[2.5rem] border border-[var(--border-color)] p-8 shadow-2xl animate-in zoom-in-95 duration-300">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-2xl font-black text-[var(--text-primary)]">Withdraw Funds</h3>
+                            <button onClick={() => setShowWithdrawModal(false)} className="text-[var(--text-secondary)] hover:text-spark-red transition-colors">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            </button>
+                        </div>
+                        <form onSubmit={handleWithdraw} className="space-y-6">
+                            <div>
+                                <label className="block text-[10px] font-black uppercase text-[var(--text-secondary)] mb-2">Available: ₦{(wallet?.balance || 0).toLocaleString()}</label>
+                                <input 
+                                    type="number" 
+                                    value={withdrawalAmount}
+                                    onChange={(e) => setWithdrawalAmount(e.target.value)}
+                                    placeholder="Amount to withdraw"
+                                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 focus:outline-none focus:border-spark-red font-bold text-[var(--text-primary)]"
+                                    required
+                                />
+                            </div>
+                            <div className="grid gap-4">
+                                <input 
+                                    type="text" 
+                                    placeholder="Bank Name"
+                                    value={bankDetails.bank}
+                                    onChange={(e) => setBankDetails({...bankDetails, bank: e.target.value})}
+                                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 focus:outline-none focus:border-spark-red font-bold text-[var(--text-primary)]"
+                                    required
+                                />
+                                <input 
+                                    type="text" 
+                                    placeholder="Account Number"
+                                    value={bankDetails.account}
+                                    onChange={(e) => setBankDetails({...bankDetails, account: e.target.value})}
+                                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 focus:outline-none focus:border-spark-red font-bold text-[var(--text-primary)]"
+                                    required
+                                />
+                                <input 
+                                    type="text" 
+                                    placeholder="Account Name"
+                                    value={bankDetails.name}
+                                    onChange={(e) => setBankDetails({...bankDetails, name: e.target.value})}
+                                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 focus:outline-none focus:border-spark-red font-bold text-[var(--text-primary)]"
+                                    required
+                                />
+                            </div>
+                            <button 
+                                type="submit" 
+                                disabled={withdrawing || !withdrawalAmount}
+                                className="w-full py-4 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all disabled:opacity-50"
+                            >
+                                {withdrawing ? 'Processing Request...' : 'Confirm Withdrawal'}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             <ProposalDetailsModal
                 isOpen={!!selectedProposal}
                 onClose={() => setSelectedProposal(null)}
@@ -1106,16 +1251,25 @@ const StudentDashboard: React.FC<{
                             <div className="space-y-4">
                                 <div className="p-4 bg-[var(--bg-primary)] dark:bg-spark-black/10 border border-[var(--border-color)] rounded-2xl">
                                     <p className="text-[9px] font-black uppercase text-[var(--text-secondary)]">Your Reward</p>
-                                    <p className="text-lg font-black text-green-600">₦{selectedCampaign.amount?.toLocaleString()}</p>
+                                    <p className="text-lg font-black text-green-600">₦{(selectedCampaign.amount || selectedCampaign.campaign?.reward || 0).toLocaleString()}</p>
                                     <p className="text-[8px] font-black text-spark-red uppercase mt-1 tracking-widest">A 10% platform service fee will be deducted from this amount.</p>
                                 </div>
                                 <div className="p-4 bg-[var(--bg-primary)] dark:bg-spark-black/10 border border-[var(--border-color)] rounded-2xl">
-                                    <p className="text-[9px] font-black uppercase text-[var(--text-secondary)]">Current Status</p>
-                                    <p className="text-lg font-black text-spark-red uppercase tracking-widest text-xs">
+                                    <p className="text-[9px] font-black uppercase text-[var(--text-secondary)] mb-1">Current Status</p>
+                                    <div className="text-xs font-black text-spark-red uppercase tracking-widest">
                                         {selectedCampaign.status === 'selected' ? 'Awaiting Execution' : 
-                                         selectedCampaign.status === 'revision' ? 'Revision Requested' : 
+                                         selectedCampaign.status === 'revision' ? (
+                                             <div className="space-y-2">
+                                                 <span>Revision Requested</span>
+                                                 {selectedCampaign.revisionReason && (
+                                                     <p className="normal-case font-bold text-[10px] bg-spark-red/5 p-3 rounded-xl border border-spark-red/10 text-spark-red leading-relaxed italic">
+                                                         "{(selectedCampaign as any).revisionReason}"
+                                                     </p>
+                                                 )}
+                                             </div>
+                                         ) : 
                                          selectedCampaign.status}
-                                    </p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1144,12 +1298,21 @@ const StudentDashboard: React.FC<{
                                         required
                                     ></textarea>
                                 </div>
+                                <div>
+                                    <label className="block text-[10px] font-black uppercase text-[var(--text-secondary)] mb-2">Execution Metrics (Reach Screenshots)</label>
+                                    <input 
+                                        type="file" 
+                                        accept="image/*"
+                                        onChange={(e) => setMetricsFile(e.target.files?.[0] || null)}
+                                        className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 focus:outline-none focus:border-spark-red font-bold text-[var(--text-secondary)] file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-spark-red/10 file:text-spark-red"
+                                    />
+                                </div>
                                 <button 
                                     type="submit" 
                                     disabled={submittingWork}
                                     className="w-full py-4 bg-spark-black text-white font-black rounded-xl hover:bg-spark-red transition-all disabled:opacity-50 shadow-xl shadow-red-100"
                                 >
-                                    {submittingWork ? 'Submitting...' : 'Submit Final Report for Payment Approval'}
+                                    {submittingWork ? 'Submitting Report...' : 'Submit Final Report for Payment Approval'}
                                 </button>
                             </form>
                         ) : (

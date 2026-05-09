@@ -55,9 +55,19 @@ const AdminDashboard: React.FC<{
     const [selectedUserDetail, setSelectedUserDetail] = useState<any>(null);
     const [userDetailData, setUserDetailData] = useState<{gigs: any[], events: any[], transactions: any[]}>({gigs: [], events: [], transactions: []});
     const [detailLoading, setDetailLoading] = useState(false);
+    const [selectedWithdrawal, setSelectedWithdrawal] = useState<any>(null);
 
     useEffect(() => {
         fetchAdminData();
+        // Always fetch transactions for overview "Recent Activity" if needed
+        if (currentView === 'overview') {
+            apiClient.get('transactions').then(res => {
+                setAllTransactions(res.data.sort((a: any, b: any) => 
+                    new Date(b.createdAt?.seconds ? b.createdAt.seconds * 1000 : b.createdAt).getTime() - 
+                    new Date(a.createdAt?.seconds ? a.createdAt.seconds * 1000 : a.createdAt).getTime()
+                ));
+            });
+        }
     }, [currentView]);
 
     const fetchAdminData = async () => {
@@ -92,7 +102,7 @@ const AdminDashboard: React.FC<{
             } else if (currentView === 'events') {
                 const eventsRes = await apiClient.get('events');
                 setAllEvents(eventsRes.data);
-            } else if (currentView === 'transactions') {
+            } else if (currentView === 'transactions' || currentView === 'withdrawals') {
                 const transRes = await apiClient.get('transactions');
                 setAllTransactions(transRes.data.sort((a: any, b: any) => 
                     new Date(b.createdAt?.seconds ? b.createdAt.seconds * 1000 : b.createdAt).getTime() - 
@@ -168,6 +178,29 @@ const AdminDashboard: React.FC<{
         }
     };
 
+    const handleApproveWithdrawal = async (transactionId: string) => {
+        if (!window.confirm('Mark this withdrawal as DISBURSED? Ensure you have actually sent the funds to the user bank.')) return;
+        try {
+            await WalletService.completeWithdrawal(transactionId);
+            alert('Withdrawal marked as completed.');
+            fetchAdminData();
+        } catch (err: any) {
+            alert('Failed to approve withdrawal: ' + err.message);
+        }
+    };
+
+    const handleRejectWithdrawal = async (transactionId: string) => {
+        const reason = window.prompt('Enter reason for rejection (this will be visible to the user):');
+        if (reason === null) return;
+        try {
+            await WalletService.rejectWithdrawal(transactionId, reason || 'Rejected by Admin');
+            alert('Withdrawal rejected and funds refunded.');
+            fetchAdminData();
+        } catch (err: any) {
+            alert('Failed to reject withdrawal: ' + err.message);
+        }
+    };
+
     const sidebarItems = [
         { id: 'overview', label: 'Network Pulse', icon: <Activity className="w-5 h-5" /> },
         { id: 'users', label: 'User Directory', icon: <Users className="w-5 h-5" /> },
@@ -175,6 +208,7 @@ const AdminDashboard: React.FC<{
         { id: 'events', label: 'Campus Events', icon: <Calendar className="w-5 h-5" /> },
         { id: 'transactions', label: 'Platform Ledger', icon: <Wallet className="w-5 h-5" /> },
         { id: 'revenue', label: 'Revenue Engine', icon: <TrendingUp className="w-5 h-5" /> },
+        { id: 'withdrawals', label: 'Withdrawals', icon: <CheckCircle2 className="w-5 h-5" />, badge: allTransactions.filter(t => t.type === 'debit' && t.status === 'pending').length },
         { id: 'proposals', label: 'Proposal Monitor', icon: <Database className="w-5 h-5" /> },
     ];
 
@@ -582,6 +616,112 @@ const AdminDashboard: React.FC<{
                         </div>
                     </div>
                 );
+            case 'withdrawals':
+                const pendingWithdrawals = allTransactions.filter(t => t.type === 'debit' && t.status === 'pending');
+                return (
+                    <div className="bg-[var(--bg-primary)] rounded-[3rem] border border-[var(--border-color)] shadow-sm p-10 animate-in slide-in-from-bottom-4 duration-500">
+                        <div className="space-y-6">
+                            <h3 className="text-2xl font-black mb-8 text-[var(--text-primary)]">Withdrawal Management Portal</h3>
+                            {pendingWithdrawals.length === 0 ? (
+                                <DashboardPlaceholder
+                                    title="No pending withdrawals"
+                                    icon={<Wallet className="w-10 h-10" />}
+                                    description="All withdrawal requests have been processed. Great job!"
+                                />
+                            ) : (
+                                pendingWithdrawals.map((t) => (
+                                    <div key={t.id} className="p-8 bg-[var(--bg-secondary)] rounded-[2.5rem] border border-[var(--border-color)] flex flex-col md:flex-row md:items-center justify-between gap-6 group hover:bg-[var(--bg-primary)] hover:shadow-2xl transition-all duration-300">
+                                        <div className="flex items-center gap-6">
+                                            <div className="w-16 h-16 bg-spark-red/10 text-spark-red rounded-2xl flex items-center justify-center text-2xl font-black">
+                                                ₦
+                                            </div>
+                                            <div>
+                                                <h4 className="text-xl font-black text-[var(--text-primary)] mb-1">₦{Number(t.amount).toLocaleString()}</h4>
+                                                <p className="text-sm font-bold text-[var(--text-secondary)]">{t.userName || 'Unknown User'} ({t.userEmail || 'No email'})</p>
+                                                <div className="flex flex-wrap gap-3 mt-2">
+                                                    <div className="px-3 py-1 bg-blue-50 text-blue-600 text-[10px] font-black rounded-lg uppercase tracking-widest border border-blue-100">
+                                                        {t.bankName || 'No Bank'} • {t.accountNumber || 'No Account'}
+                                                    </div>
+                                                    <div className="px-3 py-1 bg-green-50 text-green-600 text-[10px] font-black rounded-lg uppercase tracking-widest border border-green-100">
+                                                        {t.accountName || 'No Name'}
+                                                    </div>
+                                                    <div className="px-3 py-1 bg-spark-black/5 text-spark-black text-[10px] font-black rounded-lg uppercase tracking-widest">
+                                                        {new Date(t.createdAt?.seconds ? t.createdAt.seconds * 1000 : t.createdAt).toLocaleDateString()}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-3">
+                                            <button 
+                                                onClick={() => setSelectedWithdrawal(t)}
+                                                className="px-6 py-3 bg-[var(--bg-tertiary)] text-[var(--text-primary)] font-black rounded-xl hover:bg-[var(--border-color)] transition-all text-xs uppercase tracking-widest"
+                                            >
+                                                View Details
+                                            </button>
+                                            <button 
+                                                onClick={() => handleApproveWithdrawal(t.id)}
+                                                className="px-6 py-3 bg-green-600 text-white font-black rounded-xl hover:bg-green-700 transition-all text-xs uppercase tracking-widest shadow-lg shadow-green-900/20"
+                                            >
+                                                Disburse
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        {/* Disbursal History */}
+                        <div className="mt-16 space-y-6">
+                            <div className="flex items-center justify-between mb-8">
+                                <h3 className="text-2xl font-black text-[var(--text-primary)]">Disbursal History</h3>
+                                <div className="px-4 py-2 bg-spark-black text-white text-[10px] font-black rounded-lg uppercase tracking-widest">
+                                    Total Disbursed: ₦{allTransactions.filter(t => t.type === 'debit' && t.status === 'completed').reduce((sum, t) => sum + (Number(t.amount) || 0), 0).toLocaleString()}
+                                </div>
+                            </div>
+                            
+                            <div className="overflow-hidden border border-[var(--border-color)] rounded-[2.5rem] bg-[var(--bg-secondary)]/30">
+                                <table className="w-full">
+                                    <thead>
+                                        <tr className="bg-[var(--bg-secondary)] border-b border-[var(--border-color)]">
+                                            <th className="px-8 py-5 text-left text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Recipient</th>
+                                            <th className="px-8 py-5 text-left text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Amount</th>
+                                            <th className="px-8 py-5 text-left text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Date</th>
+                                            <th className="px-8 py-5 text-right text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-[var(--border-color)]">
+                                        {allTransactions.filter(t => t.type === 'debit' && (t.status === 'completed' || t.status === 'rejected')).slice(0, 10).map((t) => (
+                                            <tr key={t.id} className="hover:bg-[var(--bg-primary)] transition-colors">
+                                                <td className="px-8 py-5">
+                                                    <p className="font-black text-sm text-[var(--text-primary)]">{t.userName || 'Unknown'}</p>
+                                                    <p className="text-[10px] font-bold text-[var(--text-secondary)]">{t.bankName || '---'} • {t.accountNumber || '---'}</p>
+                                                </td>
+                                                <td className="px-8 py-5">
+                                                    <p className="font-black text-spark-red">₦{Number(t.amount).toLocaleString()}</p>
+                                                </td>
+                                                <td className="px-8 py-5">
+                                                    <p className="text-xs font-bold text-[var(--text-secondary)]">{t.createdAt?.seconds ? new Date(t.createdAt.seconds * 1000).toLocaleDateString() : 'Recent'}</p>
+                                                </td>
+                                                <td className="px-8 py-5 text-right">
+                                                    <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                                                        t.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                                    }`}>
+                                                        {t.status}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {allTransactions.filter(t => t.type === 'debit' && (t.status === 'completed' || t.status === 'rejected')).length === 0 && (
+                                            <tr>
+                                                <td colSpan={4} className="px-8 py-10 text-center text-[var(--text-secondary)] italic font-medium">No disbursal history found.</td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                );
 
             case 'proposals':
                 return (
@@ -709,6 +849,38 @@ const AdminDashboard: React.FC<{
                                         </div>
                                     ))}
                                 </div>
+                            </div>
+                        </div>
+
+                        {/* Recent Activity Log */}
+                        <div className="bg-[var(--bg-primary)] p-10 rounded-[3rem] border border-[var(--border-color)] shadow-sm">
+                            <div className="flex justify-between items-center mb-8">
+                                <h3 className="text-xl font-black text-[var(--text-primary)]">Platform Activity Log</h3>
+                                <button onClick={() => setCurrentView('transactions')} className="text-[10px] font-black text-spark-red uppercase tracking-widest hover:underline">View Ledger</button>
+                            </div>
+                            <div className="space-y-4">
+                                {allTransactions.length === 0 ? (
+                                    <p className="text-[var(--text-secondary)] text-sm italic py-4">No recent financial activity recorded.</p>
+                                ) : (
+                                    allTransactions.slice(0, 5).map((t, i) => (
+                                        <div key={i} className="flex items-center justify-between p-4 bg-[var(--bg-secondary)] rounded-2xl hover:bg-spark-red/5 transition-all">
+                                            <div className="flex items-center gap-4">
+                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${t.type === 'credit' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                                                    {t.type === 'credit' ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownLeft className="w-4 h-4" />}
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-black text-[var(--text-primary)]">{t.description}</p>
+                                                    <p className="text-[10px] text-[var(--text-secondary)] font-bold">{t.createdAt?.seconds ? new Date(t.createdAt.seconds * 1000).toLocaleDateString() : 'Recent'}</p>
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className={`text-sm font-black ${t.type === 'credit' ? 'text-green-600' : 'text-spark-red'}`}>
+                                                    {t.type === 'credit' ? '+' : '-'} ₦{Number(t.amount || 0).toLocaleString()}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
                             </div>
                         </div>
                     </div>
@@ -877,6 +1049,74 @@ const AdminDashboard: React.FC<{
                     </div>
                 )}
             </div>
+            {/* Withdrawal Details Modal */}
+            {selectedWithdrawal && (
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-6">
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-md" onClick={() => setSelectedWithdrawal(null)}></div>
+                    <div className="relative bg-[var(--bg-primary)] w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden border border-[var(--border-color)] animate-in zoom-in-95 duration-300">
+                        <div className="p-10">
+                            <h3 className="text-3xl font-black text-[var(--text-primary)] mb-6">Withdrawal Preview</h3>
+                            
+                            <div className="space-y-6">
+                                <div className="p-6 bg-spark-red/5 rounded-3xl border border-spark-red/10">
+                                    <p className="text-[10px] font-black text-spark-red uppercase tracking-widest mb-1">Amount to Disburse</p>
+                                    <p className="text-3xl font-black text-[var(--text-primary)]">₦{Number(selectedWithdrawal.amount).toLocaleString()}</p>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center py-3 border-b border-[var(--border-color)]">
+                                        <span className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Recipient Name</span>
+                                        <span className="font-black text-[var(--text-primary)]">{selectedWithdrawal.userName}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center py-3 border-b border-[var(--border-color)]">
+                                        <span className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Email Address</span>
+                                        <span className="font-bold text-[var(--text-primary)]">{selectedWithdrawal.userEmail}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center py-3 border-b border-[var(--border-color)]">
+                                        <span className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Bank Name</span>
+                                        <span className="font-black text-spark-red uppercase tracking-widest">{selectedWithdrawal.bankName || 'Not Provided'}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center py-3 border-b border-[var(--border-color)]">
+                                        <span className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Account Number</span>
+                                        <span className="font-black text-[var(--text-primary)] tracking-widest text-lg">{selectedWithdrawal.accountNumber || 'Not Provided'}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center py-3">
+                                        <span className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Account Name</span>
+                                        <span className="font-black text-[var(--text-primary)]">{selectedWithdrawal.accountName || 'Not Provided'}</span>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-4 pt-6">
+                                    <button 
+                                        onClick={() => {
+                                            handleApproveWithdrawal(selectedWithdrawal.id);
+                                            setSelectedWithdrawal(null);
+                                        }}
+                                        className="flex-1 py-4 bg-green-600 text-white font-black rounded-2xl hover:bg-green-700 transition-all text-xs uppercase tracking-widest shadow-xl shadow-green-900/20"
+                                    >
+                                        Approve & Disburse
+                                    </button>
+                                    <button 
+                                        onClick={() => {
+                                            handleRejectWithdrawal(selectedWithdrawal.id);
+                                            setSelectedWithdrawal(null);
+                                        }}
+                                        className="flex-1 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-gray-800 transition-all text-xs uppercase tracking-widest"
+                                    >
+                                        Reject Request
+                                    </button>
+                                </div>
+                                <button 
+                                    onClick={() => setSelectedWithdrawal(null)}
+                                    className="w-full py-4 text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest hover:text-spark-red transition-colors"
+                                >
+                                    Cancel Preview
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </DashboardShell>
     );
 };

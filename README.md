@@ -102,6 +102,13 @@ service cloud.firestore {
 
 ---
 
+### 🛡️ Granular Budgeting & Verifiable Execution (May 9, 2026 - Update)
+- 💰 **Custom Budget Allocation**: Brands can now pre-lock a total campaign budget and allocate unique amounts to different influencers, drawing from the locked pool rather than the main balance.
+- 🔄 **Report Revision Workflow**: Implemented a robust feedback loop. Brands can reject influencer reports with specific revision notes, and influencers can edit/resubmit their work until it meets approval standards.
+- 📸 **Visual Reach Metrics**: Integrated Cloudinary for verifiable proof of performance. Influencers can now upload screenshots of their reach and engagement metrics directly within their execution reports.
+- 🕰️ **Legacy Compatibility Layer**: Built a "Balance-based" fallback system that allows older campaigns created before the budget locking system to continue functioning seamlessly with the new reporting and revision tools.
+- 🏦 **Admin Disbursement Preview**: Enhanced the Super Admin terminal with a full-detail preview modal for withdrawal requests, ensuring accurate offline transfers to Nigerian bank accounts.
+
 ### 🛡️ Direct Sponsorship & Automated Financial Hub (May 2, 2026 - Update)
 - 💸 **Direct Sponsorship Engine**: Brands can now sponsor campus events directly from their wallet balance. The system handles atomic transfers, 10% platform commission deduction, and immediate credit to organizations.
 - 🤝 **Automated Approval Bypass**: Sponsorship payments are now treated as "paid and confirmed" instantly, removing redundant approval steps for organizations once funds are processed.
@@ -109,35 +116,6 @@ service cloud.firestore {
 - 🎓 **Ambassador & Volunteer Hub**: Influencers now have a dedicated space to apply for long-term Brand Ambassador roles or volunteer for specific campus events, separate from campaign gig applications.
 - 🏧 **Immediate Wallet Visibility**: Organizations now feature a real-time "Wallet Strip" in their main dashboard, providing instant visibility into available funds and locked escrow without extra navigation.
 - 📊 **Platform Revenue Engine**: Admins can now monitor platform-wide revenue generation (commissions, listing fees) in real-time through the updated Super Admin Dashboard.
-
-### 🛡️ Campaign Approval & Payment Integrity (May 2, 2026)
-- 🔒 **Mandatory "No Report, No Payout" Workflow**: Funds are now strictly locked in escrow until an influencer submits a detailed execution report and the brand explicitly approves it.
-- 💰 **Automated Escrow Management**: Funds are automatically moved from a Brand's available balance to a locked Escrow account the moment an influencer is assigned/allocated to a campaign.
-- 📋 **Integrated Reporting Interface**: Influencers have a dedicated "Manage Work" portal to provide written reports and evidence links (social media, Drive, etc.) for review.
-- ✅ **Brand-Led Release**: Brands can no longer release payments until a submission is received. The platform now enforces a `Submitted -> Approved -> Paid` lifecycle.
-- 🏦 **Financial Accuracy**: The `WalletService` now uses atomic transactions to handle payouts, platform commissions (10%), and balance updates simultaneously, preventing race conditions.
-
-### 🛡️ Super Admin & Platform Oversight (May 2026)
-- 🏛️ **Super Admin Hub**: Launched a comprehensive management suite featuring **Network Pulse** (Analytics), **Platform Ledger** (Financial Audit), and **Campaign Monitor**.
-- 🔐 **Secluded Admin Terminal**: Implemented a dedicated administrative gateway at `/admin` with a high-security "System Authority" theme and strict role enforcement.
-- 💸 **Platform-Wide Ledger**: Centralized monitoring of all financial activity including top-ups, escrow locks, and influencer payouts.
-- 🛡️ **Administrative Moderation**: Empowered admins with tools to delete stale records, moderate campaigns, and promote users to administrative levels directly from the dashboard.
-- 📋 **Enhanced Report Viewer**: Brands now have access to a full **Execution Report Viewer** to audit influencer submissions and evidence links before releasing escrowed funds.
-- ⚡ **Multi-Pitch Applications**: Influencers can now submit multiple refined pitches for a single campaign, removing the "one-application-only" barrier.
-- 🔗 **Evidence Link Integration**: Standardized the collection and display of external evidence links (drive, social media, screenshots) for campaign verification.
-
-### 🏗️ Professional Creator Workspace & UI Refinement
-- 💰 **Wallet & Earning Strip**: Integrated real-time Available vs Pending balance visibility in dashboard headers.
-- 📦 **Campaign Execution Flow**: Structured workflow for influencers to manage active work and track payment approvals.
-- 🏧 **Withdrawal System**: Automated request flow for influencers to withdraw earnings to Nigerian bank accounts.
-- ✅ **Theme Architecture Stabilization**: Full CSS variable implementation for seamless Light/Dark mode transitions.
-- ✅ **Solid Button Standardization**: High-contrast, role-neutral button design platform-wide.
-
-### 🛠️ Key Technical Improvements
-- ✅ **Real-Time Platform Stats**: Implemented server-side (firebase.ts) data aggregation for platform-wide analytics.
-- ✅ **Security Rule Hardening**: Integrated `isAdmin()` helper for robust role-based access control (RBAC).
-- ✅ **API Robustness**: Expanded `apiClient` with comprehensive logging and error handling for all CRUD operations.
-- ✅ **User Profile Enrichment**: Optimized data fetching to automatically sync user profiles across all partnership and gig interactions.
 
 ---
 
@@ -163,5 +141,5 @@ https://campus-spark-3a55d.web.app
 ```
 
 ---
-*Last Updated: May 2, 2026 (v2.5)*
+*Last Updated: May 9, 2026 (v3.0)*
 *Created with ❤️ for the Nigerian Campus Community.*

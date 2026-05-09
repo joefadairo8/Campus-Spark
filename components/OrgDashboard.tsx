@@ -21,6 +21,12 @@ const OrgDashboard: React.FC<{
     const [wallet, setWallet] = useState<any>(null);
     const [transactions, setTransactions] = useState<any[]>([]);
     const [walletLoading, setWalletLoading] = useState(false);
+
+    // Withdrawal states
+    const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+    const [withdrawalAmount, setWithdrawalAmount] = useState('');
+    const [bankDetails, setBankDetails] = useState({ bank: '', account: '', name: '' });
+    const [withdrawing, setWithdrawing] = useState(false);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -60,14 +66,15 @@ const OrgDashboard: React.FC<{
     });
 
     const fetchWallet = async () => {
-        if (currentView === 'wallet' && orgProfile?.id) {
+        const uid = orgProfile?.id || user?.id || auth.currentUser?.uid;
+        if (uid) {
             setWalletLoading(true);
             try {
-                const w = await WalletService.getOrCreateWallet(orgProfile.id);
+                const w = await WalletService.getOrCreateWallet(uid);
                 setWallet(w);
                 const q = query(
                     collection(db, 'transactions'), 
-                    where('userId', '==', orgProfile.id), 
+                    where('userId', '==', uid), 
                     orderBy('createdAt', 'desc'), 
                     limit(30)
                 );
@@ -115,21 +122,21 @@ const OrgDashboard: React.FC<{
     };
 
     const fetchMyEvents = async () => {
-        const currentUser = auth.currentUser;
-        if (!currentUser?.uid) return;
+        const uid = orgProfile?.id || user?.id || auth.currentUser?.uid;
+        if (!uid) return;
         setLoading(true);
         try {
             // Fetch by ID (New standard)
-            const resId = await apiClient.get(`events?hostId=${currentUser.uid}`);
+            const resId = await apiClient.get(`events?hostId=${uid}`);
             let allMyEvents = resId.data || [];
 
             // Legacy fallbacks (Email-based)
             const emailsToTry = new Set<string>();
-            if (currentUser.email) emailsToTry.add(currentUser.email);
-            if (orgProfile?.email) emailsToTry.add(orgProfile.email);
+            const authEmail = orgProfile?.email || user?.email || auth.currentUser?.email;
+            if (authEmail) emailsToTry.add(authEmail);
             if (orgProfile?.hostEmail) emailsToTry.add(orgProfile.hostEmail);
 
-            console.log('[fetchMyEvents] Querying hostId:', currentUser.uid);
+            console.log('[fetchMyEvents] Querying hostId:', uid);
             for (const email of emailsToTry) {
                 try {
                     const resEmail = await apiClient.get(`events?hostEmail=${encodeURIComponent(email)}`);
@@ -150,9 +157,8 @@ const OrgDashboard: React.FC<{
                 const allRes = await apiClient.get('events');
                 const allEventsList: any[] = allRes.data || [];
                 allMyEvents = allEventsList.filter((e: any) => 
-                    e.hostId === (currentUser?.uid || orgProfile?.id) || 
-                    (currentUser?.email && e.hostEmail === currentUser.email) ||
-                    (orgProfile?.email && e.hostEmail === orgProfile.email) ||
+                    e.hostId === uid || 
+                    (authEmail && e.hostEmail === authEmail) ||
                     (orgProfile?.hostEmail && e.hostEmail === orgProfile.hostEmail)
                 );
                 console.log('[fetchMyEvents] Full-scan results:', allMyEvents.length);
@@ -167,10 +173,11 @@ const OrgDashboard: React.FC<{
     };
 
     const fetchProposals = async () => {
-        if (!orgProfile?.id) return;
+        const uid = orgProfile?.id || user?.id || auth.currentUser?.uid;
+        if (!uid) return;
         setLoading(true);
         try {
-            const res = await apiClient.get(`proposals?senderId=${orgProfile.id}&recipientId=${orgProfile.id}`);
+            const res = await apiClient.get(`proposals?senderId=${uid}&recipientId=${uid}`);
             setProposals(res.data);
         } catch (error) {
             console.error("Error fetching proposals:", error);
@@ -196,16 +203,16 @@ const OrgDashboard: React.FC<{
     }, [user]);
 
     useEffect(() => {
-        if (orgProfile?.id) {
+        if (orgProfile?.id || user?.id || auth.currentUser?.uid) {
             fetchMyEvents();
             fetchProposals();
             fetchBrands();
         }
-    }, [orgProfile?.id]);
+    }, [orgProfile?.id, user?.id, auth.currentUser?.uid]);
 
     useEffect(() => {
         fetchWallet();
-    }, [currentView, orgProfile?.id]);
+    }, [currentView, orgProfile?.id, user?.id, auth.currentUser?.uid]);
 
     useEffect(() => {
         if (currentView === 'ambassadors') {
@@ -346,6 +353,28 @@ const OrgDashboard: React.FC<{
         }
     };
 
+    const handleWithdraw = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!orgProfile?.id || !withdrawalAmount) return;
+        setWithdrawing(true);
+        try {
+            await WalletService.requestWithdrawal(
+                orgProfile.id, 
+                Number(withdrawalAmount), 
+                bankDetails,
+                { name: orgProfile.name, email: orgProfile.email }
+            );
+            alert('Withdrawal request submitted successfully!');
+            setShowWithdrawModal(false);
+            setWithdrawalAmount('');
+            await fetchWallet();
+        } catch (e: any) {
+            alert(e.message || 'Withdrawal failed.');
+        } finally {
+            setWithdrawing(false);
+        }
+    };
+
     const renderContent = () => {
         switch (currentView) {
             case 'wallet':
@@ -377,6 +406,13 @@ const OrgDashboard: React.FC<{
                                         <p className="text-purple-100 font-medium">Manage sponsorship funds and pay for campus event resources.</p>
                                     </div>
                                     <div className="flex flex-col sm:flex-row items-center gap-4">
+                                        <button 
+                                            onClick={() => setShowWithdrawModal(true)}
+                                            disabled={(wallet?.balance || 0) < 1000}
+                                            className="px-10 py-5 bg-white text-spark-black font-black rounded-2xl hover:bg-gray-100 transition-all shadow-lg disabled:opacity-50 whitespace-nowrap"
+                                        >
+                                            {(wallet?.balance || 0) < 1000 ? 'Min ₦1,000' : 'Request Withdrawal'}
+                                        </button>
                                         <div className="relative w-full sm:w-48">
                                             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">₦</span>
                                             <input 
@@ -546,6 +582,37 @@ const OrgDashboard: React.FC<{
                                 ))}
                             </div>
                         )}
+                        {/* Recent Activity Quick View */}
+                        <div className="bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-[2.5rem] p-10 shadow-sm mt-10">
+                            <div className="flex items-center justify-between mb-8">
+                                <h3 className="text-2xl font-black text-[var(--text-primary)]">Recent Activity</h3>
+                                <button onClick={() => setCurrentView('wallet')} className="text-[10px] font-black text-spark-red uppercase tracking-widest hover:underline">View All</button>
+                            </div>
+                            <div className="space-y-4">
+                                {transactions.length === 0 ? (
+                                    <p className="text-[var(--text-secondary)] text-sm italic py-4">No recent activity recorded.</p>
+                                ) : (
+                                    transactions.slice(0, 5).map((trans: any, i) => (
+                                        <div key={i} className="flex items-center justify-between p-4 bg-[var(--bg-secondary)] rounded-2xl hover:bg-spark-red/5 transition-all">
+                                            <div className="flex items-center gap-6">
+                                                <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl ${trans.type === 'credit' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                                                    {trans.type === 'credit' ? <Plus className="w-5 h-5" /> : <Minus className="w-5 h-5" />}
+                                                </div>
+                                                <div>
+                                                    <p className="text-base font-black text-[var(--text-primary)]">{trans.description}</p>
+                                                    <p className="text-xs text-[var(--text-secondary)] font-bold">{trans.createdAt?.seconds ? new Date(trans.createdAt.seconds * 1000).toLocaleDateString() : 'Just now'}</p>
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className={`text-lg font-black ${trans.type === 'credit' ? 'text-green-600' : 'text-spark-red'}`}>
+                                                    {trans.type === 'credit' ? '+' : '-'} ₦{Number(trans.amount).toLocaleString()}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
                     </div>
                 );
             case 'ambassadors':
@@ -1076,6 +1143,65 @@ const OrgDashboard: React.FC<{
                                 </div>
                             </form>
                         </div>
+                    </div>
+                </div>
+            )}
+            {/* Withdrawal Modal */}
+            {showWithdrawModal && (
+                <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md z-[300] flex items-center justify-center p-4 animate-in fade-in duration-300">
+                    <div className="bg-[var(--bg-primary)] w-full max-w-md rounded-[2.5rem] border border-[var(--border-color)] p-8 shadow-2xl animate-in zoom-in-95 duration-300">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-2xl font-black text-[var(--text-primary)]">Withdraw Funds</h3>
+                            <button onClick={() => setShowWithdrawModal(false)} className="text-[var(--text-secondary)] hover:text-spark-red transition-colors">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            </button>
+                        </div>
+                        <form onSubmit={handleWithdraw} className="space-y-6">
+                            <div>
+                                <label className="block text-[10px] font-black uppercase text-[var(--text-secondary)] mb-2">Available: ₦{(wallet?.balance || 0).toLocaleString()}</label>
+                                <input 
+                                    type="number" 
+                                    value={withdrawalAmount}
+                                    onChange={(e) => setWithdrawalAmount(e.target.value)}
+                                    placeholder="Amount to withdraw"
+                                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 focus:outline-none focus:border-spark-red font-bold text-[var(--text-primary)]"
+                                    required
+                                />
+                            </div>
+                            <div className="grid gap-4">
+                                <input 
+                                    type="text" 
+                                    placeholder="Bank Name"
+                                    value={bankDetails.bank}
+                                    onChange={(e) => setBankDetails({...bankDetails, bank: e.target.value})}
+                                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 focus:outline-none focus:border-spark-red font-bold text-[var(--text-primary)]"
+                                    required
+                                />
+                                <input 
+                                    type="text" 
+                                    placeholder="Account Number"
+                                    value={bankDetails.account}
+                                    onChange={(e) => setBankDetails({...bankDetails, account: e.target.value})}
+                                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 focus:outline-none focus:border-spark-red font-bold text-[var(--text-primary)]"
+                                    required
+                                />
+                                <input 
+                                    type="text" 
+                                    placeholder="Account Name"
+                                    value={bankDetails.name}
+                                    onChange={(e) => setBankDetails({...bankDetails, name: e.target.value})}
+                                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 focus:outline-none focus:border-spark-red font-bold text-[var(--text-primary)]"
+                                    required
+                                />
+                            </div>
+                            <button 
+                                type="submit" 
+                                disabled={withdrawing || !withdrawalAmount}
+                                className="w-full py-4 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all disabled:opacity-50"
+                            >
+                                {withdrawing ? 'Processing Request...' : 'Confirm Withdrawal'}
+                            </button>
+                        </form>
                     </div>
                 </div>
             )}

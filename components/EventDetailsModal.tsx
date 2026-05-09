@@ -62,9 +62,6 @@ export const EventDetailsModal: React.FC<EventDetailsModalProps> = ({ isOpen, on
 
                 {/* Footer Actions */}
                 <div className="p-8 border-t border-[var(--border-color)] flex flex-wrap gap-4">
-                    <button className="flex-1 py-4 bg-spark-red text-white font-bold rounded-2xl hover:bg-red-700 transition-all text-xs uppercase tracking-widest">
-                        Interested
-                    </button>
                     {onContact && userRole && (
                         <button
                             onClick={() => onContact(event)}

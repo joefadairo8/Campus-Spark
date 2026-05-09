@@ -213,6 +213,17 @@ export const WalletService = {
                 createdAt: fsTimestamp()
             });
 
+            const bTransRef = fsDoc(fsCollection(db, 'transactions'));
+            transaction.set(bTransRef, {
+                userId: brandId,
+                amount: amount,
+                type: 'debit',
+                status: 'completed',
+                description: `Payment Released: ${gigTitle} (Student Paid)`,
+                relatedUserId: influencerId,
+                createdAt: fsTimestamp()
+            });
+
             // 5. Update Allocation Status
             transaction.update(allocRef, { status: 'paid', updatedAt: fsTimestamp() });
             return { success: true };
@@ -312,9 +323,13 @@ export const WalletService = {
     /**
      * Update the status of an allocation
      */
-    async updateAllocationStatus(allocationId: string, status: CampaignAllocation['status']) {
+    async updateAllocationStatus(allocationId: string, status: CampaignAllocation['status'], extraData?: any) {
         const docRef = fsDoc(db, 'campaignAllocations', allocationId);
-        await fsUpdateDoc(docRef, { status, updatedAt: fsTimestamp() });
+        await fsUpdateDoc(docRef, { 
+            status, 
+            updatedAt: fsTimestamp(),
+            ...(extraData || {})
+        });
     },
 
     /**
@@ -350,7 +365,7 @@ export const WalletService = {
     /**
      * Request a withdrawal from available balance
      */
-    async requestWithdrawal(userId: string, amount: number, bankDetails: string) {
+    async requestWithdrawal(userId: string, amount: number, bankDetails: string, userMetadata?: { name: string, email: string }) {
         return await fsRunTransaction(db, async (transaction) => {
             const walletRef = fsDoc(db, 'wallets', userId);
             const walletSnap = await transaction.get(walletRef);
@@ -372,11 +387,62 @@ export const WalletService = {
             const transRef = fsDoc(fsCollection(db, 'transactions'));
             transaction.set(transRef, {
                 userId,
+                userName: userMetadata?.name || 'Unknown',
+                userEmail: userMetadata?.email || '',
                 amount,
                 type: 'debit',
                 status: 'pending',
-                description: `Withdrawal Request: ${bankDetails}`,
+                bankName: (bankDetails as any).bank || '',
+                accountNumber: (bankDetails as any).account || '',
+                accountName: (bankDetails as any).name || '',
+                description: `Withdrawal Request: ${(bankDetails as any).bank} - ${(bankDetails as any).account}`,
                 createdAt: fsTimestamp()
+            });
+        });
+    },
+
+    /**
+     * Mark a withdrawal as completed (disbursed)
+     */
+    async completeWithdrawal(transactionId: string) {
+        const transRef = fsDoc(db, 'transactions', transactionId);
+        await fsUpdateDoc(transRef, { 
+            status: 'completed', 
+            updatedAt: fsTimestamp() 
+        });
+    },
+
+    /**
+     * Reject a withdrawal and refund the amount to the user's balance
+     */
+    async rejectWithdrawal(transactionId: string, reason: string) {
+        return await fsRunTransaction(db, async (transaction) => {
+            const transRef = fsDoc(db, 'transactions', transactionId);
+            const transSnap = await transaction.get(transRef);
+            
+            if (!transSnap.exists()) throw new Error('Transaction not found.');
+            const transData = transSnap.data() as any;
+            
+            if (transData.status !== 'pending') throw new Error('Only pending withdrawals can be rejected.');
+            
+            const userId = transData.userId;
+            const amount = transData.amount;
+            
+            const walletRef = fsDoc(db, 'wallets', userId);
+            const walletSnap = await transaction.get(walletRef);
+            
+            if (walletSnap.exists()) {
+                const currentWallet = walletSnap.data() as Wallet;
+                transaction.update(walletRef, {
+                    balance: currentWallet.balance + amount,
+                    lastUpdated: fsTimestamp()
+                });
+            }
+            
+            transaction.update(transRef, {
+                status: 'failed',
+                description: `${transData.description} (Rejected: ${reason})`,
+                updatedAt: fsTimestamp()
             });
         });
     },

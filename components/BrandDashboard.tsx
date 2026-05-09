@@ -78,6 +78,12 @@ const BrandDashboard: React.FC<{
     const [eventBeingSponsored, setEventBeingSponsored] = useState<any>(null);
     const [partners, setPartners] = useState<any[]>([]);
     const [partnersLoading, setPartnersLoading] = useState(false);
+    const [partnerSearchTerm, setPartnerSearchTerm] = useState('');
+    
+    const [showApprovalModal, setShowApprovalModal] = useState(false);
+    const [selectedAppToApprove, setSelectedAppToApprove] = useState<any>(null);
+    const [approvalAmount, setApprovalAmount] = useState('');
+    const [approvalSubmitting, setApprovalSubmitting] = useState(false);
 
     const fetchApplicants = async (campaign: any) => {
         setViewingApplicants(campaign);
@@ -95,16 +101,59 @@ const BrandDashboard: React.FC<{
 
     const handleApplicationDecision = async (appId: string, status: 'accepted' | 'rejected') => {
         if (!viewingApplicants) return;
+        if (status === 'accepted') {
+            const app = applicants.find(a => a.id === appId);
+            setSelectedAppToApprove({ appId, ...app });
+            setApprovalAmount(String(viewingApplicants.reward || ''));
+            setShowApprovalModal(true);
+            return;
+        }
+        
         try {
             await apiClient.patch(`gigs/${viewingApplicants.id}/applications/${appId}`, { status });
             // Refresh list
             const res = await apiClient.get(`gigs/${viewingApplicants.id}/applications`);
             setApplicants(res.data);
-            if (status === 'accepted') {
-                setCampaigns(prev => prev.map(c => c.id === viewingApplicants.id ? { ...c, status: 'in_progress' } : c));
-            }
         } catch (err: any) {
             alert(err.message || 'Failed to update application.');
+        }
+    };
+
+    const confirmApproval = async () => {
+        if (!viewingApplicants || !selectedAppToApprove || !approvalAmount) return;
+        const amount = Number(approvalAmount);
+        if (isNaN(amount) || amount <= 0) {
+            alert("Please enter a valid amount.");
+            return;
+        }
+
+        const stats = getCampaignBudgetStats(viewingApplicants);
+        if (amount > stats.remaining) {
+            alert(`Amount ₦${amount.toLocaleString()} exceeds remaining campaign budget of ₦${stats.remaining.toLocaleString()}.`);
+            return;
+        }
+
+        setApprovalSubmitting(true);
+        try {
+            await apiClient.patch(`gigs/${viewingApplicants.id}/applications/${selectedAppToApprove.appId}`, { 
+                status: 'accepted',
+                amount 
+            });
+            
+            // Refresh
+            const res = await apiClient.get(`gigs/${viewingApplicants.id}/applications`);
+            setApplicants(res.data);
+            setCampaigns(prev => prev.map(c => c.id === viewingApplicants.id ? { ...c, status: 'in_progress' } : c));
+            await fetchAllAllocations(brandProfile.id);
+            await syncWalletStrip(brandProfile.id);
+            
+            setShowApprovalModal(false);
+            setSelectedAppToApprove(null);
+            alert('Application accepted and funds allocated!');
+        } catch (err: any) {
+            alert(err.message || 'Failed to approve application.');
+        } finally {
+            setApprovalSubmitting(false);
         }
     };
 
@@ -225,10 +274,9 @@ const BrandDashboard: React.FC<{
     };
 
     // Derive a student's status across all campaigns
-    const getInfluencerStatus = (studentId: string): 'available' | 'in_campaign' | 'paid' => {
-        const match = allAllocations.find(a => a.influencerId === studentId);
+    const getInfluencerStatus = (studentId: string): 'available' | 'in_campaign' => {
+        const match = allAllocations.find(a => a.influencerId === studentId && a.status !== 'paid' && a.status !== 'rejected');
         if (!match) return 'available';
-        if (match.status === 'paid') return 'paid';
         return 'in_campaign';
     };
 
@@ -236,8 +284,18 @@ const BrandDashboard: React.FC<{
     const getCampaignBudgetStats = (campaign: any) => {
         const allocations = campaignAllocations[campaign.id] || [];
         const allocated = allocations.filter(a => a.status !== 'rejected').reduce((s, a) => s + a.amount, 0);
+        
+        // LEGACY SUPPORT: If a campaign was posted before the budget system, it won't have a 'budget' field.
+        // We fallback to 'reward' but treat it as non-blocking for approvals since it was balance-based.
+        const isLegacy = !Object.hasOwn(campaign, 'budget') && !!campaign.reward;
         const budget = Number(campaign.budget || campaign.reward || 0);
-        return { budget, allocated, remaining: Math.max(0, budget - allocated) };
+        
+        return { 
+            budget, 
+            allocated, 
+            remaining: isLegacy ? 9999999 : Math.max(0, budget - allocated),
+            isLegacy 
+        };
     };
 
     // Open the "Add to Campaign" modal
@@ -311,14 +369,15 @@ const BrandDashboard: React.FC<{
                 selectedCampaignDetail?.title || 'Campaign'
             );
             
-            await syncWalletStrip(brandProfile.id);
-            await fetchAllAllocations(brandProfile.id);
-            
-            // Refresh detail view
-            if (selectedCampaignDetail) {
-                const updated = await WalletService.getAllocationsForCampaign(selectedCampaignDetail.id);
-                setDetailAllocations(updated);
-            }
+            // Run syncs in parallel to speed up UI response
+            await Promise.all([
+                syncWalletStrip(brandProfile.id),
+                fetchAllAllocations(brandProfile.id),
+                selectedCampaignDetail ? (async () => {
+                    const updated = await WalletService.getAllocationsForCampaign(selectedCampaignDetail.id);
+                    setDetailAllocations(updated);
+                })() : Promise.resolve()
+            ]);
             alert('Payment successfully released!');
         } catch (e: any) {
             alert(e.message || 'Failed to release payment.');
@@ -414,15 +473,17 @@ const BrandDashboard: React.FC<{
     // Reject report (move status back to revision/in_progress)
     const handleRejectReport = async (allocation: CampaignAllocation) => {
         if (!allocation.id) return;
-        if (!window.confirm('Reject this report? The influencer will be notified to revise their submission.')) return;
+        const reason = window.prompt('Why are you rejecting this report? (This will be shown to the influencer)');
+        if (reason === null) return; // User clicked cancel
+
         try {
-            await WalletService.updateAllocationStatus(allocation.id, 'revision');
+            await WalletService.updateAllocationStatus(allocation.id, 'revision', { revisionReason: reason });
             await fetchAllAllocations(brandProfile.id);
             if (selectedCampaignDetail) {
                 const updated = await WalletService.getAllocationsForCampaign(selectedCampaignDetail.id);
                 setDetailAllocations(updated);
             }
-            alert('Report rejected. Influencer can now resubmit.');
+            alert('Report sent back for revision.');
         } catch (e: any) {
             alert(e.message || 'Failed to reject report.');
         }
@@ -581,8 +642,8 @@ const BrandDashboard: React.FC<{
         const fetchPartners = async () => {
             setPartnersLoading(true);
             try {
-                const roles = [UserRole.Organization, 'Organization', 'Brand', UserRole.Brand];
-                const q = query(collection(db, "users"), where("role", "in", roles), limit(50));
+                const roles = [UserRole.StudentOrg, 'Organization', 'Brand', UserRole.Brand];
+                const q = query(collection(db, "users"), where("role", "in", roles), limit(500));
                 const querySnapshot = await getDocs(q);
                 const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
                 setPartners(data.filter(p => p.id !== brandProfile?.id));
@@ -686,6 +747,16 @@ const BrandDashboard: React.FC<{
         return matchesSearch && matchesUni;
     });
 
+    const filteredPartners = partners.filter((partner) => {
+        const searchLower = partnerSearchTerm.toLowerCase();
+        return (
+            partner.name?.toLowerCase().includes(searchLower) ||
+            partner.role?.toLowerCase().includes(searchLower) ||
+            partner.industry?.toLowerCase().includes(searchLower) ||
+            partner.email?.toLowerCase().includes(searchLower)
+        );
+    });
+
     const renderContent = () => {
         switch (currentView) {
             case 'partnerships':
@@ -701,6 +772,8 @@ const BrandDashboard: React.FC<{
                                 <input 
                                     type="text" 
                                     placeholder="Search brands or organizations..." 
+                                    value={partnerSearchTerm}
+                                    onChange={(e) => setPartnerSearchTerm(e.target.value)}
                                     className="w-full pl-12 pr-4 py-4 bg-[var(--bg-primary)] border-2 border-[var(--border-color)] rounded-2xl font-bold outline-none focus:border-spark-red transition-all"
                                 />
                             </div>
@@ -708,15 +781,15 @@ const BrandDashboard: React.FC<{
 
                         {partnersLoading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
-                        ) : partners.length === 0 ? (
+                        ) : filteredPartners.length === 0 ? (
                             <DashboardPlaceholder 
                                 icon={<Handshake className="w-12 h-12" />}
-                                title="No Partners Available"
-                                message="We couldn't find any organizations or brands at the moment."
+                                title={partnerSearchTerm ? "No matching partners" : "No Partners Available"}
+                                message={partnerSearchTerm ? `We couldn't find any partners matching "${partnerSearchTerm}".` : "We couldn't find any organizations or brands at the moment."}
                             />
                         ) : (
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-                                {partners.map((partner) => (
+                                {filteredPartners.map((partner) => (
                                     <div key={partner.id} className="group bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300">
                                         <div className="h-24 bg-gradient-to-r from-spark-red/5 to-spark-black/5 group-hover:from-spark-red/10 group-hover:to-spark-black/10 transition-colors" />
                                         <div className="px-8 pb-8 -mt-12">
@@ -843,8 +916,7 @@ const BrandDashboard: React.FC<{
                                     const status = getInfluencerStatus(student.id);
                                     const statusConfig = {
                                         available: { label: 'Available', cls: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' },
-                                        in_campaign: { label: 'In Campaign', cls: 'bg-spark-red/10 text-spark-red border border-spark-red/20' },
-                                        paid: { label: 'Paid', cls: 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border border-[var(--border-color)]' },
+                                        in_campaign: { label: 'Active', cls: 'bg-spark-red/10 text-spark-red border border-spark-red/20' },
                                     }[status];
                                     return (
                                         <div key={student.id} className={`group bg-[var(--bg-primary)] rounded-[2rem] border overflow-hidden shadow-sm hover:shadow-xl transition-all p-6 text-center ${status === 'in_campaign' ? 'border-spark-red/30 ring-1 ring-spark-red/10' : 'border-[var(--border-color)]'}`}>
@@ -866,10 +938,9 @@ const BrandDashboard: React.FC<{
                                             </div>
                                             <button
                                                 onClick={() => openAllocationModal(student)}
-                                                disabled={status === 'paid'}
-                                                className={`w-full py-3 font-black rounded-xl transition-all text-sm active:scale-95 shadow-sm ${status === 'paid' ? 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)] opacity-50 cursor-not-allowed' : status === 'in_campaign' ? 'bg-spark-red/10 text-spark-red border border-spark-red/20 hover:bg-spark-red hover:text-white' : 'bg-[var(--text-primary)] text-[var(--bg-primary)] hover:bg-spark-red hover:text-white'}`}
+                                                className={`w-full py-3 font-black rounded-xl transition-all text-sm active:scale-95 shadow-sm ${status === 'in_campaign' ? 'bg-spark-red/10 text-spark-red border border-spark-red/20 hover:bg-spark-red hover:text-white' : 'bg-[var(--text-primary)] text-[var(--bg-primary)] hover:bg-spark-red hover:text-white'}`}
                                             >
-                                                {status === 'paid' ? 'Already Paid' : status === 'in_campaign' ? 'Re-allocate' : 'Add to Campaign'}
+                                                {status === 'in_campaign' ? 'Re-allocate' : 'Add to Campaign'}
                                             </button>
                                         </div>
                                     );
@@ -1124,6 +1195,7 @@ const BrandDashboard: React.FC<{
                     'selected': 'bg-blue-50 text-blue-600',
                     'in_progress': 'bg-orange-50 text-orange-600',
                     'submitted': 'bg-purple-50 text-purple-600',
+                    'revision': 'bg-red-50 text-spark-red',
                     'approved': 'bg-teal-50 text-teal-600',
                     'paid': 'bg-green-50 text-green-600',
                     'rejected': 'bg-red-50 text-red-500',
@@ -1151,7 +1223,7 @@ const BrandDashboard: React.FC<{
                                 {[
                                     { label: 'Total Budget', value: `₦${detailStats.budget.toLocaleString()}`, color: 'text-[var(--text-primary)]' },
                                     { label: 'Allocated', value: `₦${detailStats.allocated.toLocaleString()}`, color: 'text-spark-red' },
-                                    { label: 'Remaining', value: `₦${detailStats.remaining.toLocaleString()}`, color: 'text-green-600' },
+                                    { label: 'Remaining', value: detailStats.isLegacy ? 'Balance-based' : `₦${detailStats.remaining.toLocaleString()}`, color: 'text-green-600' },
                                 ].map((s, i) => (
                                     <div key={i} className="bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-[1.5rem] p-5">
                                         <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">{s.label}</p>
@@ -1300,7 +1372,7 @@ const BrandDashboard: React.FC<{
                                             <div className="mb-5 space-y-2">
                                                 <div className="flex justify-between text-xs font-black">
                                                     <span className="text-[var(--text-secondary)]">Allocated <span className="text-spark-red">₦{bStats.allocated.toLocaleString()}</span></span>
-                                                    <span className="text-[var(--text-secondary)]">Remaining <span className="text-green-600">₦{bStats.remaining.toLocaleString()}</span></span>
+                                                    <span className="text-[var(--text-secondary)]">Remaining <span className="text-green-600">{bStats.isLegacy ? 'Balance-based' : `₦${bStats.remaining.toLocaleString()}`}</span></span>
                                                 </div>
                                                 <div className="h-1.5 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
                                                     <div className="h-full bg-spark-red rounded-full transition-all" style={{ width: `${bPct}%` }}></div>
@@ -1817,6 +1889,59 @@ const BrandDashboard: React.FC<{
                 </div>
             )}
 
+            {/* Approval Modal (for Applications) */}
+            {showApprovalModal && selectedAppToApprove && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[301] flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-[var(--bg-primary)] rounded-[2.5rem] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 border border-[var(--border-color)]">
+                        <div className="p-6 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-secondary)]/50">
+                            <div>
+                                <h3 className="text-lg font-black text-[var(--text-primary)]">Approve Influencer</h3>
+                                <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest mt-1">Student: {selectedAppToApprove.student?.name || selectedAppToApprove.studentName || 'Selected Talent'}</p>
+                            </div>
+                            <button onClick={() => { setShowApprovalModal(false); setSelectedAppToApprove(null); }} className="w-8 h-8 bg-spark-black text-white rounded-full flex items-center justify-center hover:bg-gray-800 transition-all">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                        
+                        <div className="p-6 space-y-6">
+                            <div>
+                                <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Allocation Amount (₦)</label>
+                                <input 
+                                    type="number" 
+                                    min="0"
+                                    placeholder="e.g. 15000"
+                                    value={approvalAmount} 
+                                    onChange={e => setApprovalAmount(e.target.value)}
+                                    className="w-full px-4 py-3 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl font-bold text-lg outline-none focus:border-spark-red"
+                                />
+                                {viewingApplicants && (() => {
+                                    const stats = getCampaignBudgetStats(viewingApplicants);
+                                    return (
+                                        <p className="text-[10px] text-[var(--text-secondary)] font-bold mt-2">
+                                            Remaining Campaign Budget: <span className="text-green-600">₦{stats.remaining.toLocaleString()}</span>
+                                        </p>
+                                    );
+                                })()}
+                            </div>
+                            
+                            <div className="p-4 bg-spark-red/5 rounded-2xl border border-spark-red/10">
+                                <p className="text-[10px] text-spark-red font-bold leading-relaxed">
+                                    By approving, ₦{Number(approvalAmount || 0).toLocaleString()} will be moved from your campaign budget and locked for this student. You can release it once they submit their report.
+                                </p>
+                            </div>
+
+                            <button 
+                                onClick={confirmApproval}
+                                disabled={approvalSubmitting || !approvalAmount}
+                                className="w-full py-4 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-red-100 flex items-center justify-center gap-2"
+                            >
+                                {approvalSubmitting ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"/> : 'Approve & Allocate'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Report Viewer Modal */}
             {viewingReport && (
                 <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md z-[300] flex items-center justify-center p-4 animate-in fade-in duration-300">
@@ -1854,6 +1979,20 @@ const BrandDashboard: React.FC<{
                                     >
                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
                                         Open Execution Proof
+                                    </a>
+                                </div>
+                            )}
+                            {viewingReport.submission?.metricsUrl && (
+                                <div>
+                                    <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Reach Metrics</label>
+                                    <a 
+                                        href={viewingReport.submission.metricsUrl} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer" 
+                                        className="flex items-center gap-2 p-4 bg-green-600/5 text-green-600 border border-green-600/10 rounded-xl font-black text-sm hover:bg-green-600/10 transition-all"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                        Download Metrics Screenshot
                                     </a>
                                 </div>
                             )}
