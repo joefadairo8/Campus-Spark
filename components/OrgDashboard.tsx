@@ -74,12 +74,20 @@ const OrgDashboard: React.FC<{
                 setWallet(w);
                 const q = query(
                     collection(db, 'transactions'), 
-                    where('userId', '==', uid), 
-                    orderBy('createdAt', 'desc'), 
-                    limit(30)
+                    where('userId', '==', uid)
                 );
+                
                 const transSnap = await getDocs(q);
-                setTransactions(transSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+                const mappedTrans = (transSnap.docs || []).map(d => ({ id: d.id, ...d.data() }));
+                
+                // Sort client-side to avoid missing index errors and handle different timestamp formats
+                const sortedTrans = mappedTrans.sort((a, b) => {
+                    const dateA = a.createdAt?.seconds ? a.createdAt.seconds * 1000 : new Date(a.createdAt).getTime();
+                    const dateB = b.createdAt?.seconds ? b.createdAt.seconds * 1000 : new Date(b.createdAt).getTime();
+                    return dateB - dateA;
+                }).slice(0, 50);
+
+                setTransactions(sortedTrans);
             } catch (e) {
                 console.error("Wallet fetch error:", e);
             } finally {
@@ -495,7 +503,11 @@ const OrgDashboard: React.FC<{
                                                         <div>
                                                             <p className="font-black text-[var(--text-primary)]">{trans.description}</p>
                                                             <p className="text-xs text-[var(--text-secondary)] font-bold">
-                                                                {trans.createdAt?.seconds ? new Date(trans.createdAt.seconds * 1000).toLocaleDateString() : 'Just now'}
+                                                                {(() => {
+                                                                    if (!trans.createdAt) return 'Just now';
+                                                                    const date = trans.createdAt.seconds ? new Date(trans.createdAt.seconds * 1000) : new Date(trans.createdAt);
+                                                                    return date.toLocaleDateString();
+                                                                })()}
                                                             </p>
                                                         </div>
                                                     </div>
@@ -600,7 +612,13 @@ const OrgDashboard: React.FC<{
                                                 </div>
                                                 <div>
                                                     <p className="text-base font-black text-[var(--text-primary)]">{trans.description}</p>
-                                                    <p className="text-xs text-[var(--text-secondary)] font-bold">{trans.createdAt?.seconds ? new Date(trans.createdAt.seconds * 1000).toLocaleDateString() : 'Just now'}</p>
+                                                    <p className="text-xs text-[var(--text-secondary)] font-bold">
+                                                        {(() => {
+                                                            if (!trans.createdAt) return 'Just now';
+                                                            const date = trans.createdAt.seconds ? new Date(trans.createdAt.seconds * 1000) : new Date(trans.createdAt);
+                                                            return date.toLocaleDateString();
+                                                        })()}
+                                                    </p>
                                                 </div>
                                             </div>
                                             <div className="text-right">

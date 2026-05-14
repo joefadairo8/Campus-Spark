@@ -58,6 +58,15 @@ export interface FaqItem {
   answer: string;
 }
 
+export interface PortfolioItem {
+  id: string;
+  title: string;
+  description: string;
+  fileUrl: string;
+  fileType: 'image' | 'video' | 'document' | 'link';
+  createdAt: string;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -76,6 +85,7 @@ export interface User {
   handle?: string;
   clubType?: string;
   companySize?: string;
+  portfolio?: PortfolioItem[];
   createdAt: string;
 }
 

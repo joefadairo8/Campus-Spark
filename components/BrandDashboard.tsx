@@ -9,7 +9,7 @@ import { ProposalFormModal } from './ProposalFormModal';
 import { ProposalDetailsModal } from './ProposalDetailsModal';
 import { EventDetailsModal } from './EventDetailsModal';
 import { WalletService, CampaignAllocation } from '../WalletService';
-import { Calendar, Wallet, BarChart3, Lock, Plus, Minus, Mail, Users, Megaphone, Inbox, TrendingUp, ArrowUpRight, ArrowDownLeft, Activity, Handshake, Building2, Search } from 'lucide-react';
+import { Calendar, Wallet, BarChart3, Lock, Plus, Minus, Mail, Users, Megaphone, Inbox, TrendingUp, ArrowUpRight, ArrowDownLeft, Activity, Handshake, Building2, Search, Briefcase, FileText, Download } from 'lucide-react';
 
 const BrandDashboard: React.FC<{ 
     onNavigate: (page: string) => void,
@@ -80,6 +80,10 @@ const BrandDashboard: React.FC<{
     const [partnersLoading, setPartnersLoading] = useState(false);
     const [partnerSearchTerm, setPartnerSearchTerm] = useState('');
     
+    // Influencer profile view
+    const [viewingProfile, setViewingProfile] = useState<any>(null);
+    const [selectedPortfolioItem, setSelectedPortfolioItem] = useState<any>(null);
+
     const [showApprovalModal, setShowApprovalModal] = useState(false);
     const [selectedAppToApprove, setSelectedAppToApprove] = useState<any>(null);
     const [approvalAmount, setApprovalAmount] = useState('');
@@ -192,13 +196,20 @@ const BrandDashboard: React.FC<{
             
             const q = query(
                 collection(db, 'transactions'), 
-                where('userId', '==', brandProfile.id), 
-                orderBy('createdAt', 'desc'),
-                limit(30)
+                where('userId', '==', brandProfile.id)
             );
+            
             const transSnap = await getDocs(q);
-            const mappedTrans = transSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setTransactions(mappedTrans);
+            const mappedTrans = (transSnap.docs || []).map(d => ({ id: d.id, ...d.data() }));
+            
+            // Sort client-side to avoid missing index errors and handle different timestamp formats
+            const sortedTrans = mappedTrans.sort((a, b) => {
+                const dateA = a.createdAt?.seconds ? a.createdAt.seconds * 1000 : new Date(a.createdAt).getTime();
+                const dateB = b.createdAt?.seconds ? b.createdAt.seconds * 1000 : new Date(b.createdAt).getTime();
+                return dateB - dateA;
+            }).slice(0, 50);
+
+            setTransactions(sortedTrans);
         } catch (e) {
             console.error("Wallet fetch error:", e);
         } finally {
@@ -822,33 +833,6 @@ const BrandDashboard: React.FC<{
                 return (
                     <div className="space-y-6">
                         {/* ── Active Campaign Overview Panel ── */}
-                        {activeCampaignContext && (() => {
-                            const stats = getCampaignBudgetStats(activeCampaignContext);
-                            const pct = stats.budget > 0 ? Math.min(100, (stats.allocated / stats.budget) * 100) : 0;
-                            return (
-                                <div className="bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-[2rem] p-5 shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-4 animate-in slide-in-from-top-2 duration-300">
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <span className="w-2 h-2 rounded-full bg-spark-red animate-pulse flex-shrink-0"></span>
-                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Active Campaign</p>
-                                        </div>
-                                        <h4 className="font-black text-[var(--text-primary)] truncate">{activeCampaignContext.title}</h4>
-                                        <div className="flex items-center gap-4 mt-2 text-xs text-[var(--text-secondary)] font-bold">
-                                            <span>Budget: <span className="text-[var(--text-primary)]">₦{stats.budget.toLocaleString()}</span></span>
-                                            <span>Allocated: <span className="text-spark-red">₦{stats.allocated.toLocaleString()}</span></span>
-                                            <span>Remaining: <span className="text-green-600">₦{stats.remaining.toLocaleString()}</span></span>
-                                        </div>
-                                        <div className="mt-2 h-1.5 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
-                                            <div className="h-full bg-spark-red rounded-full transition-all" style={{ width: `${pct}%` }}></div>
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-2 flex-shrink-0">
-                                        <button onClick={() => { setCurrentView('campaigns'); openCampaignDetail(activeCampaignContext); }} className="px-4 py-2 text-[10px] font-black uppercase tracking-widest bg-spark-red text-white rounded-xl hover:bg-red-700 transition-all shadow-sm">View Detail</button>
-                                        <button onClick={() => setActiveCampaignContext(null)} className="px-3 py-2 text-[10px] font-black uppercase tracking-widest bg-[var(--text-primary)] text-[var(--bg-primary)] rounded-xl hover:bg-spark-red hover:text-white transition-all shadow-sm">Clear</button>
-                                    </div>
-                                </div>
-                            );
-                        })()}
 
                         {/* ── Recent Activity Quick View ── */}
                         <div className="bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-[2.5rem] p-8 shadow-sm">
@@ -892,19 +876,6 @@ const BrandDashboard: React.FC<{
                                 />
                                 <svg className="absolute left-4 top-4.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                             </div>
-                            {campaigns.length > 0 && (
-                                <div className="flex items-center gap-3 w-full xl:w-auto">
-                                    <label className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest whitespace-nowrap">Campaign Context:</label>
-                                    <select
-                                        className="flex-1 px-4 py-3 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl text-sm font-bold text-[var(--text-primary)] outline-none focus:border-spark-red"
-                                        value={activeCampaignContext?.id || ''}
-                                        onChange={e => setActiveCampaignContext(campaigns.find(c => c.id === e.target.value) || null)}
-                                    >
-                                        <option value="">— No campaign selected —</option>
-                                        {campaigns.map(c => <option key={c.id} value={c.title}>{c.title}</option>)}
-                                    </select>
-                                </div>
-                            )}
                         </div>
 
                         {/* ── Talent Grid ── */}
@@ -936,12 +907,20 @@ const BrandDashboard: React.FC<{
                                                     </a>
                                                 )}
                                             </div>
-                                            <button
-                                                onClick={() => openAllocationModal(student)}
-                                                className={`w-full py-3 font-black rounded-xl transition-all text-sm active:scale-95 shadow-sm ${status === 'in_campaign' ? 'bg-spark-red/10 text-spark-red border border-spark-red/20 hover:bg-spark-red hover:text-white' : 'bg-[var(--text-primary)] text-[var(--bg-primary)] hover:bg-spark-red hover:text-white'}`}
-                                            >
-                                                {status === 'in_campaign' ? 'Re-allocate' : 'Add to Campaign'}
-                                            </button>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => setViewingProfile(student)}
+                                                    className="flex-1 py-3 bg-[var(--bg-secondary)] text-[var(--text-primary)] font-black rounded-xl hover:bg-[var(--bg-tertiary)] transition-all text-sm border border-[var(--border-color)]"
+                                                >
+                                                    Profile
+                                                </button>
+                                                <button
+                                                    onClick={() => openAllocationModal(student)}
+                                                    className={`flex-[2] py-3 font-black rounded-xl transition-all text-sm active:scale-95 shadow-sm ${status === 'in_campaign' ? 'bg-spark-red/10 text-spark-red border border-spark-red/20 hover:bg-spark-red hover:text-white' : 'bg-spark-red text-white hover:bg-red-700'}`}
+                                                >
+                                                    {status === 'in_campaign' ? 'Re-allocate' : 'Hire Talent'}
+                                                </button>
+                                            </div>
                                         </div>
                                     );
                                 })}
@@ -1104,7 +1083,11 @@ const BrandDashboard: React.FC<{
                                                         <div>
                                                             <p className="font-black text-[var(--text-primary)]">{trans.description}</p>
                                                             <p className="text-xs text-[var(--text-secondary)] font-bold">
-                                                                {trans.createdAt?.seconds ? new Date(trans.createdAt.seconds * 1000).toLocaleDateString() : 'Just now'}
+                                                                {(() => {
+                                                                    if (!trans.createdAt) return 'Just now';
+                                                                    const date = trans.createdAt.seconds ? new Date(trans.createdAt.seconds * 1000) : new Date(trans.createdAt);
+                                                                    return date.toLocaleDateString();
+                                                                })()}
                                                             </p>
                                                         </div>
                                                     </div>
@@ -1431,11 +1414,14 @@ const BrandDashboard: React.FC<{
                                                         <div className="w-12 h-12 rounded-2xl bg-spark-red text-white flex items-center justify-center font-black text-lg flex-shrink-0">
                                                             {app.student?.name?.charAt(0) || '?'}
                                                         </div>
-                                                        <div className="flex-1 min-w-0">
-                                                            <h4 className="font-black text-[var(--text-primary)]">{app.student?.name}</h4>
+                                                        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setViewingProfile(app.student)}>
+                                                            <h4 className="font-black text-[var(--text-primary)] hover:text-spark-red transition-colors">{app.student?.name}</h4>
                                                             <p className="text-xs text-[var(--text-secondary)]">{app.student?.university || app.student?.email}</p>
                                                         </div>
-                                                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${statusColors[app.status] || 'bg-[var(--bg-tertiary)] text-gray-500'}`}>{app.status}</span>
+                                                        <div className="flex flex-col items-end gap-2">
+                                                            <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${statusColors[app.status] || 'bg-[var(--bg-tertiary)] text-gray-500'}`}>{app.status}</span>
+                                                            <button onClick={() => setViewingProfile(app.student)} className="text-[10px] font-black text-spark-red uppercase hover:underline">View Portfolio</button>
+                                                        </div>
                                                     </div>
                                                     <div className="bg-[var(--bg-primary)] rounded-xl p-4 mb-4 border border-[var(--border-color)]">
                                                         <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-wider mb-2">Their Pitch</p>
@@ -2003,6 +1989,187 @@ const BrandDashboard: React.FC<{
             )}
 
             {renderContent()}
+            {/* Influencer Profile Modal */}
+            {viewingProfile && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+                    <div className="fixed inset-0 bg-spark-black/80 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setViewingProfile(null)}></div>
+                    <div className="relative bg-[var(--bg-primary)] w-full max-w-4xl max-h-[90vh] rounded-[3rem] shadow-2xl animate-in zoom-in-95 duration-300 overflow-hidden flex flex-col border border-[var(--border-color)]">
+                        {/* Header/Cover */}
+                        <div className="h-40 bg-gradient-to-r from-spark-black to-spark-red relative flex-shrink-0">
+                            <button onClick={() => setViewingProfile(null)} className="absolute top-6 right-6 w-10 h-10 bg-white/20 backdrop-blur-md text-white rounded-full flex items-center justify-center hover:bg-white/40 transition-all z-10">
+                                <Plus className="w-6 h-6 rotate-45" />
+                             </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto custom-scrollbar">
+                            <div className="px-10 pb-10">
+                                {/* Profile Info */}
+                                <div className="relative -mt-16 mb-8 flex flex-col md:flex-row md:items-end justify-between gap-6">
+                                    <div className="flex items-end gap-6">
+                                        <div className="w-32 h-32 rounded-3xl bg-[var(--bg-primary)] p-2 shadow-2xl ring-4 ring-[var(--bg-primary)] overflow-hidden">
+                                            {viewingProfile.imageUrl ? (
+                                                <img src={viewingProfile.imageUrl} className="w-full h-full object-cover rounded-2xl" alt={viewingProfile.name} />
+                                            ) : (
+                                                <div className="w-full h-full bg-spark-red/10 flex items-center justify-center text-4xl font-black text-spark-red">
+                                                    {(viewingProfile.name || '?').charAt(0)}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="pb-2">
+                                            <h3 className="text-3xl font-black text-[var(--text-primary)]">{viewingProfile.name}</h3>
+                                            <div className="flex items-center gap-3 mt-1">
+                                                <span className="px-3 py-1 bg-spark-red/10 text-spark-red text-[10px] font-black uppercase tracking-widest rounded-lg">{viewingProfile.university || 'Campus Influencer'}</span>
+                                                {viewingProfile.location && <span className="text-[var(--text-secondary)] font-bold text-xs">📍 {viewingProfile.location}</span>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-3 pb-2">
+                                        {viewingProfile.instagram && (
+                                            <a href={`https://instagram.com/${viewingProfile.instagram.replace('@','')}`} target="_blank" rel="noopener noreferrer" className="w-10 h-10 bg-[var(--bg-secondary)] rounded-xl flex items-center justify-center hover:bg-spark-red hover:text-white transition-all">
+                                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+                                            </a>
+                                        )}
+                                        {viewingProfile.twitter && (
+                                            <a href={`https://twitter.com/${viewingProfile.twitter.replace('@','')}`} target="_blank" rel="noopener noreferrer" className="w-10 h-10 bg-[var(--bg-secondary)] rounded-xl flex items-center justify-center hover:bg-spark-red hover:text-white transition-all">
+                                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.84 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z"/></svg>
+                                            </a>
+                                        )}
+                                        <button onClick={() => { setViewingProfile(null); openAllocationModal(viewingProfile); }} className="px-6 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all shadow-lg text-xs uppercase tracking-widest">
+                                            Hire Influencer
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Tabs for Portfolio / Bio */}
+                                <div className="grid md:grid-cols-3 gap-8">
+                                    <div className="md:col-span-1 space-y-6">
+                                        <div className="bg-[var(--bg-secondary)] rounded-3xl p-6 border border-[var(--border-color)]">
+                                            <h4 className="font-black text-[var(--text-primary)] mb-4 uppercase text-[10px] tracking-widest text-spark-red">About Influencer</h4>
+                                            <p className="text-sm text-[var(--text-secondary)] leading-relaxed font-medium">
+                                                {viewingProfile.bio || "No bio provided by the influencer yet."}
+                                            </p>
+                                        </div>
+                                        <div className="bg-[var(--bg-secondary)] rounded-3xl p-6 border border-[var(--border-color)]">
+                                            <h4 className="font-black text-[var(--text-primary)] mb-4 uppercase text-[10px] tracking-widest text-spark-red">Quick Stats</h4>
+                                            <div className="space-y-3">
+                                                <div className="flex justify-between text-xs">
+                                                    <span className="text-[var(--text-secondary)] font-bold">University</span>
+                                                    <span className="text-[var(--text-primary)] font-black">{viewingProfile.university || 'N/A'}</span>
+                                                </div>
+                                                <div className="flex justify-between text-xs">
+                                                    <span className="text-[var(--text-secondary)] font-bold">Handle</span>
+                                                    <span className="text-spark-red font-black">{viewingProfile.handle || '@spark_user'}</span>
+                                                </div>
+                                                <div className="flex justify-between text-xs">
+                                                    <span className="text-[var(--text-secondary)] font-bold">Joined</span>
+                                                    <span className="text-[var(--text-primary)] font-black">{viewingProfile.createdAt ? new Date(viewingProfile.createdAt).getFullYear() : '2024'}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="md:col-span-2 space-y-6">
+                                        <h4 className="text-xl font-black text-[var(--text-primary)] flex items-center gap-2">
+                                            <Briefcase className="w-6 h-6 text-spark-red" />
+                                            Professional Portfolio
+                                        </h4>
+                                        
+                                        {!viewingProfile.portfolio || viewingProfile.portfolio.length === 0 ? (
+                                            <div className="bg-[var(--bg-secondary)] rounded-[2.5rem] border-2 border-dashed border-[var(--border-color)] p-12 text-center">
+                                                <p className="text-[var(--text-secondary)] font-bold">This influencer hasn't uploaded any previous work yet.</p>
+                                            </div>
+                                        ) : (
+                                            <div className="grid sm:grid-cols-2 gap-4">
+                                                {viewingProfile.portfolio.map((item: any) => (
+                                                    <div 
+                                                        key={item.id} 
+                                                        onClick={() => setSelectedPortfolioItem(item)}
+                                                        className="bg-[var(--bg-secondary)] rounded-3xl border border-[var(--border-color)] overflow-hidden hover:border-spark-red transition-all flex flex-col group cursor-pointer"
+                                                    >
+                                                        <div className="h-32 bg-spark-black/5 relative">
+                                                            {item.fileType === 'image' ? (
+                                                                <img src={item.fileUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={item.title} />
+                                                            ) : (
+                                                                <div className="w-full h-full flex items-center justify-center">
+                                                                    <FileText className="w-10 h-10 text-spark-red/20" />
+                                                                </div>
+                                                            )}
+                                                            <div className="absolute inset-0 bg-spark-black/40 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
+                                                                <span className="px-4 py-2 bg-white text-spark-black rounded-lg text-[10px] font-black uppercase tracking-widest">
+                                                                    View Details
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="p-5">
+                                                            <h5 className="font-black text-[var(--text-primary)] text-sm line-clamp-1 group-hover:text-spark-red transition-colors">{item.title}</h5>
+                                                            <p className="text-[10px] text-[var(--text-secondary)] line-clamp-2 mt-1 font-medium">{item.description}</p>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Portfolio Item Detail Modal */}
+            {selectedPortfolioItem && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+                    <div className="fixed inset-0 bg-spark-black/90 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setSelectedPortfolioItem(null)}></div>
+                    <div className="relative bg-[var(--bg-primary)] w-full max-w-2xl rounded-[2.5rem] shadow-2xl animate-in zoom-in-95 duration-300 overflow-hidden border border-[var(--border-color)]">
+                        <div className="p-8">
+                            <div className="flex justify-between items-start mb-6">
+                                <div>
+                                    <h2 className="text-2xl font-black text-[var(--text-primary)]">{selectedPortfolioItem.title}</h2>
+                                    <span className="text-[10px] font-black text-spark-red uppercase tracking-widest mt-1 block">Work Done: {new Date(selectedPortfolioItem.createdAt).toLocaleDateString()}</span>
+                                </div>
+                                <button onClick={() => setSelectedPortfolioItem(null)} className="w-10 h-10 bg-[var(--bg-secondary)] text-[var(--text-primary)] rounded-full flex items-center justify-center hover:bg-spark-red hover:text-white transition-all">
+                                    <Plus className="w-6 h-6 rotate-45" />
+                                </button>
+                            </div>
+
+                            <div className="space-y-6">
+                                {selectedPortfolioItem.fileType === 'image' && (
+                                    <div className="rounded-2xl overflow-hidden border border-[var(--border-color)]">
+                                        <img src={selectedPortfolioItem.fileUrl} className="w-full h-auto max-h-80 object-cover" alt={selectedPortfolioItem.title} />
+                                    </div>
+                                )}
+
+                                <div>
+                                    <h4 className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Project Description</h4>
+                                    <div className="bg-[var(--bg-secondary)] p-6 rounded-2xl border border-[var(--border-color)]">
+                                        <p className="text-[var(--text-primary)] font-medium leading-relaxed whitespace-pre-wrap">
+                                            {selectedPortfolioItem.description}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-4">
+                                    <a 
+                                        href={selectedPortfolioItem.fileUrl} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer" 
+                                        className="flex-1 py-4 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-red-100"
+                                    >
+                                        <Download className="w-5 h-5" />
+                                        Download Work Files
+                                    </a>
+                                    <button 
+                                        onClick={() => setSelectedPortfolioItem(null)}
+                                        className="flex-1 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-gray-800 transition-all"
+                                    >
+                                        Close Details
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </DashboardShell>
     );
 };

@@ -11,6 +11,14 @@ import { exec } from 'child_process';
 import https from 'https';
 import zlib from 'zlib';
 import pool from './db.js';
+import {
+    sendWelcomeEmail, sendAdminNewUserAlert,
+    sendProposalReceivedEmail, sendProposalStatusEmail,
+    sendNewApplicationEmail, sendApplicationDecisionEmail,
+    sendReportSubmittedEmail, sendReportApprovedEmail, sendReportRejectedEmail,
+    sendWithdrawalRequestEmail, sendWithdrawalConfirmationEmail,
+    sendTopUpConfirmationEmail, sendGenericNotificationEmail,
+} from './emailService.js';
 
 dotenv.config();
 
@@ -123,6 +131,11 @@ app.post('/api/auth/register', async (req, res) => {
 
         const [[user]]: any = await pool.query('SELECT * FROM User WHERE email = ?', [email]);
         const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET);
+
+        // Email notifications (non-blocking)
+        sendWelcomeEmail(email, name, role).catch(() => {});
+        sendAdminNewUserAlert(name, email, role).catch(() => {});
+
         res.status(201).json({ user, token });
     }
     catch (error: any) {
@@ -240,6 +253,14 @@ app.post('/api/proposals', authenticateToken, async (req: any, res) => {
             WHERE p.id = ?
         `, [proposalId]);
 
+        // Notify recipient by email (non-blocking)
+        sendProposalReceivedEmail(
+            proposal.recipientEmail || proposal.r_email || '',
+            proposal.recipientName,
+            proposal.senderName,
+            message
+        ).catch(() => {});
+
         res.status(201).json(proposal);
     } catch (error: any) {
         res.status(400).json({ error: error.message });
@@ -280,6 +301,16 @@ app.patch('/api/proposals/:id', authenticateToken, async (req: any, res) => {
             WHERE p.id = ?
         `, [req.params.id]);
         
+        // Notify sender of status change (non-blocking)
+        if (status && proposal) {
+            sendProposalStatusEmail(
+                proposal.senderEmail,
+                proposal.senderName,
+                proposal.recipientName,
+                status
+            ).catch(() => {});
+        }
+
         res.json(proposal);
     } catch (error: any) {
         res.status(400).json({ error: error.message });
@@ -436,6 +467,19 @@ app.post('/api/gigs/:id/apply', authenticateToken, async (req: any, res) => {
             [appId, gigId, studentId, pitch.trim()]
         );
         const [[application]]: any = await pool.query('SELECT * FROM GigApplication WHERE id = ?', [appId]);
+        const [[student]]: any = await pool.query('SELECT name, email FROM User WHERE id = ?', [studentId]);
+
+        // Notify brand by email — look up brand user by email/name stored in Gig
+        try {
+            const [[brandUser]]: any = await pool.query(
+                'SELECT name, email FROM User WHERE email = ? OR name = ? LIMIT 1',
+                [gig.brandEmail || gig.brand, gig.brand]
+            );
+            if (brandUser?.email) {
+                sendNewApplicationEmail(brandUser.email, brandUser.name, student?.name || 'A student', gig.title, pitch).catch(() => {});
+            }
+        } catch (_) {}
+
         res.status(201).json(application);
     } catch (error: any) {
         res.status(500).json({ error: error.message });
@@ -472,6 +516,15 @@ app.patch('/api/gigs/:id/applications/:appId', authenticateToken, async (req: an
             await pool.query('UPDATE Gig SET status = "in_progress", studentId = ? WHERE id = ?', [application.studentId, req.params.id]);
             await pool.query('UPDATE GigApplication SET status = "rejected" WHERE gigId = ? AND id != ? AND status = "pending"', [req.params.id, req.params.appId]);
         }
+
+        // Notify student of decision (non-blocking)
+        try {
+            const [[gig]]: any = await pool.query('SELECT title, brand, brandEmail FROM Gig WHERE id = ?', [req.params.id]);
+            const [[student]]: any = await pool.query('SELECT name, email FROM User WHERE id = ?', [application.studentId]);
+            if (student?.email && gig) {
+                sendApplicationDecisionEmail(student.email, student.name, gig.title, gig.brand, status as 'accepted' | 'rejected').catch(() => {});
+            }
+        } catch (_) {}
 
         res.json(application);
     } catch (error: any) {
@@ -514,6 +567,14 @@ app.post('/api/gigs/:id/report', authenticateToken, async (req: any, res) => {
         await pool.query('UPDATE Gig SET status = "reviewing" WHERE id = ?', [req.params.id]);
         const [[updatedGig]]: any = await pool.query('SELECT * FROM Gig WHERE id = ?', [req.params.id]);
 
+        // Notify brand + admin that report was submitted (non-blocking)
+        try {
+            const [[student]]: any = await pool.query('SELECT name FROM User WHERE id = ?', [req.user.id]);
+            const [[brandUser]]: any = await pool.query('SELECT name, email FROM User WHERE email = ? OR name = ? LIMIT 1', [gig.brandEmail || gig.brand, gig.brand]);
+            if (brandUser?.email) sendReportSubmittedEmail(brandUser.email, brandUser.name, student?.name || 'An influencer', gig.title).catch(() => {});
+            sendReportSubmittedEmail(process.env.ADMIN_EMAIL || 'hello@campusspark.com.ng', 'Admin', student?.name || 'An influencer', gig.title).catch(() => {});
+        } catch (_) {}
+
         res.json({ message: 'Campaign report submitted and is under review!', gig: updatedGig });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
@@ -541,6 +602,14 @@ app.post('/api/gigs/:id/approve-report', authenticateToken, async (req: any, res
         await pool.query('UPDATE Gig SET status = "completed" WHERE id = ?', [req.params.id]);
         const [[updatedGig]]: any = await pool.query('SELECT * FROM Gig WHERE id = ?', [req.params.id]);
 
+        // Notify student that report was approved (non-blocking)
+        try {
+            if (gig.studentId) {
+                const [[student]]: any = await pool.query('SELECT name, email FROM User WHERE id = ?', [gig.studentId]);
+                if (student?.email) sendReportApprovedEmail(student.email, student.name, gig.title, gig.brand).catch(() => {});
+            }
+        } catch (_) {}
+
         res.json({ message: 'Report approved and campaign marked as completed!', gig: updatedGig });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
@@ -567,6 +636,14 @@ app.post('/api/gigs/:id/reject-report', authenticateToken, async (req: any, res)
 
         await pool.query('UPDATE Gig SET status = "in_progress" WHERE id = ?', [req.params.id]);
         const [[updatedGig]]: any = await pool.query('SELECT * FROM Gig WHERE id = ?', [req.params.id]);
+
+        // Notify student that revision is needed (non-blocking)
+        try {
+            if (gig.studentId) {
+                const [[student]]: any = await pool.query('SELECT name, email FROM User WHERE id = ?', [gig.studentId]);
+                if (student?.email) sendReportRejectedEmail(student.email, student.name, gig.title, gig.brand).catch(() => {});
+            }
+        } catch (_) {}
 
         res.json({ message: 'Report rejected. Student has been notified to revise.', gig: updatedGig });
     } catch (error: any) {
@@ -654,6 +731,31 @@ app.get('/api/notifications', authenticateToken, async (req: any, res) => {
         res.json(notifications);
     } catch (error: any) {
         res.status(500).json({ error: error.message });
+    }
+});
+
+// --- EMAIL NOTIFY ENDPOINT (for Firebase-side events: wallet, withdrawal) ---
+app.post('/api/email/notify', async (req, res) => {
+    const { type, to, name, amount, reference, bankDetails } = req.body;
+    try {
+        switch (type) {
+            case 'topup':
+                if (to && name && amount) await sendTopUpConfirmationEmail(to, name, Number(amount), reference || 'N/A');
+                break;
+            case 'withdrawal_request':
+                if (to && name && amount) {
+                    await Promise.all([
+                        sendWithdrawalRequestEmail(to, name, Number(amount), bankDetails),
+                        sendWithdrawalConfirmationEmail(to, name, Number(amount)),
+                    ]);
+                }
+                break;
+            default:
+                return res.status(400).json({ error: 'Unknown notification type.' });
+        }
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
     }
 });
 

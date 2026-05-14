@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import DashboardShell from './DashboardShell';
-import { db, auth, collection, query, where, getDocs, limit, doc, getDoc, apiClient, orderBy } from '../firebase';
+import { db, auth, collection, query, where, getDocs, limit, doc, getDoc, apiClient, orderBy, updateDoc } from '../firebase';
 import { UserRole } from '../types';
 import ProfileView from './ProfileView';
 import DashboardPlaceholder from './DashboardPlaceholder';
@@ -8,7 +8,7 @@ import { ProposalFormModal } from './ProposalFormModal';
 import { ProposalDetailsModal } from './ProposalDetailsModal';
 import { EventDetailsModal } from './EventDetailsModal';
 import { WalletService } from '../WalletService';
-import { Search, Zap, Rocket, Mail, Wallet, Clock, TrendingUp, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import { Search, Zap, Rocket, Mail, Wallet, Clock, TrendingUp, ArrowUpRight, ArrowDownLeft, Briefcase, Plus, Trash2, ExternalLink, FileText, Image as ImageIcon, Download } from 'lucide-react';
 
 const StudentDashboard: React.FC<{ 
     onNavigate: (page: string) => void, 
@@ -54,8 +54,15 @@ const StudentDashboard: React.FC<{
     const [metricsFile, setMetricsFile] = useState<File | null>(null);
     const [submittingWork, setSubmittingWork] = useState(false);
 
+    // Portfolio states
+    const [showPortfolioModal, setShowPortfolioModal] = useState(false);
+    const [portfolioForm, setPortfolioForm] = useState({ title: '', description: '', fileType: 'image' as any });
+    const [portfolioFile, setPortfolioFile] = useState<File | null>(null);
+    const [portfolioSubmitting, setPortfolioSubmitting] = useState(false);
+
     const sidebarItems = [
         { id: 'dashboard', label: 'Work Hub', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg> },
+        { id: 'portfolio', label: 'My Portfolio', icon: <Briefcase className="w-5 h-5" /> },
         { id: 'wallet', label: 'Earnings', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> },
         { id: 'profile', label: 'My Profile', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg> },
     ];
@@ -215,15 +222,23 @@ const StudentDashboard: React.FC<{
             const w = await WalletService.getOrCreateWallet(userProfile.id);
             setWallet(w);
             
+            // Fetch transactions for this user
             const q = query(
                 collection(db, 'transactions'), 
-                where('userId', '==', userProfile.id), 
-                orderBy('createdAt', 'desc'),
-                limit(30)
+                where('userId', '==', userProfile.id)
             );
+            
             const transSnap = await getDocs(q);
-            const mappedTrans = transSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setTransactions(mappedTrans);
+            const mappedTrans = (transSnap.docs || []).map(d => ({ id: d.id, ...d.data() }));
+            
+            // Sort client-side to avoid "missing index" errors and handle different timestamp formats
+            const sortedTrans = mappedTrans.sort((a, b) => {
+                const dateA = a.createdAt?.seconds ? a.createdAt.seconds * 1000 : new Date(a.createdAt).getTime();
+                const dateB = b.createdAt?.seconds ? b.createdAt.seconds * 1000 : new Date(b.createdAt).getTime();
+                return dateB - dateA;
+            }).slice(0, 50);
+
+            setTransactions(sortedTrans);
         } catch (e) {
             console.error("Wallet fetch error:", e);
         } finally {
@@ -396,6 +411,61 @@ const StudentDashboard: React.FC<{
             fetchProposals();
         } catch (error) {
             console.error("Update status error:", error);
+        }
+    };
+
+    const handlePortfolioSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!userProfile?.id || !portfolioFile) {
+            alert('Please select a file to upload.');
+            return;
+        }
+        setPortfolioSubmitting(true);
+        try {
+            const formData = new FormData();
+            formData.append('file', portfolioFile);
+            formData.append('upload_preset', 'campus-spark');
+
+            const uploadRes = await fetch('https://api.cloudinary.com/v1_1/dk9tq3oop/auto/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!uploadRes.ok) throw new Error('Upload failed');
+            const uploadData = await uploadRes.json();
+
+            const newItem = {
+                id: Math.random().toString(36).substr(2, 9),
+                ...portfolioForm,
+                fileUrl: uploadData.secure_url,
+                createdAt: new Date().toISOString()
+            };
+
+            const updatedPortfolio = [...(userProfile.portfolio || []), newItem];
+            await updateDoc(doc(db, "users", userProfile.id), { portfolio: updatedPortfolio });
+            
+            setUserProfile({ ...userProfile, portfolio: updatedPortfolio });
+            setShowPortfolioModal(false);
+            setPortfolioForm({ title: '', description: '', fileType: 'image' });
+            setPortfolioFile(null);
+            alert('Portfolio item added successfully!');
+        } catch (e) {
+            console.error('Portfolio error:', e);
+            alert('Failed to add portfolio item.');
+        } finally {
+            setPortfolioSubmitting(false);
+        }
+    };
+
+    const handleDeletePortfolioItem = async (itemId: string) => {
+        if (!window.confirm('Delete this portfolio item?')) return;
+        try {
+            const updatedPortfolio = userProfile.portfolio.filter((item: any) => item.id !== itemId);
+            await updateDoc(doc(db, "users", userProfile.id), { portfolio: updatedPortfolio });
+            setUserProfile({ ...userProfile, portfolio: updatedPortfolio });
+        } catch (e) {
+            console.error('Delete error:', e);
+            alert('Failed to delete item.');
         }
     };
 
@@ -766,7 +836,170 @@ const StudentDashboard: React.FC<{
         }
     };
 
+    const renderPortfolio = () => {
+        const portfolio = userProfile?.portfolio || [];
+        
+        return (
+            <div className="space-y-10 animate-in slide-in-from-bottom-4 duration-500">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                    <div>
+                        <h2 className="text-4xl font-black text-[var(--text-primary)]">My Portfolio</h2>
+                        <p className="text-[var(--text-secondary)] mt-1 font-medium">Showcase your best work to brands and organizations.</p>
+                    </div>
+                    <button 
+                        onClick={() => setShowPortfolioModal(true)}
+                        className="px-8 py-4 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all flex items-center gap-2 shadow-lg shadow-red-100 active:scale-95"
+                    >
+                        <Plus className="w-5 h-5" />
+                        Add Portfolio Item
+                    </button>
+                </div>
+
+                {portfolio.length === 0 ? (
+                    <div className="text-center py-32 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)]">
+                        <div className="w-20 h-20 bg-spark-red/5 rounded-3xl flex items-center justify-center mx-auto mb-6 text-spark-red">
+                            <Briefcase className="w-10 h-10" />
+                        </div>
+                        <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">Portfolio Empty</h3>
+                        <p className="text-[var(--text-secondary)] font-medium mb-8">Upload previous work to increase your chances of being selected for gigs.</p>
+                        <button 
+                            onClick={() => setShowPortfolioModal(true)}
+                            className="px-8 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all"
+                        >
+                            Create Your First Entry
+                        </button>
+                    </div>
+                ) : (
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                        {portfolio.map((item: any) => (
+                            <div key={item.id} className="group bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col">
+                                <div className="h-48 bg-[var(--bg-secondary)] relative overflow-hidden group">
+                                    {item.fileType === 'image' ? (
+                                        <img src={item.fileUrl} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt={item.title} />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-spark-black to-spark-red/20">
+                                            <FileText className="w-16 h-16 text-white/20" />
+                                        </div>
+                                    )}
+                                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-4 backdrop-blur-sm">
+                                        <a href={item.fileUrl} target="_blank" rel="noopener noreferrer" className="p-3 bg-white text-spark-black rounded-xl hover:bg-spark-red hover:text-white transition-all transform hover:scale-110">
+                                            <Download className="w-6 h-6" />
+                                        </a>
+                                        <button onClick={() => handleDeletePortfolioItem(item.id)} className="p-3 bg-white text-spark-black rounded-xl hover:bg-spark-red hover:text-white transition-all transform hover:scale-110">
+                                            <Trash2 className="w-6 h-6" />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="p-8 flex-1 flex flex-col">
+                                    <div className="flex justify-between items-start mb-4">
+                                        <h3 className="text-xl font-black text-[var(--text-primary)] group-hover:text-spark-red transition-colors line-clamp-1">{item.title}</h3>
+                                        <span className="px-3 py-1 bg-spark-red/10 text-spark-red text-[8px] font-black uppercase tracking-widest rounded-lg border border-spark-red/10">{item.fileType}</span>
+                                    </div>
+                                    <p className="text-sm text-[var(--text-secondary)] font-medium line-clamp-3 mb-6 flex-1 leading-relaxed">{item.description}</p>
+                                    <div className="pt-6 border-t border-[var(--border-color)] flex items-center justify-between">
+                                        <span className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">{new Date(item.createdAt).toLocaleDateString()}</span>
+                                        <a href={item.fileUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] font-black text-spark-red uppercase tracking-widest hover:underline flex items-center gap-1">
+                                            View Work <ExternalLink className="w-3 h-3" />
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* Portfolio Modal */}
+                {showPortfolioModal && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                        <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setShowPortfolioModal(false)}></div>
+                        <div className="relative bg-[var(--bg-primary)] w-full max-w-xl rounded-[3rem] shadow-2xl animate-in zoom-in-95 duration-300 overflow-hidden border border-[var(--border-color)]">
+                            <form onSubmit={handlePortfolioSubmit} className="p-10">
+                                <div className="flex justify-between items-start mb-8">
+                                    <div>
+                                        <h2 className="text-2xl font-black text-[var(--text-primary)]">Add Portfolio Item</h2>
+                                        <p className="text-[var(--text-secondary)] mt-1 font-medium">Tell brands about your previous achievements.</p>
+                                    </div>
+                                    <button type="button" onClick={() => setShowPortfolioModal(false)} className="w-10 h-10 bg-[var(--bg-secondary)] text-[var(--text-primary)] rounded-full flex items-center justify-center hover:bg-spark-red hover:text-white transition-all">
+                                        <Plus className="w-6 h-6 rotate-45" />
+                                    </button>
+                                </div>
+
+                                <div className="space-y-6">
+                                    <div>
+                                        <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2 ml-2">Project Title</label>
+                                        <input 
+                                            required
+                                            type="text" 
+                                            value={portfolioForm.title}
+                                            onChange={e => setPortfolioForm({...portfolioForm, title: e.target.value})}
+                                            className="w-full px-6 py-4 bg-spark-red/5 border border-[var(--border-color)] rounded-2xl outline-none font-bold focus:ring-4 focus:ring-spark-red/10 transition-all"
+                                            placeholder="e.g. Red Bull Campus Tour 2024"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2 ml-2">Description</label>
+                                        <textarea 
+                                            required
+                                            value={portfolioForm.description}
+                                            onChange={e => setPortfolioForm({...portfolioForm, description: e.target.value})}
+                                            className="w-full px-6 py-4 bg-spark-red/5 border border-[var(--border-color)] rounded-2xl outline-none font-bold focus:ring-4 focus:ring-spark-red/10 transition-all min-h-[120px]"
+                                            placeholder="What did you do? What were the results?"
+                                        />
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2 ml-2">Work Type</label>
+                                            <select 
+                                                value={portfolioForm.fileType}
+                                                onChange={e => setPortfolioForm({...portfolioForm, fileType: e.target.value as any})}
+                                                className="w-full px-6 py-4 bg-spark-red/5 border border-[var(--border-color)] rounded-2xl outline-none font-bold appearance-none cursor-pointer"
+                                            >
+                                                <option value="image">Image / Graphic</option>
+                                                <option value="video">Video Link</option>
+                                                <option value="document">PDF / Document</option>
+                                                <option value="link">External Link</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2 ml-2">Evidence File</label>
+                                            <input 
+                                                type="file" 
+                                                onChange={e => setPortfolioFile(e.target.files?.[0] || null)}
+                                                className="hidden" 
+                                                id="portfolio-file"
+                                                accept={portfolioForm.fileType === 'image' ? 'image/*' : portfolioForm.fileType === 'document' ? '.pdf' : '*'}
+                                            />
+                                            <label 
+                                                htmlFor="portfolio-file"
+                                                className="w-full px-6 py-4 bg-spark-black text-white rounded-2xl font-black text-center cursor-pointer hover:bg-spark-red transition-all flex items-center justify-center gap-2 text-xs uppercase tracking-widest"
+                                            >
+                                                {portfolioFile ? 'File Selected' : 'Upload File'}
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <button 
+                                        type="submit"
+                                        disabled={portfolioSubmitting}
+                                        className="w-full py-5 bg-gradient-red text-white font-black rounded-2xl shadow-xl shadow-red-100 hover:scale-[1.02] transition-all active:scale-95 disabled:opacity-50 uppercase tracking-[0.2em] text-sm mt-4"
+                                    >
+                                        {portfolioSubmitting ? 'Uploading to Spark...' : 'Add to Portfolio'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     const renderMainContent = () => {
+        if (currentSection === 'portfolio') {
+            return renderPortfolio();
+        }
         if (currentSection === 'wallet') {
             return (
                 <div className="space-y-10 animate-in slide-in-from-bottom-4 duration-500">
@@ -827,7 +1060,11 @@ const StudentDashboard: React.FC<{
                                                     <div>
                                                         <p className="font-black text-[var(--text-primary)]">{trans.description}</p>
                                                         <p className="text-[10px] text-[var(--text-secondary)] font-black uppercase tracking-widest">
-                                                            {trans.createdAt?.seconds ? new Date(trans.createdAt.seconds * 1000).toLocaleDateString() : 'Pending'}
+                                                            {(() => {
+                                                                if (!trans.createdAt) return 'Pending';
+                                                                const date = trans.createdAt.seconds ? new Date(trans.createdAt.seconds * 1000) : new Date(trans.createdAt);
+                                                                return date.toLocaleDateString();
+                                                            })()}
                                                         </p>
                                                     </div>
                                                 </div>

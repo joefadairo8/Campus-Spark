@@ -54,13 +54,13 @@ const ContactPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavig
               <div className="space-y-12">
                 <div>
                   <h3 className="text-[10px] font-black text-spark-red uppercase tracking-[0.3em] mb-4">Our Hub</h3>
-                  <p className="text-xl md:text-2xl font-fancy font-black text-[var(--text-primary)] leading-tight">Ikoyi, Lagos State,<br />Nigeria.</p>
+                  <p className="text-xl md:text-2xl font-fancy font-black text-[var(--text-primary)] leading-tight">42, Olowu Street, off Mobolaji Bank Anthony Road,<br />Ikeja, Lagos State, Nigeria.</p>
                 </div>
                 <div>
                   <h3 className="text-[10px] font-black text-spark-red uppercase tracking-[0.3em] mb-4">Talk to Us</h3>
                   <div className="space-y-2">
-                    <p className="text-xl font-bold text-[var(--text-primary)]">hello@campusspark.ng</p>
-                    <p className="text-xl font-bold text-[var(--text-primary)]">+234 (0) 812 345 6789</p>
+                    <p className="text-xl font-bold text-[var(--text-primary)]">hello@campusspark.com.ng</p>
+                    <p className="text-xl font-bold text-[var(--text-primary)]">+234 (0) 906 032 0863</p>
                   </div>
                 </div>
                 <div>
