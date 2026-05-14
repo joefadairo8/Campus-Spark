@@ -5,6 +5,7 @@ import { UserRole } from '../types';
 import { STATES, UNIVERSITIES } from '../constants';
 import ProfileView from './ProfileView';
 import DashboardPlaceholder from './DashboardPlaceholder';
+import { notifyTopUp, notifyProposalStatus, notifyApplicationDecision, notifyReportRejected } from '../emailNotifier';
 import { ProposalFormModal } from './ProposalFormModal';
 import { ProposalDetailsModal } from './ProposalDetailsModal';
 import { EventDetailsModal } from './EventDetailsModal';
@@ -23,10 +24,10 @@ const BrandDashboard: React.FC<{
     const [selectedState, setSelectedState] = useState('All');
     const [selectedUni, setSelectedUni] = useState('All');
     const [loading, setLoading] = useState(true);
-    const [students, setStudents] = useState<any[]>([]);
+    const [creators, setCreators] = useState<any[]>([]);
     const [brandProfile, setBrandProfile] = useState<any>(null);
     const [proposals, setProposals] = useState<any[]>([]);
-    const [selectedStudent, setSelectedStudent] = useState<any>(null);
+    const [selectedCreator, setSelectedCreator] = useState<any>(null);
     const [proposing, setProposing] = useState(false);
     const [showProposalModal, setShowProposalModal] = useState(false);
     const [proposalRecipient, setProposalRecipient] = useState<{ id: string, name: string } | null>(null);
@@ -63,7 +64,7 @@ const BrandDashboard: React.FC<{
     const [allAllocations, setAllAllocations] = useState<CampaignAllocation[]>([]);
     const [campaignAllocations, setCampaignAllocations] = useState<Record<string, CampaignAllocation[]>>({});
     const [showAllocationModal, setShowAllocationModal] = useState(false);
-    const [allocationTarget, setAllocationTarget] = useState<any>(null); // influencer card
+    const [allocationTarget, setAllocationTarget] = useState<any>(null); // creator card
     const [allocationForm, setAllocationForm] = useState({ campaignId: '', amount: '' });
     const [allocationSubmitting, setAllocationSubmitting] = useState(false);
     const [showCreateInModal, setShowCreateInModal] = useState(false);
@@ -284,9 +285,9 @@ const BrandDashboard: React.FC<{
         }
     };
 
-    // Derive a student's status across all campaigns
-    const getInfluencerStatus = (studentId: string): 'available' | 'in_campaign' => {
-        const match = allAllocations.find(a => a.influencerId === studentId && a.status !== 'paid' && a.status !== 'rejected');
+    // Derive a creator's status across all campaigns
+    const getCreatorStatus = (creatorId: string): 'available' | 'in_campaign' => {
+        const match = allAllocations.find(a => a.creatorId === creatorId && a.status !== 'paid' && a.status !== 'rejected');
         if (!match) return 'available';
         return 'in_campaign';
     };
@@ -310,15 +311,15 @@ const BrandDashboard: React.FC<{
     };
 
     // Open the "Add to Campaign" modal
-    const openAllocationModal = (student: any) => {
-        setAllocationTarget(student);
+    const openAllocationModal = (creator: any) => {
+        setAllocationTarget(creator);
         setAllocationForm({ campaignId: campaigns[0]?.id || '', amount: '' });
         setShowCreateInModal(false);
         setShowAllocationModal(true);
     };
 
     // Confirm allocation → persist to Firestore & lock funds
-    const handleAllocateInfluencer = async () => {
+    const handleAllocateCreator = async () => {
         if (!brandProfile?.id || !allocationTarget || !allocationForm.campaignId || !allocationForm.amount) return;
         const amount = Number(allocationForm.amount);
         if (isNaN(amount) || amount <= 0) { alert('Enter a valid allocation amount.'); return; }
@@ -336,10 +337,10 @@ const BrandDashboard: React.FC<{
                 campaignTitle: campaign.title,
                 brandId: brandProfile.id,
                 brandName: brandProfile.name || brandProfile.brandName,
-                influencerId: allocationTarget.id,
-                influencerName: allocationTarget.name,
-                influencerUniversity: allocationTarget.university,
-                influencerEmail: allocationTarget.email,
+                creatorId: allocationTarget.id,
+                creatorName: allocationTarget.name,
+                creatorUniversity: allocationTarget.university,
+                creatorEmail: allocationTarget.email,
                 amount,
                 status: 'selected',
             });
@@ -347,7 +348,7 @@ const BrandDashboard: React.FC<{
             setShowAllocationModal(false);
             setAllocationTarget(null);
         } catch (e: any) {
-            alert(e.message || 'Failed to allocate influencer.');
+            alert(e.message || 'Failed to allocate creator.');
         } finally {
             setAllocationSubmitting(false);
         }
@@ -370,7 +371,7 @@ const BrandDashboard: React.FC<{
     // Release payment → move escrow to influencer wallet, update allocation status
     const handleReleasePayment = async (allocation: CampaignAllocation) => {
         if (!brandProfile?.id || !allocation.id) return;
-        if (!window.confirm(`Release ₦${allocation.amount.toLocaleString()} to ${allocation.influencerName}?`)) return;
+        if (!window.confirm(`Release ₦${allocation.amount.toLocaleString()} to ${allocation.creatorName}?`)) return;
         
         setReleaseSubmitting(allocation.id);
         try {
@@ -446,15 +447,27 @@ const BrandDashboard: React.FC<{
     // Reject allocation → refund to available balance, mark rejected
     const handleRejectAllocation = async (allocation: CampaignAllocation) => {
         if (!brandProfile?.id || !allocation.id) return;
-        if (!window.confirm(`Reject and refund ₦${allocation.amount.toLocaleString()} for ${allocation.influencerName}?`)) return;
+        if (!window.confirm(`Reject and refund ₦${allocation.amount.toLocaleString()} for ${allocation.creatorName}?`)) return;
         try {
             await WalletService.refundAllocation(
                 brandProfile.id,
                 allocation.amount,
-                `Refund: ${allocation.influencerName} removed from campaign`,
-                allocation.influencerId
+                `Refund: ${allocation.creatorName} removed from campaign`,
+                allocation.creatorId
             );
             await WalletService.updateAllocationStatus(allocation.id, 'rejected');
+
+            // Notify Creator
+            if (allocation.creatorEmail) {
+                notifyApplicationDecision(
+                    allocation.creatorEmail,
+                    allocation.creatorName || 'Creator',
+                    allocation.campaignTitle || 'Campaign',
+                    brandProfile.name || 'Brand',
+                    'rejected'
+                );
+            }
+
             await syncWalletStrip(brandProfile.id);
             await fetchAllAllocations(brandProfile.id);
             if (selectedCampaignDetail) {
@@ -484,11 +497,22 @@ const BrandDashboard: React.FC<{
     // Reject report (move status back to revision/in_progress)
     const handleRejectReport = async (allocation: CampaignAllocation) => {
         if (!allocation.id) return;
-        const reason = window.prompt('Why are you rejecting this report? (This will be shown to the influencer)');
+        const reason = window.prompt('Why are you rejecting this report? (This will be shown to the creator)');
         if (reason === null) return; // User clicked cancel
 
         try {
             await WalletService.updateAllocationStatus(allocation.id, 'revision', { revisionReason: reason });
+
+            // Notify Creator
+            if (allocation.creatorEmail) {
+                notifyReportRejected(
+                    allocation.creatorEmail,
+                    allocation.creatorName || 'Creator',
+                    allocation.campaignTitle || 'Campaign',
+                    brandProfile.name || 'Brand'
+                );
+            }
+
             await fetchAllAllocations(brandProfile.id);
             if (selectedCampaignDetail) {
                 const updated = await WalletService.getAllocationsForCampaign(selectedCampaignDetail.id);
@@ -632,17 +656,18 @@ const BrandDashboard: React.FC<{
 
             setLoading(true);
             try {
-                // Search for all variants of the ambassador role to ensure the directory isn't empty
-                const ambassadorRoles = [
-                    UserRole.Ambassador,
+                // Search for all variants of the creator role to ensure the directory isn't empty
+                const creatorRoles = [
+                    UserRole.Creator,
+                    'Creator',
                     'Ambassador',
                     'Ambassador/Influencer',
-                    'Student Influencer'
+                    'Campus Creator'
                 ];
-                const q = query(collection(db, "users"), where("role", "in", ambassadorRoles), limit(50));
+                const q = query(collection(db, "users"), where("role", "in", creatorRoles), limit(50));
                 const querySnapshot = await getDocs(q);
-                const studentsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
-                setStudents(studentsData);
+                const creatorsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
+                setCreators(creatorsData);
             } catch (err) {
                 console.error("Error fetching talent:", err);
             } finally {
@@ -653,7 +678,7 @@ const BrandDashboard: React.FC<{
         const fetchPartners = async () => {
             setPartnersLoading(true);
             try {
-                const roles = [UserRole.StudentOrg, 'Organization', 'Brand', UserRole.Brand];
+                const roles = [UserRole.Organization, 'Organization', 'Brand', UserRole.Brand];
                 const q = query(collection(db, "users"), where("role", "in", roles), limit(500));
                 const querySnapshot = await getDocs(q);
                 const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
@@ -672,8 +697,8 @@ const BrandDashboard: React.FC<{
         }
     }, [currentView, brandProfile]);
 
-    const handleOpenProposalModal = (student: any) => {
-        setProposalRecipient({ id: student.id, name: student.name });
+    const handleOpenProposalModal = (creator: any) => {
+        setProposalRecipient({ id: creator.id, name: creator.name });
         setProposalInitialMessage('');
         setShowProposalModal(true);
     };
@@ -746,15 +771,27 @@ const BrandDashboard: React.FC<{
     const handleUpdateStatus = async (id: string, status: 'accepted' | 'rejected' | 'reviewing') => {
         try {
             await apiClient.patch(`proposals/${id}`, { status });
+            
+            // Notify the sender of the status change
+            const prop = proposals.find(p => p.id === id);
+            if (prop && prop.sender?.email) {
+                notifyProposalStatus(
+                    prop.sender.email, 
+                    prop.sender.name || 'User', 
+                    prop.recipient?.name || brandProfile.name || 'Brand', 
+                    status
+                );
+            }
+
             fetchProposals();
         } catch (error) {
             console.error("Update status error:", error);
         }
     };
 
-    const filteredStudents = students.filter((student) => {
-        const matchesSearch = student.name.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesUni = selectedUni === 'All' || student.university === selectedUni;
+    const filteredCreators = creators.filter((creator) => {
+        const matchesSearch = creator.name.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesUni = selectedUni === 'All' || creator.university === selectedUni;
         return matchesSearch && matchesUni;
     });
 
@@ -869,7 +906,7 @@ const BrandDashboard: React.FC<{
                             <div className="relative flex-1 w-full">
                                 <input
                                     type="text"
-                                    placeholder="Search student talent..."
+                                    placeholder="Search campus creators..."
                                     className="w-full pl-12 pr-4 py-4 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-2xl outline-none font-medium text-[var(--text-primary)]"
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -883,39 +920,39 @@ const BrandDashboard: React.FC<{
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
                         ) : (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-                                {filteredStudents.map(student => {
-                                    const status = getInfluencerStatus(student.id);
+                                {filteredCreators.map(creator => {
+                                    const status = getCreatorStatus(creator.id);
                                     const statusConfig = {
                                         available: { label: 'Available', cls: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' },
                                         in_campaign: { label: 'Active', cls: 'bg-spark-red/10 text-spark-red border border-spark-red/20' },
                                     }[status];
                                     return (
-                                        <div key={student.id} className={`group bg-[var(--bg-primary)] rounded-[2rem] border overflow-hidden shadow-sm hover:shadow-xl transition-all p-6 text-center ${status === 'in_campaign' ? 'border-spark-red/30 ring-1 ring-spark-red/10' : 'border-[var(--border-color)]'}`}>
+                                        <div key={creator.id} className={`group bg-[var(--bg-primary)] rounded-[2rem] border overflow-hidden shadow-sm hover:shadow-xl transition-all p-6 text-center ${status === 'in_campaign' ? 'border-spark-red/30 ring-1 ring-spark-red/10' : 'border-[var(--border-color)]'}`}>
                                             <div className="flex justify-end mb-2">
                                                 <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${statusConfig.cls}`}>{statusConfig.label}</span>
                                             </div>
                                             <div className="w-16 h-16 rounded-2xl bg-spark-red text-white flex items-center justify-center font-black text-2xl mx-auto mb-4">
-                                                {(student.name || '?').charAt(0)}
+                                                {(creator.name || '?').charAt(0)}
                                             </div>
-                                            <h3 className="font-black text-lg line-clamp-1 text-[var(--text-primary)]">{student.name}</h3>
-                                            <p className="text-[10px] text-spark-red font-black uppercase tracking-widest mb-3">{student.university || 'Verified'}</p>
+                                            <h3 className="font-black text-lg line-clamp-1 text-[var(--text-primary)]">{creator.name}</h3>
+                                            <p className="text-[10px] text-spark-red font-black uppercase tracking-widest mb-3">{creator.university || 'Verified'}</p>
                                             <div className="space-y-1.5 mb-6 flex flex-col items-center">
-                                                {student.email && (
-                                                    <a href={`mailto:${student.email}`} className="flex items-center gap-2 text-xs text-[var(--text-secondary)] hover:text-spark-red transition-colors">
+                                                {creator.email && (
+                                                    <a href={`mailto:${creator.email}`} className="flex items-center gap-2 text-xs text-[var(--text-secondary)] hover:text-spark-red transition-colors">
                                                         <Mail className="w-3.5 h-3.5 flex-shrink-0" />
-                                                        <span className="truncate max-w-[200px]">{student.email}</span>
+                                                        <span className="truncate max-w-[200px]">{creator.email}</span>
                                                     </a>
                                                 )}
                                             </div>
                                             <div className="flex gap-2">
                                                 <button
-                                                    onClick={() => setViewingProfile(student)}
+                                                    onClick={() => setViewingProfile(creator)}
                                                     className="flex-1 py-3 bg-[var(--bg-secondary)] text-[var(--text-primary)] font-black rounded-xl hover:bg-[var(--bg-tertiary)] transition-all text-sm border border-[var(--border-color)]"
                                                 >
                                                     Profile
                                                 </button>
                                                 <button
-                                                    onClick={() => openAllocationModal(student)}
+                                                    onClick={() => openAllocationModal(creator)}
                                                     className={`flex-[2] py-3 font-black rounded-xl transition-all text-sm active:scale-95 shadow-sm ${status === 'in_campaign' ? 'bg-spark-red/10 text-spark-red border border-spark-red/20 hover:bg-spark-red hover:text-white' : 'bg-spark-red text-white hover:bg-red-700'}`}
                                                 >
                                                     {status === 'in_campaign' ? 'Re-allocate' : 'Hire Talent'}
@@ -1039,6 +1076,12 @@ const BrandDashboard: React.FC<{
                                                             try {
                                                                 setWalletLoading(true);
                                                                 await WalletService.topUpWallet(brandProfile.id, amount, response.reference);
+                                                                
+                                                                // Notify user + admin of top-up
+                                                                const email = brandProfile.email || user?.email;
+                                                                const name = brandProfile.name || user?.name || 'Brand User';
+                                                                if (email) notifyTopUp(email, name, amount, response.reference);
+
                                                                 alert(`Wallet updated: ₦${amount.toLocaleString()} added.`);
                                                                 await fetchWallet();
                                                                 await syncWalletStrip(brandProfile.id);
@@ -1123,6 +1166,7 @@ const BrandDashboard: React.FC<{
                                     const isSender = p.senderId === (brandProfile?.id || auth.currentUser?.uid);
                                     const otherParty = (isSender ? p.recipient : p.sender) || { name: 'Unknown User', role: 'Unknown', email: '' };
                                     const displayName = otherParty.name !== 'Unknown User' ? otherParty.name : (otherParty.email || 'Unknown User');
+                                    const isDirectOffer = p.status === 'pending' && !isSender;
                                     return (
                                         <div key={p.id} className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm flex items-center justify-between">
                                             <div className="flex items-center space-x-6">
@@ -1136,19 +1180,44 @@ const BrandDashboard: React.FC<{
                                                 </div>
                                             </div>
                                             <div className="flex items-center space-x-4">
-                                                <button
-                                                    onClick={() => setSelectedProposal(p)}
-                                                    className="px-6 py-2 bg-[var(--bg-secondary)] text-[var(--text-primary)] rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-[var(--bg-tertiary)] transition-all border border-gray-200"
-                                                >
-                                                    View Proposal
-                                                </button>
-                                                {p.status !== 'pending' && (
-                                                    <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${p.status === 'accepted' ? 'bg-green-50 text-green-600' :
-                                                        p.status === 'rejected' ? 'bg-red-50 text-red-600' :
-                                                            'bg-blue-50 text-blue-600'
-                                                        }`}>
-                                                        {p.status}
-                                                    </span>
+                                                {isDirectOffer ? (
+                                                    <div className="flex gap-3">
+                                                        <button
+                                                            onClick={() => setSelectedProposal(p)}
+                                                            className="px-6 py-3 bg-[var(--bg-secondary)] text-[var(--text-primary)] rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[var(--bg-tertiary)] transition-all border border-[var(--border-color)] shadow-sm"
+                                                        >
+                                                            View
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleUpdateStatus(p.id, 'accepted')}
+                                                            className="px-6 py-3 bg-spark-red text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition-all shadow-sm"
+                                                        >
+                                                            Accept
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleUpdateStatus(p.id, 'rejected')}
+                                                            className="px-6 py-3 bg-spark-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-800 transition-all border border-transparent shadow-sm"
+                                                        >
+                                                            Decline
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <button
+                                                            onClick={() => setSelectedProposal(p)}
+                                                            className="px-6 py-2 bg-[var(--bg-secondary)] text-[var(--text-primary)] rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-[var(--bg-tertiary)] transition-all border border-gray-200"
+                                                        >
+                                                            View Proposal
+                                                        </button>
+                                                        {p.status !== 'pending' && (
+                                                            <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${p.status === 'accepted' || p.status === 'paid' ? 'bg-green-50 text-green-600' :
+                                                                p.status === 'rejected' ? 'bg-red-50 text-red-600' :
+                                                                    'bg-blue-50 text-blue-600'
+                                                                }`}>
+                                                                {p.status}
+                                                            </span>
+                                                        )}
+                                                    </>
                                                 )}
                                             </div>
                                         </div>
@@ -1218,18 +1287,18 @@ const BrandDashboard: React.FC<{
                                 <div className="h-full bg-spark-red rounded-full transition-all duration-700" style={{ width: `${detailPct}%` }}></div>
                             </div>
 
-                            {/* Influencer Table */}
+                            {/* Creator Table */}
                             <div className="bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-[2rem] overflow-hidden shadow-sm">
                                 <div className="flex items-center justify-between p-6 border-b border-[var(--border-color)]">
-                                    <h4 className="font-black text-[var(--text-primary)]">Allocated Influencers</h4>
-                                    <button onClick={() => { setCurrentView('directory'); setActiveCampaignContext(selectedCampaignDetail); }} className="px-4 py-2 text-[10px] font-black uppercase tracking-widest bg-spark-red text-white rounded-xl hover:bg-red-700 transition-all">+ Add Influencer</button>
+                                    <h4 className="font-black text-[var(--text-primary)]">Allocated Creators</h4>
+                                    <button onClick={() => { setCurrentView('directory'); setActiveCampaignContext(selectedCampaignDetail); }} className="px-4 py-2 text-[10px] font-black uppercase tracking-widest bg-spark-red text-white rounded-xl hover:bg-red-700 transition-all">+ Add Creator</button>
                                 </div>
                                 {detailLoading ? (
                                     <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-spark-red"/></div>
                                 ) : detailAllocations.length === 0 ? (
                                     <div className="text-center py-16">
                                         <p className="text-4xl mb-3">👥</p>
-                                        <p className="font-black text-[var(--text-primary)] mb-1">No influencers allocated yet</p>
+                                        <p className="font-black text-[var(--text-primary)] mb-1">No creators allocated yet</p>
                                         <p className="text-sm text-[var(--text-secondary)]">Go to the Talent Directory and click "Add to Campaign".</p>
                                     </div>
                                 ) : (
@@ -1237,7 +1306,7 @@ const BrandDashboard: React.FC<{
                                         <table className="w-full text-sm">
                                             <thead>
                                                 <tr className="border-b border-[var(--border-color)]">
-                                                    {['Influencer', 'University', 'Allocation', 'Status', 'Actions'].map(h => (
+                                                    {['Creator', 'University', 'Allocation', 'Status', 'Actions'].map(h => (
                                                         <th key={h} className="text-left px-6 py-4 text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">{h}</th>
                                                     ))}
                                                 </tr>
@@ -1247,11 +1316,11 @@ const BrandDashboard: React.FC<{
                                                     <tr key={alloc.id} className="border-b border-[var(--border-color)] last:border-0 hover:bg-[var(--bg-secondary)] transition-colors">
                                                         <td className="px-6 py-4">
                                                             <div className="flex items-center gap-3">
-                                                                <div className="w-9 h-9 rounded-xl bg-spark-red text-white flex items-center justify-center font-black text-sm flex-shrink-0">{(alloc.influencerName || '?').charAt(0)}</div>
-                                                                <span className="font-black text-[var(--text-primary)]">{alloc.influencerName}</span>
+                                                                <div className="w-9 h-9 rounded-xl bg-spark-red text-white flex items-center justify-center font-black text-sm flex-shrink-0">{(alloc.creatorName || '?').charAt(0)}</div>
+                                                                <span className="font-black text-[var(--text-primary)]">{alloc.creatorName}</span>
                                                             </div>
                                                         </td>
-                                                        <td className="px-6 py-4 text-[var(--text-secondary)] text-xs">{alloc.influencerUniversity || '—'}</td>
+                                                        <td className="px-6 py-4 text-[var(--text-secondary)] text-xs">{alloc.creatorUniversity || '—'}</td>
                                                         <td className="px-6 py-4 font-black text-[var(--text-primary)]">₦{alloc.amount.toLocaleString()}</td>
                                                         <td className="px-6 py-4">
                                                             <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${allocStatusColors[alloc.status] || 'bg-[var(--bg-tertiary)] text-gray-500'}`}>{alloc.status.replace('_', ' ')}</span>
@@ -1332,7 +1401,7 @@ const BrandDashboard: React.FC<{
                             <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)]">
                                 <div className="text-6xl mb-6">📢</div>
                                 <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">No Campaigns Yet</h3>
-                                <p className="text-[var(--text-secondary)] mb-8">Launch your first influencer campaign to connect with students at scale.</p>
+                                <p className="text-[var(--text-secondary)] mb-8">Launch your first influencer campaign to connect with creators at scale.</p>
                                 <button onClick={() => setShowCampaignModal(true)} className="px-8 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all">Create First Campaign</button>
                             </div>
                         ) : (
@@ -1404,7 +1473,7 @@ const BrandDashboard: React.FC<{
                                             <div className="text-center py-16">
                                                 <p className="text-5xl mb-4">📭</p>
                                                 <p className="font-black text-[var(--text-primary)] text-lg">No applications yet</p>
-                                                <p className="text-[var(--text-secondary)] text-sm">Students who apply will appear here with their pitch.</p>
+                                                <p className="text-[var(--text-secondary)] text-sm">Creators who apply will appear here with their pitch.</p>
                                             </div>
                                         ) : applicants.map((app: any) => {
                                             const statusColors: any = { pending: 'bg-yellow-50 text-yellow-700', accepted: 'bg-green-50 text-green-700', rejected: 'bg-red-50 text-red-500' };
@@ -1412,15 +1481,15 @@ const BrandDashboard: React.FC<{
                                                 <div key={app.id} className="bg-[var(--bg-secondary)] rounded-2xl p-6 border border-[var(--border-color)]">
                                                     <div className="flex items-center gap-4 mb-4">
                                                         <div className="w-12 h-12 rounded-2xl bg-spark-red text-white flex items-center justify-center font-black text-lg flex-shrink-0">
-                                                            {app.student?.name?.charAt(0) || '?'}
+                                                            {app.creatorName?.charAt(0) || '?'}
                                                         </div>
-                                                        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setViewingProfile(app.student)}>
-                                                            <h4 className="font-black text-[var(--text-primary)] hover:text-spark-red transition-colors">{app.student?.name}</h4>
-                                                            <p className="text-xs text-[var(--text-secondary)]">{app.student?.university || app.student?.email}</p>
+                                                        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setViewingProfile({ id: app.creatorId, name: app.creatorName, email: app.creatorEmail, university: app.creatorUniversity, bio: app.creatorBio, imageUrl: app.creatorImageUrl })}>
+                                                            <h4 className="font-black text-[var(--text-primary)] hover:text-spark-red transition-colors">{app.creatorName}</h4>
+                                                            <p className="text-xs text-[var(--text-secondary)]">{app.creatorUniversity || app.creatorEmail}</p>
                                                         </div>
                                                         <div className="flex flex-col items-end gap-2">
                                                             <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${statusColors[app.status] || 'bg-[var(--bg-tertiary)] text-gray-500'}`}>{app.status}</span>
-                                                            <button onClick={() => setViewingProfile(app.student)} className="text-[10px] font-black text-spark-red uppercase hover:underline">View Portfolio</button>
+                                                            <button onClick={() => setViewingProfile({ id: app.creatorId, name: app.creatorName, email: app.creatorEmail, university: app.creatorUniversity, bio: app.creatorBio, imageUrl: app.creatorImageUrl })} className="text-[10px] font-black text-spark-red uppercase hover:underline">View Portfolio</button>
                                                         </div>
                                                     </div>
                                                     <div className="bg-[var(--bg-primary)] rounded-xl p-4 mb-4 border border-[var(--border-color)]">
@@ -1523,7 +1592,7 @@ const BrandDashboard: React.FC<{
                                                     setCampaigns(prev => prev.map(c => c.id === editingGig.id ? { ...c, ...campaignForm, reward: Number(campaignForm.budget) } : c));
                                                     alert('Campaign updated successfully!');
                                                 } else {
-                                                    // POST to backend: creates a real Gig that students can apply for
+                                                    // POST to backend: creates a real Gig that creators can apply for
                                                     const amount = Number(campaignForm.budget);
                                                     const totalRequired = amount + 20000;
 
@@ -1664,11 +1733,11 @@ const BrandDashboard: React.FC<{
                 </div>
             }
         >
-            {selectedStudent && (
+            {selectedCreator && (
                 <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-300">
                     <div className="bg-[var(--bg-primary)] w-full max-w-2xl rounded-[2rem] sm:rounded-[4rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300 my-auto">
                         <button
-                            onClick={() => setSelectedStudent(null)}
+                            onClick={() => setSelectedCreator(null)}
                             className="absolute top-8 right-8 w-12 h-12 bg-spark-black text-white rounded-full flex items-center justify-center hover:bg-spark-red transition-all z-10"
                         >
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -1677,7 +1746,7 @@ const BrandDashboard: React.FC<{
                         <div className="h-48 bg-gradient-to-br from-spark-red to-red-400 relative">
                             <div className="absolute -bottom-12 left-12">
                                 <div className="w-24 h-24 bg-[var(--bg-primary)] p-2 rounded-3xl shadow-xl ring-4 ring-white flex items-center justify-center text-4xl font-black text-spark-red">
-                                    {(selectedStudent.name || '?').charAt(0)}
+                                    {(selectedCreator.name || '?').charAt(0)}
                                 </div>
                             </div>
                         </div>
@@ -1685,54 +1754,54 @@ const BrandDashboard: React.FC<{
                         <div className="pt-20 p-6 sm:p-12 max-h-[70vh] overflow-y-auto">
                             <div className="flex justify-between items-start mb-8">
                                 <div>
-                                    <h3 className="text-4xl font-black text-[var(--text-primary)] mb-1">{selectedStudent.name}</h3>
-                                    <p className="text-spark-red font-black uppercase tracking-widest text-sm">{selectedStudent.university || 'Campus Talent'}</p>
+                                    <h3 className="text-4xl font-black text-[var(--text-primary)] mb-1">{selectedCreator.name}</h3>
+                                    <p className="text-spark-red font-black uppercase tracking-widest text-sm">{selectedCreator.university || 'Campus Talent'}</p>
                                 </div>
                             </div>
 
                             <div className="space-y-6 mb-10">
                                 <div className="p-6 bg-[var(--bg-secondary)] rounded-3xl border border-[var(--border-color)]">
                                     <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2 opacity-60">Talent Bio</p>
-                                    <p className="text-[var(--text-primary)] font-bold text-lg">{selectedStudent.bio || `${selectedStudent.name} is a high-impact influencer at ${selectedStudent.university || 'Spark University'}.`}</p>
+                                    <p className="text-[var(--text-primary)] font-bold text-lg">{selectedCreator.bio || `${selectedCreator.name} is a high-impact influencer at ${selectedCreator.university || 'Spark University'}.`}</p>
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4">
-                                    {selectedStudent.university && (
+                                    {selectedCreator.university && (
                                         <div className="p-4 bg-[var(--bg-secondary)] rounded-2xl">
                                             <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase mb-1">University</p>
-                                            <p className="font-black text-[var(--text-primary)] text-sm">{selectedStudent.university}</p>
+                                            <p className="font-black text-[var(--text-primary)] text-sm">{selectedCreator.university}</p>
                                         </div>
                                     )}
-                                    {selectedStudent.handle && (
+                                    {selectedCreator.handle && (
                                         <div className="p-4 bg-[var(--bg-secondary)] rounded-2xl">
                                             <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase mb-1">Handle</p>
-                                            <p className="font-black text-[var(--text-primary)] text-sm">@{selectedStudent.handle}</p>
+                                            <p className="font-black text-[var(--text-primary)] text-sm">@{selectedCreator.handle}</p>
                                         </div>
                                     )}
-                                    {selectedStudent.email && (
+                                    {selectedCreator.email && (
                                         <div className="p-4 bg-[var(--bg-secondary)] rounded-2xl col-span-2">
                                             <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase mb-1">Email</p>
-                                            <p className="font-bold text-[var(--text-primary)] text-sm">{selectedStudent.email}</p>
+                                            <p className="font-bold text-[var(--text-primary)] text-sm">{selectedCreator.email}</p>
                                         </div>
                                     )}
                                 </div>
 
-                                {(selectedStudent.instagram || selectedStudent.twitter || selectedStudent.linkedin) && (
+                                {(selectedCreator.instagram || selectedCreator.twitter || selectedCreator.linkedin) && (
                                     <div className="p-6 bg-[var(--bg-secondary)] rounded-3xl border border-[var(--border-color)]">
                                         <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-4 opacity-60">Social Media</p>
                                         <div className="flex gap-3 flex-wrap">
-                                            {selectedStudent.instagram && (
-                                                <a href={selectedStudent.instagram} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-spark-black text-white rounded-xl font-bold text-xs hover:bg-spark-red transition-all">
+                                            {selectedCreator.instagram && (
+                                                <a href={selectedCreator.instagram} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-spark-black text-white rounded-xl font-bold text-xs hover:bg-spark-red transition-all">
                                                     Instagram
                                                 </a>
                                             )}
-                                            {selectedStudent.twitter && (
-                                                <a href={selectedStudent.twitter} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-spark-black text-white rounded-xl font-bold text-xs hover:bg-spark-red transition-all">
+                                            {selectedCreator.twitter && (
+                                                <a href={selectedCreator.twitter} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-spark-black text-white rounded-xl font-bold text-xs hover:bg-spark-red transition-all">
                                                     Twitter
                                                 </a>
                                             )}
-                                            {selectedStudent.linkedin && (
-                                                <a href={selectedStudent.linkedin} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-spark-black text-white rounded-xl font-bold text-xs hover:bg-spark-red transition-all">
+                                            {selectedCreator.linkedin && (
+                                                <a href={selectedCreator.linkedin} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-spark-black text-white rounded-xl font-bold text-xs hover:bg-spark-red transition-all">
                                                     LinkedIn
                                                 </a>
                                             )}
@@ -1742,7 +1811,7 @@ const BrandDashboard: React.FC<{
                             </div>
 
                             <button
-                                onClick={() => handleOpenProposalModal(selectedStudent)}
+                                onClick={() => handleOpenProposalModal(selectedCreator)}
                                 disabled={proposing}
                                 className="w-full py-6 bg-spark-black text-white font-black text-xl rounded-2xl hover:bg-spark-red transition-all shadow-xl shadow-red-100 flex items-center justify-center gap-2"
                             >
@@ -1882,7 +1951,7 @@ const BrandDashboard: React.FC<{
                         <div className="p-6 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-secondary)]/50">
                             <div>
                                 <h3 className="text-lg font-black text-[var(--text-primary)]">Approve Influencer</h3>
-                                <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest mt-1">Student: {selectedAppToApprove.student?.name || selectedAppToApprove.studentName || 'Selected Talent'}</p>
+                                <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest mt-1">Creator: {selectedAppToApprove.creatorName || 'Selected Talent'}</p>
                             </div>
                             <button onClick={() => { setShowApprovalModal(false); setSelectedAppToApprove(null); }} className="w-8 h-8 bg-spark-black text-white rounded-full flex items-center justify-center hover:bg-gray-800 transition-all">
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -1912,7 +1981,7 @@ const BrandDashboard: React.FC<{
                             
                             <div className="p-4 bg-spark-red/5 rounded-2xl border border-spark-red/10">
                                 <p className="text-[10px] text-spark-red font-bold leading-relaxed">
-                                    By approving, ₦{Number(approvalAmount || 0).toLocaleString()} will be moved from your campaign budget and locked for this student. You can release it once they submit their report.
+                                    By approving, ₦{Number(approvalAmount || 0).toLocaleString()} will be moved from your campaign budget and locked for this creator. You can release it once they submit their report.
                                 </p>
                             </div>
 
@@ -1940,11 +2009,11 @@ const BrandDashboard: React.FC<{
                         </div>
                         <div className="flex items-center gap-4 mb-8 p-4 bg-[var(--bg-secondary)] rounded-2xl">
                             <div className="w-12 h-12 rounded-xl bg-spark-red text-white flex items-center justify-center font-black text-lg">
-                                {viewingReport.influencerName?.charAt(0)}
+                                {viewingReport.creatorName?.charAt(0)}
                             </div>
                             <div>
-                                <h4 className="font-black text-[var(--text-primary)]">{viewingReport.influencerName}</h4>
-                                <p className="text-[10px] font-black text-spark-red uppercase tracking-widest">{viewingReport.influencerUniversity}</p>
+                                <h4 className="font-black text-[var(--text-primary)]">{viewingReport.creatorName}</h4>
+                                <p className="text-[10px] font-black text-spark-red uppercase tracking-widest">{viewingReport.creatorUniversity || 'Creator'}</p>
                             </div>
                         </div>
                         <div className="space-y-6">
@@ -2170,6 +2239,14 @@ const BrandDashboard: React.FC<{
                     </div>
                 </div>
             )}
+
+            <ProposalDetailsModal
+                isOpen={!!selectedProposal}
+                onClose={() => setSelectedProposal(null)}
+                proposal={selectedProposal}
+                onUpdateStatus={handleUpdateStatus}
+                isSender={selectedProposal?.senderId === (brandProfile?.id || auth.currentUser?.uid)}
+            />
         </DashboardShell>
     );
 };

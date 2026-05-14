@@ -173,7 +173,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
 
                         {activeTab === 'specialized' && (
                             <div className="grid md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-left-4 duration-500">
-                                {user.role === UserRole.Ambassador && (
+                                {user.role?.includes('Creator') && (
                                     <>
                                         {renderInput('University', 'university', 'Your school name')}
                                         {renderInput('Spark Handle', 'handle', '@yourusername')}
@@ -199,7 +199,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
                                     </>
                                 )}
 
-                                {user.role === UserRole.StudentOrg && (
+                                {user.role === UserRole.Organization && (
                                     <>
                                         {renderInput('University', 'university', 'Where you are based')}
                                         {renderInput('Club Category', 'clubType', 'e.g. Sports, Tech')}

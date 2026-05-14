@@ -67,9 +67,11 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
                     const formData = new FormData();
                     formData.append('file', file);
                     formData.append('upload_preset', 'campus-spark');
+                    formData.append('resource_type', 'raw');
 
-                    // Using 'auto' allows raw files (PDF, DOCX) as well as images
-                    const uploadTask = fetch('https://api.cloudinary.com/v1_1/dk9tq3oop/auto/upload', {
+                    // Use /raw/upload so PDFs and DOCXs are stored as raw files
+                    // and Cloudinary returns a direct download URL (not an inline viewer URL)
+                    const uploadTask = fetch('https://api.cloudinary.com/v1_1/dk9tq3oop/raw/upload', {
                         method: 'POST',
                         body: formData
                     });

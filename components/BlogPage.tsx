@@ -7,7 +7,7 @@ const BlogPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigate
       id: 1,
       title: "How to Secure Your First ₦1M Campus Sponsorship",
       category: "Guides",
-      excerpt: "Step-by-step tactics used by UNILAG student leaders to land major tech sponsorships...",
+      excerpt: "Step-by-step tactics used by UNILAG campus leaders to land major tech sponsorships...",
       author: "Damilola A.",
       date: "May 12, 2024"
     },
@@ -21,9 +21,9 @@ const BlogPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigate
     },
     {
       id: 3,
-      title: "10 Campus Ambassador Programs You Should Join in 2024",
+      title: "10 Campus Creator Programs You Should Join in 2024",
       category: "Opportunities",
-      excerpt: "From Fintech to Lifestyle, here are the brands looking for new student voices across Nigeria...",
+      excerpt: "From Fintech to Lifestyle, here are the brands looking for new campus voices across Nigeria...",
       author: "Fatima Y.",
       date: "July 20, 2024"
     }

@@ -8,8 +8,8 @@ const AboutPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigat
 
   const subtitles: Record<UserType, string> = {
     [UserType.Brands]: "Maximize your reach across Nigerian universities with targeted campaigns.",
-    [UserType.Clubs]: "Secure sponsorships and funding to take your student organization's events to the next level.",
-    [UserType.Ambassadors]: "Turn your influence into income by collaborating with top brands on your campus.",
+    [UserType.Organizations]: "Secure sponsorships and funding to take your organization's events to the next level.",
+    [UserType.Creators]: "Turn your influence into income by collaborating with top brands on your campus.",
   };
 
   return (
@@ -24,7 +24,7 @@ const AboutPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigat
             We are the <span className="text-gradient-red italic">Heartbeat</span> of Campus Life.
           </h1>
           <p className="max-w-2xl mx-auto text-base md:text-lg text-[var(--text-secondary)] font-medium leading-relaxed">
-            Campus Spark was founded to solve a simple problem: Nigerian students have immense influence, but no efficient way to connect with the brands they love. We built the bridge.
+            Campus Spark was founded to solve a simple problem: Nigerian youth have immense influence, but no efficient way to connect with the brands they love. We built the bridge.
           </p>
         </div>
       </section>
@@ -34,7 +34,7 @@ const AboutPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigat
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-2xl md:text-4xl font-fancy font-black text-[var(--text-primary)] mb-8">Our <span className="text-gradient-red italic">Mission</span></h2>
           <p className="text-lg md:text-xl text-[var(--text-secondary)] mb-16 leading-relaxed font-medium">
-            To empower 10 million African students by creating a digital ecosystem where their creativity, influence, and leadership are recognized and rewarded by market leaders.
+            To empower 10 million African youth by creating a digital ecosystem where their creativity, influence, and leadership are recognized and rewarded by market leaders.
           </p>
           <div className="grid md:grid-cols-2 gap-8 text-left">
             <div className="bg-[var(--bg-primary)] border border-[var(--border-color)] p-10 rounded-[2.5rem] card-hover shadow-sm">
@@ -49,7 +49,7 @@ const AboutPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigat
                     <SparkIcon className="w-6 h-6 text-spark-red" />
                 </div>
                 <h3 className="text-xl font-bold mb-3 text-[var(--text-primary)]">Growth Driven</h3>
-                <p className="text-[var(--text-secondary)] text-sm font-medium leading-relaxed">We help students build professional resumes, not just earn. Our platform is a career jumpstart for the future.</p>
+                <p className="text-[var(--text-secondary)] text-sm font-medium leading-relaxed">We help youth build professional resumes, not just earn. Our platform is a career jumpstart for the future.</p>
             </div>
           </div>
         </div>

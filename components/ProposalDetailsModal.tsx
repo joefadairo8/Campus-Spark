@@ -1,5 +1,15 @@
 import React, { useState } from 'react';
 
+/**
+ * Returns the Cloudinary URL for downloading a raw document.
+ * For raw resource types (PDF, DOCX), fl_attachment is not supported —
+ * the URL is returned as-is. The <a download> attribute handles the
+ * browser download hint.
+ */
+function getDownloadUrl(url: string, _filename?: string): string {
+    return url || '';
+}
+
 interface ProposalDetailsModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -97,11 +107,15 @@ export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOp
                                     <span className="font-bold text-[var(--text-primary)] truncate max-w-[200px]">{proposal.documentName || 'Proposal Document'}</span>
                                 </div>
                                 <a
-                                    href={proposal.documentUrl}
+                                    href={getDownloadUrl(proposal.documentUrl, proposal.documentName)}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="px-4 py-2 bg-spark-red text-white text-xs font-black rounded-xl hover:bg-red-700 transition-all shadow-md"
+                                    download={proposal.documentName || 'proposal-document'}
+                                    className="px-4 py-2 bg-spark-red text-white text-xs font-black rounded-xl hover:bg-red-700 transition-all shadow-md flex items-center gap-1.5"
                                 >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                    </svg>
                                     Download
                                 </a>
                             </div>

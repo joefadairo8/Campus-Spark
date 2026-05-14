@@ -8,6 +8,7 @@ import { ProposalFormModal } from './ProposalFormModal';
 import { ProposalDetailsModal } from './ProposalDetailsModal';
 import { EventDetailsModal } from './EventDetailsModal';
 import { WalletService } from '../WalletService';
+import { notifyTopUp, notifyWithdrawal, notifyProposalReceived, notifyProposalStatus } from '../emailNotifier';
 import { Wallet, TrendingUp, Lock, Plus, Minus, Ticket, Edit, Trash2, Search, Handshake, Building2, FileText, Mail, BarChart3, Target, Smartphone, Lightbulb, Award, GraduationCap, BookOpen, Calendar, Users, Megaphone, Inbox, Timer } from 'lucide-react';
 
 const OrgDashboard: React.FC<{ 
@@ -40,12 +41,21 @@ const OrgDashboard: React.FC<{
     const [proposalRecipient, setProposalRecipient] = useState<{ id: string, name: string } | null>(null);
     const [selectedProposal, setSelectedProposal] = useState<any>(null);
     const [selectedEvent, setSelectedEvent] = useState<any>(null);
-    const [ambassadors, setAmbassadors] = useState<any[]>([]);
+    const [creators, setCreators] = useState<any[]>([]);
     const [allEvents, setAllEvents] = useState<any[]>([]);
     const [editingEvent, setEditingEvent] = useState<any>(null);
     const [editFormData, setEditFormData] = useState({ name: '', date: '', description: '', targetSponsorship: '' });
     const [editSubmitting, setEditSubmitting] = useState(false);
     const [topUpAmount, setTopUpAmount] = useState('10000');
+    const [gigs, setGigs] = useState<any[]>([]);
+    const [showGigModal, setShowGigModal] = useState(false);
+    const [selectedGig, setSelectedGig] = useState<any>(null);
+    const [gigAllocations, setGigAllocations] = useState<Record<string, any[]>>({});
+    const [gigFormData, setGigFormData] = useState({ title: '', description: '', reward: '0', type: 'volunteer' });
+    const [gigSubmitting, setGigSubmitting] = useState(false);
+    const [showAssignModal, setShowAssignModal] = useState(false);
+    const [selectedCreatorForAssign, setSelectedCreatorForAssign] = useState<any>(null);
+    const [assigningGigId, setAssigningGigId] = useState('');
 
     useEffect(() => {
         const script = document.createElement("script");
@@ -98,7 +108,8 @@ const OrgDashboard: React.FC<{
 
     const sidebarItems = [
         { id: 'events', label: 'My Events', icon: <Ticket className="w-5 h-5" /> },
-        { id: 'ambassadors', label: 'Find Talent', icon: <Search className="w-5 h-5" /> },
+        { id: 'gigs', label: 'Assign Gigs', icon: <Megaphone className="w-5 h-5" /> },
+        { id: 'creators', label: 'Find Creators', icon: <Search className="w-5 h-5" /> },
         { id: 'wallet', label: 'Finance Hub', icon: <Wallet className="w-5 h-5" /> },
         { id: 'proposals', label: 'Brand Partnerships', icon: <Handshake className="w-5 h-5" /> },
         { id: 'brands', label: 'Explore Brands', icon: <Building2 className="w-5 h-5" /> },
@@ -116,8 +127,9 @@ const OrgDashboard: React.FC<{
                 if (userDoc.exists()) {
                     setOrgProfile({ id: uid, ...userDoc.data() });
                 } else {
+                    onNavigate('creator-dashboard');
                     console.warn('[OrgDashboard] No user doc found for:', uid);
-                    setOrgProfile({ id: uid, role: UserRole.StudentOrg }); // Minimal profile to allow loading
+                    setOrgProfile({ id: uid, role: UserRole.Organization }); // Minimal profile to allow loading
                 }
             } catch (err) {
                 console.error("Error fetching org profile:", err);
@@ -204,6 +216,8 @@ const OrgDashboard: React.FC<{
         }
     };
 
+
+
     useEffect(() => {
         if (user) {
             fetchOrgData();
@@ -211,10 +225,13 @@ const OrgDashboard: React.FC<{
     }, [user]);
 
     useEffect(() => {
-        if (orgProfile?.id || user?.id || auth.currentUser?.uid) {
+        const uid = orgProfile?.id || user?.id || auth.currentUser?.uid;
+        if (uid) {
             fetchMyEvents();
             fetchProposals();
             fetchBrands();
+            fetchGigs();
+            fetchAllocations();
         }
     }, [orgProfile?.id, user?.id, auth.currentUser?.uid]);
 
@@ -223,19 +240,28 @@ const OrgDashboard: React.FC<{
     }, [currentView, orgProfile?.id, user?.id, auth.currentUser?.uid]);
 
     useEffect(() => {
-        if (currentView === 'ambassadors') {
-            const fetchAmbassadors = async () => {
+        if (currentView === 'creators') {
+            const fetchCreators = async () => {
                 setLoading(true);
                 try {
-                    const res = await apiClient.get(`users?role=${encodeURIComponent(UserRole.Ambassador)}`);
-                    setAmbassadors(res.data);
+                    const creatorRoles = [
+                        UserRole.Creator,
+                        'Creator',
+                        'Ambassador',
+                        'Ambassador/Influencer',
+                        'Campus Creator'
+                    ];
+                    const q = query(collection(db, "users"), where("role", "in", creatorRoles), limit(50));
+                    const querySnapshot = await getDocs(q);
+                    const creatorsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
+                    setCreators(creatorsData);
                 } catch (e) {
-                    console.error("Ambassador fetch error:", e);
+                    console.error("Creator fetch error:", e);
                 } finally {
                     setLoading(false);
                 }
             };
-            fetchAmbassadors();
+            fetchCreators();
         } else if (currentView === 'campus_events') {
             const fetchAllEvents = async () => {
                 setLoading(true);
@@ -263,7 +289,7 @@ const OrgDashboard: React.FC<{
 
         setSubmitting(true);
         try {
-            const orgName = orgProfile?.name || "Student Organization";
+            const orgName = orgProfile?.name || "Organization";
             const uni = orgProfile?.university || "Unknown";
             const payload = {
                 name: formData.name.trim(),
@@ -330,6 +356,18 @@ const OrgDashboard: React.FC<{
     const handleSendProposal = async (data: { recipientId: string; message: string; budget?: string; timeline?: string; documentUrl?: string; documentName?: string; }) => {
         try {
             await apiClient.post('proposals', data);
+
+            // Notify Brand
+            const brand = brands.find(b => b.id === data.recipientId);
+            if (brand && (brand.email || brand.brandEmail)) {
+                notifyProposalReceived(
+                    brand.email || brand.brandEmail,
+                    brand.name || 'Brand',
+                    orgProfile?.name || 'Organization',
+                    data.message
+                );
+            }
+
             alert("Partnership proposal sent successfully!");
             setShowProposalModal(false);
             setProposalRecipient(null);
@@ -343,6 +381,18 @@ const OrgDashboard: React.FC<{
     const handleUpdateStatus = async (id: string, status: 'accepted' | 'rejected' | 'reviewing') => {
         try {
             await apiClient.patch(`proposals/${id}`, { status });
+
+            // Notify the sender of the status change
+            const prop = proposals.find(p => p.id === id);
+            if (prop && prop.sender?.email) {
+                notifyProposalStatus(
+                    prop.sender.email,
+                    prop.sender.name || 'User',
+                    prop.recipient?.name || orgProfile?.name || 'Organization',
+                    status
+                );
+            }
+
             alert(`Proposal ${status}!`);
             fetchProposals();
         } catch (error) {
@@ -361,6 +411,117 @@ const OrgDashboard: React.FC<{
         }
     };
 
+    const fetchGigs = async () => {
+        const orgId = orgProfile?.id || auth.currentUser?.uid;
+        if (!orgId) return;
+        try {
+            const q = query(collection(db, 'campaigns'), where('hostId', '==', orgId), orderBy('createdAt', 'desc'));
+            const snap = await getDocs(q);
+            setGigs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        } catch (e) {
+            // Fallback for missing index
+            const q = query(collection(db, 'campaigns'), where('hostId', '==', orgId));
+            const snap = await getDocs(q);
+            setGigs(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a:any, b:any) => b.createdAt?.seconds - a.createdAt?.seconds));
+        }
+    };
+
+    const fetchAllocations = async () => {
+        const orgId = orgProfile?.id || auth.currentUser?.uid;
+        if (!orgId) return;
+        const q = query(collection(db, 'campaignAllocations'), where('hostId', '==', orgId));
+        const snap = await getDocs(q);
+        const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        
+        const grouped: Record<string, any[]> = {};
+        all.forEach((a: any) => {
+            if (!grouped[a.campaignId]) grouped[a.campaignId] = [];
+            grouped[a.campaignId].push(a);
+        });
+        setGigAllocations(grouped);
+    };
+
+    const handleCreateGig = async () => {
+        if (!gigFormData.title.trim() || !gigFormData.description.trim()) {
+            alert('Please fill in title and description.');
+            return;
+        }
+
+        setGigSubmitting(true);
+        try {
+            const orgId = orgProfile?.id || auth.currentUser?.uid;
+            if (!orgId) throw new Error('Not authenticated');
+
+            const reward = Number(gigFormData.reward);
+            if (reward > 0) {
+                const w = await WalletService.getOrCreateWallet(orgId);
+                if (w.balance < reward) {
+                    throw new Error(`Insufficient funds. You need ₦${reward.toLocaleString()} but only have ₦${w.balance.toLocaleString()}.`);
+                }
+                await WalletService.lockEscrow(orgId, reward, `Escrow for gig: ${gigFormData.title}`);
+                await fetchWallet();
+            }
+
+            await addDoc(collection(db, 'campaigns'), {
+                ...gigFormData,
+                reward,
+                hostId: orgId,
+                hostName: orgProfile?.name || 'Organization',
+                status: 'open',
+                createdAt: serverTimestamp()
+            });
+
+            setShowGigModal(false);
+            setGigFormData({ title: '', description: '', reward: '0', type: 'volunteer' });
+            fetchGigs();
+            alert('Gig launched successfully!');
+        } catch (e: any) {
+            console.error(e);
+            alert(e.message || 'Failed to create gig.');
+        } finally {
+            setGigSubmitting(false);
+        }
+    };
+
+    const handleAssignGig = async () => {
+        if (!assigningGigId || !selectedCreatorForAssign) return;
+        try {
+            const orgId = orgProfile?.id || auth.currentUser?.uid;
+            const q = query(
+                collection(db, 'campaignAllocations'),
+                where('campaignId', '==', assigningGigId),
+                where('studentId', '==', selectedCreatorForAssign.id)
+            );
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+                alert('This creator is already assigned to this gig.');
+                return;
+            }
+
+            const gig = gigs.find(g => g.id === assigningGigId);
+
+            await addDoc(collection(db, 'campaignAllocations'), {
+                campaignId: assigningGigId,
+                campaignTitle: gig?.title,
+                studentId: selectedCreatorForAssign.id,
+                studentName: selectedCreatorForAssign.name,
+                studentEmail: selectedCreatorForAssign.email,
+                hostId: orgId,
+                status: 'active',
+                assignedAt: serverTimestamp()
+            });
+
+            setShowAssignModal(false);
+            setSelectedCreatorForAssign(null);
+            setAssigningGigId('');
+            fetchAllocations();
+            alert(`Assigned ${selectedCreatorForAssign.name} to gig!`);
+        } catch (e) {
+            console.error(e);
+            alert('Failed to assign gig.');
+        }
+    };
+
     const handleWithdraw = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!orgProfile?.id || !withdrawalAmount) return;
@@ -372,6 +533,12 @@ const OrgDashboard: React.FC<{
                 bankDetails,
                 { name: orgProfile.name, email: orgProfile.email }
             );
+
+            // Notify user + admin of withdrawal request
+            if (orgProfile.email) {
+                notifyWithdrawal(orgProfile.email, orgProfile.name, Number(withdrawalAmount), { details: bankDetails });
+            }
+
             alert('Withdrawal request submitted successfully!');
             setShowWithdrawModal(false);
             setWithdrawalAmount('');
@@ -460,6 +627,12 @@ const OrgDashboard: React.FC<{
                                                             try {
                                                                 setWalletLoading(true);
                                                                 await WalletService.topUpWallet(orgProfile.id, amount, response.reference);
+
+                                                                // Notify user + admin of top-up
+                                                                const email = orgProfile.email || user?.email;
+                                                                const name = orgProfile.name || user?.name || 'Organization User';
+                                                                if (email) notifyTopUp(email, name, amount, response.reference);
+
                                                                 alert(`Successfully topped up ₦${amount.toLocaleString()}!`);
                                                                 fetchWallet();
                                                             } catch (err: any) {
@@ -528,7 +701,7 @@ const OrgDashboard: React.FC<{
                 );
             case 'events':
                 return (
-                    <div className="space-y-8">
+                    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                         <div className="flex justify-between items-center">
                             <h3 className="text-xl font-black">My Campus Events</h3>
                             <button
@@ -578,82 +751,134 @@ const OrgDashboard: React.FC<{
                                         >
                                             Manage Sponsorships
                                         </button>
-                                        <button
-                                            onClick={() => handleEditEvent(event)}
-                                            className="w-full py-3 bg-spark-black text-white font-black rounded-2xl hover:bg-gray-800 transition-all text-sm mt-2 flex items-center justify-center gap-2"
-                                        >
-                                            <Edit className="w-4 h-4" /> Edit Event
-                                        </button>
-                                        <button
-                                            onClick={() => handleDeleteEvent(event.id)}
-                                            className="w-full py-3 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all text-sm mt-2 flex items-center justify-center gap-2"
-                                        >
-                                            <Trash2 className="w-4 h-4" /> Delete Event
-                                        </button>
+                                        <div className="flex gap-2 mt-2">
+                                            <button
+                                                onClick={() => handleEditEvent(event)}
+                                                className="flex-1 py-3 bg-spark-black text-white font-black rounded-2xl hover:bg-gray-800 transition-all text-sm flex items-center justify-center gap-2"
+                                            >
+                                                <Edit className="w-4 h-4" /> Edit
+                                            </button>
+                                            <button
+                                                onClick={() => handleDeleteEvent(event.id)}
+                                                className="flex-1 py-3 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all text-sm flex items-center justify-center gap-2"
+                                            >
+                                                <Trash2 className="w-4 h-4" /> Delete
+                                            </button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
                         )}
-                        {/* Recent Activity Quick View */}
-                        <div className="bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-[2.5rem] p-10 shadow-sm mt-10">
-                            <div className="flex items-center justify-between mb-8">
-                                <h3 className="text-2xl font-black text-[var(--text-primary)]">Recent Activity</h3>
-                                <button onClick={() => setCurrentView('wallet')} className="text-[10px] font-black text-spark-red uppercase tracking-widest hover:underline">View All</button>
-                            </div>
-                            <div className="space-y-4">
-                                {transactions.length === 0 ? (
-                                    <p className="text-[var(--text-secondary)] text-sm italic py-4">No recent activity recorded.</p>
-                                ) : (
-                                    transactions.slice(0, 5).map((trans: any, i) => (
-                                        <div key={i} className="flex items-center justify-between p-4 bg-[var(--bg-secondary)] rounded-2xl hover:bg-spark-red/5 transition-all">
-                                            <div className="flex items-center gap-6">
-                                                <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl ${trans.type === 'credit' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                                                    {trans.type === 'credit' ? <Plus className="w-5 h-5" /> : <Minus className="w-5 h-5" />}
-                                                </div>
-                                                <div>
-                                                    <p className="text-base font-black text-[var(--text-primary)]">{trans.description}</p>
-                                                    <p className="text-xs text-[var(--text-secondary)] font-bold">
-                                                        {(() => {
-                                                            if (!trans.createdAt) return 'Just now';
-                                                            const date = trans.createdAt.seconds ? new Date(trans.createdAt.seconds * 1000) : new Date(trans.createdAt);
-                                                            return date.toLocaleDateString();
-                                                        })()}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <div className="text-right">
-                                                <p className={`text-lg font-black ${trans.type === 'credit' ? 'text-green-600' : 'text-spark-red'}`}>
-                                                    {trans.type === 'credit' ? '+' : '-'} ₦{Number(trans.amount).toLocaleString()}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
-                        </div>
                     </div>
                 );
-            case 'ambassadors':
+            case 'gigs':
+                return (
+                    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                        <div className="flex justify-between items-center">
+                            <div>
+                                <h3 className="text-2xl font-black text-[var(--text-primary)]">Assign Gigs</h3>
+                                <p className="text-[var(--text-secondary)] mt-1">Create volunteer opportunities or paid gigs for creators.</p>
+                            </div>
+                            <button 
+                                onClick={() => {
+                                    setGigFormData({ title: '', description: '', reward: '0', type: 'volunteer' });
+                                    setShowGigModal(true);
+                                }} 
+                                className="bg-spark-red text-white px-6 py-3 rounded-xl font-black shadow-lg shadow-red-100 hover:bg-red-700 transition-all active:scale-95"
+                            >
+                                + Create New Gig
+                            </button>
+                        </div>
+
+                        {gigs.length === 0 ? (
+                            <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)]">
+                                <div className="text-6xl mb-6">📢</div>
+                                <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">No Gigs Yet</h3>
+                                <p className="text-[var(--text-secondary)] mb-8">Start by creating a volunteer or paid gig to assign to creators.</p>
+                                <button 
+                                    onClick={() => setShowGigModal(true)} 
+                                    className="px-8 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all"
+                                >
+                                    Create First Gig
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="grid md:grid-cols-2 gap-6">
+                                {gigs.map((g: any) => {
+                                    const allocations = gigAllocations[g.id] || [];
+                                    return (
+                                        <div key={g.id} className="bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] p-8 hover:shadow-xl transition-all group">
+                                            <div className="flex justify-between items-start mb-4">
+                                                <div>
+                                                    <h4 className="text-xl font-black text-[var(--text-primary)] group-hover:text-spark-red transition-colors">{g.title}</h4>
+                                                    <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${Number(g.reward) === 0 ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'}`}>
+                                                        {Number(g.reward) === 0 ? 'Volunteerism' : 'Paid Gig'}
+                                                    </span>
+                                                </div>
+                                                <span className={`px-3 py-1 text-[10px] font-black rounded-full uppercase bg-[var(--bg-secondary)] text-gray-600`}>{g.status?.replace('_', ' ')}</span>
+                                            </div>
+                                            <p className="text-sm text-[var(--text-secondary)] line-clamp-2 mb-5">{g.description}</p>
+
+                                            <div className="mb-5 space-y-2">
+                                                <div className="flex justify-between text-xs font-black">
+                                                    <span className="text-[var(--text-secondary)]">Reward: <span className="text-spark-red">{Number(g.reward) === 0 ? 'Experience/Perks' : `₦${Number(g.reward).toLocaleString()}`}</span></span>
+                                                    <span className="text-[var(--text-secondary)]">Assigned: <span className="text-green-600">{allocations.length} Creators</span></span>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex gap-3">
+                                                <button 
+                                                    onClick={() => {
+                                                        setSelectedGig(g);
+                                                    }} 
+                                                    className="flex-1 py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all text-sm"
+                                                >
+                                                    Manage Gig
+                                                </button>
+                                                <button 
+                                                    onClick={async () => {
+                                                        if (!window.confirm('Are you sure you want to delete this gig?')) return;
+                                                        try {
+                                                            await apiClient.delete(`gigs/${g.id}`);
+                                                            fetchMyGigs();
+                                                            alert('Gig deleted.');
+                                                        } catch (e) {
+                                                            alert('Failed to delete gig.');
+                                                        }
+                                                    }} 
+                                                    className="w-12 h-12 bg-spark-black text-white rounded-xl flex items-center justify-center hover:bg-gray-800 transition-all"
+                                                >
+                                                    <Trash2 className="w-5 h-5" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                );
+            case 'creators':
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                         <div>
-                            <h3 className="text-2xl font-black text-[var(--text-primary)]">Find Talent</h3>
-                            <p className="text-[var(--text-secondary)] mt-1">Discover and connect with student ambassadors and influencers for your events.</p>
+                            <h3 className="text-2xl font-black text-[var(--text-primary)]">Find Creators</h3>
+                            <p className="text-[var(--text-secondary)] mt-1">Discover and connect with creators and influencers for your events.</p>
                         </div>
 
                         {loading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
-                        ) : ambassadors.length === 0 ? (
+                        ) : creators.length === 0 ? (
                             <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)]">
                                 <div className="w-20 h-20 bg-spark-red/5 rounded-3xl flex items-center justify-center mx-auto mb-6 text-spark-red">
                                     <Search className="w-10 h-10" />
                                 </div>
                                 <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">No Talent Found</h3>
-                                <p className="text-[var(--text-secondary)]">No student ambassadors are registered yet. Check back soon!</p>
+                                <p className="text-[var(--text-secondary)]">No creators are registered yet. Check back soon!</p>
                             </div>
                         ) : (
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {ambassadors.map(profile => (
+                                {creators.map(profile => (
                                     <div key={profile.id} className="group bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] overflow-hidden shadow-sm hover:shadow-xl transition-all">
                                         <div className="h-20 bg-gradient-to-r from-spark-red/10 to-orange-50"></div>
                                         <div className="px-6 pb-6 -mt-8">
@@ -661,7 +886,7 @@ const OrgDashboard: React.FC<{
                                                 {profile.imageUrl ? <img src={profile.imageUrl} className="w-full h-full object-cover" alt={profile.name} /> : (profile.name || '?').charAt(0)}
                                             </div>
                                             <h3 className="font-black text-lg text-[var(--text-primary)]">{profile.name}</h3>
-                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">{profile.university || 'Campus Ambassador'}</p>
+                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">{profile.university || 'Creator'}</p>
                                             {(profile.email || profile.phoneNumber) && (
                                                 <div className="space-y-1 mb-2">
                                                     {profile.email && (
@@ -682,12 +907,18 @@ const OrgDashboard: React.FC<{
                                             <div className="flex gap-3 mt-4">
                                                 <button
                                                     onClick={() => handleOpenProposalModal(profile)}
-                                                    className="flex-1 py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all text-sm shadow-lg shadow-red-100"
+                                                    className="flex-1 py-3 bg-spark-black text-white font-black rounded-xl hover:bg-gray-800 transition-all text-sm shadow-lg shadow-gray-100"
                                                 >
-                                                    Propose Gig
+                                                    Partner
                                                 </button>
-                                                <button className="w-10 h-10 bg-spark-black text-white rounded-xl hover:bg-gray-800 transition-all flex items-center justify-center flex-shrink-0">
-                                                    <svg className="w-5 h-5 text-[var(--text-secondary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                                                <button
+                                                    onClick={() => {
+                                                        setSelectedCreatorForAssign(profile);
+                                                        setShowAssignModal(true);
+                                                    }}
+                                                    className="flex-1 py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all text-sm shadow-lg shadow-red-100 flex items-center justify-center gap-2"
+                                                >
+                                                    <Megaphone className="w-4 h-4" /> Assign
                                                 </button>
                                             </div>
                                         </div>
@@ -714,6 +945,7 @@ const OrgDashboard: React.FC<{
                                     const isSender = p.senderId === (orgProfile?.id || auth.currentUser?.uid);
                                     const otherParty = (isSender ? p.recipient : p.sender) || { name: 'Unknown User', role: 'Unknown', email: '' };
                                     const displayName = otherParty.name !== 'Unknown User' ? otherParty.name : (otherParty.email || 'Unknown User');
+                                    const isDirectOffer = p.status === 'pending' && !isSender;
                                     return (
                                         <div key={p.id} className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm flex items-center justify-between">
                                             <div className="flex items-center space-x-6">
@@ -727,21 +959,46 @@ const OrgDashboard: React.FC<{
                                                 </div>
                                             </div>
                                             <div className="flex items-center space-x-4">
-                                                <button
-                                                    onClick={() => setSelectedProposal(p)}
-                                                    className="px-6 py-2 bg-spark-black text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-gray-800 transition-all"
-                                                >
-                                                    View Proposal
-                                                </button>
-                                                {p.status !== 'pending' && (
-                                                    <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                                                        p.status === 'accepted' ? 'bg-green-50 text-green-600' :
-                                                        p.status === 'paid' ? 'bg-green-100 text-green-700 border border-green-200' :
-                                                        p.status === 'rejected' ? 'bg-red-50 text-red-600' :
-                                                        'bg-blue-50 text-blue-600'
-                                                    }`}>
-                                                        {p.status === 'paid' ? 'Paid & Confirmed' : p.status}
-                                                    </span>
+                                                {isDirectOffer ? (
+                                                    <div className="flex gap-3">
+                                                        <button
+                                                            onClick={() => setSelectedProposal(p)}
+                                                            className="px-6 py-3 bg-[var(--bg-secondary)] text-[var(--text-primary)] rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[var(--bg-tertiary)] transition-all border border-[var(--border-color)]"
+                                                        >
+                                                            View
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleUpdateStatus(p.id, 'accepted')}
+                                                            className="px-6 py-3 bg-spark-red text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition-all shadow-sm"
+                                                        >
+                                                            Accept
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleUpdateStatus(p.id, 'rejected')}
+                                                            className="px-6 py-3 bg-spark-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-800 transition-all border border-transparent shadow-sm"
+                                                        >
+                                                            Reject
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <button
+                                                            onClick={() => setSelectedProposal(p)}
+                                                            className="px-6 py-2 bg-spark-black text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-gray-800 transition-all"
+                                                        >
+                                                            View Proposal
+                                                        </button>
+                                                        {p.status !== 'pending' && (
+                                                            <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${
+                                                                p.status === 'accepted' ? 'bg-green-50 text-green-600' :
+                                                                p.status === 'paid' ? 'bg-green-100 text-green-700 border border-green-200' :
+                                                                p.status === 'rejected' ? 'bg-red-50 text-red-600' :
+                                                                'bg-blue-50 text-blue-600'
+                                                            }`}>
+                                                                {p.status === 'paid' ? 'Paid & Confirmed' : p.status}
+                                                            </span>
+                                                        )}
+                                                    </>
                                                 )}
                                             </div>
                                         </div>
@@ -802,7 +1059,7 @@ const OrgDashboard: React.FC<{
                         icon: <Lightbulb className="w-8 h-8" />, title: 'Event ROI Calculator', desc: "Quantify your event's impact for sponsors. Calculate reach, engagement rates, estimated media value, and brand awareness scores.", tag: 'Tool', href: '#'
                     },
                     { icon: <Award className="w-8 h-8" />, title: 'Post-Event Report Template', desc: 'A polished report template to share results with sponsors after the event. Build long-term brand relationships with transparency.', tag: 'Template', href: '#' },
-                    { icon: <GraduationCap className="w-8 h-8" />, title: 'Sponsorship 101: Video Course', desc: 'A curated series of short-form videos on how to structure, pitch, and close sponsorship deals as a student organization.', tag: 'Course', href: '#' },
+                    { icon: <GraduationCap className="w-8 h-8" />, title: 'Sponsorship 101: Video Course', desc: 'A curated series of short-form videos on how to structure, pitch, and close sponsorship deals as an organization.', tag: 'Course', href: '#' },
                 ];
                 const tagColors: Record<string, string> = {
                     Template: 'bg-blue-50 text-blue-600',
@@ -823,7 +1080,7 @@ const OrgDashboard: React.FC<{
                                 <BookOpen className="w-8 h-8" />
                             </div>
                             <h2 className="text-3xl font-black mb-2">Resource Hub</h2>
-                            <p className="text-white/80 text-lg font-medium max-w-xl">Everything you need to run successful events, secure sponsors, and grow your student organization.</p>
+                            <p className="text-white/80 text-lg font-medium max-w-xl">Everything you need to run successful events, secure sponsors, and grow your organization.</p>
                         </div>
 
                         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -863,12 +1120,12 @@ const OrgDashboard: React.FC<{
 
     return (
         <DashboardShell
-            role={UserRole.StudentOrg}
+            role={UserRole.Organization}
             activeView={currentView}
             onViewChange={setCurrentView}
             onLogout={onLogout}
             sidebarItems={sidebarItems}
-            userName={orgProfile?.name || "Student Leader"}
+            userName={orgProfile?.name || "Organization Leader"}
             userSub={orgProfile?.university || "Campus Organizer"}
             userImage={orgProfile?.imageUrl}
             isDarkMode={isDarkMode}
@@ -904,105 +1161,6 @@ const OrgDashboard: React.FC<{
                                 className="px-8 py-4 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all shadow-lg shadow-red-900/20 active:scale-95 text-sm"
                             >
                                 Finance Hub
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-            {selectedBrand && (
-                <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-300">
-                    <div className="bg-[var(--bg-primary)] w-full max-w-2xl rounded-[2rem] sm:rounded-[4rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300 my-auto">
-                        <button
-                            onClick={() => setSelectedBrand(null)}
-                            className="absolute top-8 right-8 w-12 h-12 bg-[var(--bg-tertiary)] rounded-full flex items-center justify-center hover:bg-spark-red hover:text-white transition-all z-10"
-                        >
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12"></path></svg>
-                        </button>
-
-                        <div className="h-48 bg-gradient-to-br from-spark-red to-red-400 relative">
-                            <div className="absolute -bottom-12 left-12">
-                                <div className="w-24 h-24 bg-[var(--bg-primary)] p-2 rounded-3xl shadow-xl ring-4 ring-white flex items-center justify-center text-4xl font-black text-spark-red">
-                                    {selectedBrand.imageUrl ? <img src={selectedBrand.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : (selectedBrand.name || '?').charAt(0)}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="pt-20 p-6 sm:p-12 max-h-[70vh] overflow-y-auto">
-                            <div className="flex justify-between items-start mb-8">
-                                <div>
-                                    <h3 className="text-4xl font-black text-[var(--text-primary)] mb-1">{selectedBrand.name}</h3>
-                                    <p className="text-spark-red font-black uppercase tracking-widest text-sm">{selectedBrand.role}</p>
-                                </div>
-                            </div>
-
-                            <div className="space-y-6 mb-10">
-                                <div className="p-6 bg-[var(--bg-secondary)] rounded-3xl border border-[var(--border-color)]">
-                                    <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2 opacity-60">About this Brand</p>
-                                    <p className="text-[var(--text-primary)] font-bold text-lg">{selectedBrand.bio || `${selectedBrand.name} is a leading partner in the ${selectedBrand.industry || 'Campus Spark'} ecosystem.`}</p>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    {selectedBrand.industry && (
-                                        <div className="p-4 bg-[var(--bg-secondary)] rounded-2xl">
-                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase mb-1">Industry</p>
-                                            <p className="font-black text-[var(--text-primary)] text-sm">{selectedBrand.industry}</p>
-                                        </div>
-                                    )}
-                                    {selectedBrand.companySize && (
-                                        <div className="p-4 bg-[var(--bg-secondary)] rounded-2xl">
-                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase mb-1">Company Size</p>
-                                            <p className="font-black text-[var(--text-primary)] text-sm">{selectedBrand.companySize}</p>
-                                        </div>
-                                    )}
-                                    {selectedBrand.email && (
-                                        <div className="p-4 bg-[var(--bg-secondary)] rounded-2xl col-span-2">
-                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase mb-1">Email</p>
-                                            <p className="font-bold text-[var(--text-primary)] text-sm">{selectedBrand.email}</p>
-                                        </div>
-                                    )}
-                                    {selectedBrand.website && (
-                                        <div className="p-4 bg-[var(--bg-secondary)] rounded-2xl col-span-2">
-                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase mb-1">Website</p>
-                                            <a href={selectedBrand.website} target="_blank" rel="noopener noreferrer" className="font-bold text-spark-red text-sm hover:underline">{selectedBrand.website}</a>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {(selectedBrand.instagram || selectedBrand.twitter || selectedBrand.linkedin) && (
-                                    <div className="p-6 bg-[var(--bg-secondary)] rounded-3xl border border-[var(--border-color)]">
-                                        <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-4 opacity-60">Social Media</p>
-                                        <div className="flex gap-3 flex-wrap">
-                                            {selectedBrand.instagram && (
-                                                <a href={selectedBrand.instagram} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-[var(--bg-primary)] rounded-xl font-bold text-xs hover:bg-spark-red hover:text-white transition-all">
-                                                    Instagram
-                                                </a>
-                                            )}
-                                            {selectedBrand.twitter && (
-                                                <a href={selectedBrand.twitter} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-[var(--bg-primary)] rounded-xl font-bold text-xs hover:bg-spark-red hover:text-white transition-all">
-                                                    Twitter
-                                                </a>
-                                            )}
-                                            {selectedBrand.linkedin && (
-                                                <a href={selectedBrand.linkedin} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-[var(--bg-primary)] rounded-xl font-bold text-xs hover:bg-spark-red hover:text-white transition-all">
-                                                    LinkedIn
-                                                </a>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            <button
-                                onClick={() => handleOpenProposalModal(selectedBrand)}
-                                disabled={proposing}
-                                className="w-full py-6 bg-spark-black text-white font-black text-xl rounded-2xl hover:bg-spark-red transition-all shadow-xl shadow-red-100 flex items-center justify-center gap-3"
-                            >
-                                {proposing ? (
-                                    <>
-                                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                        Sending Proposal...
-                                    </>
-                                ) : 'Propose Sponsorship'}
                             </button>
                         </div>
                     </div>
@@ -1093,15 +1251,13 @@ const OrgDashboard: React.FC<{
                     </div>
                 </div>
             )}
-            {showProposalModal && proposalRecipient && (
-                <ProposalFormModal
-                    isOpen={showProposalModal}
-                    onClose={() => setShowProposalModal(false)}
-                    recipientName={proposalRecipient.name}
-                    recipientId={proposalRecipient.id}
-                    onSubmit={handleSendProposal}
-                />
-            )}
+            <ProposalFormModal 
+                isOpen={showProposalModal} 
+                onClose={() => setShowProposalModal(false)}
+                recipientName={proposalRecipient?.name || ''}
+                recipientId={proposalRecipient?.id || ''}
+                onSubmit={handleSendProposal}
+            />
 
             <ProposalDetailsModal
                 isOpen={!!selectedProposal}
@@ -1164,6 +1320,91 @@ const OrgDashboard: React.FC<{
                     </div>
                 </div>
             )}
+            {/* Create/Edit Gig Modal */}
+            {showGigModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+                    <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md" onClick={() => setShowGigModal(false)}></div>
+                    <div className="relative bg-[var(--bg-primary)] w-full max-w-xl rounded-[2.5rem] shadow-2xl animate-in zoom-in-95 duration-300">
+                        <div className="p-10 max-h-[90vh] overflow-y-auto">
+                            <div className="flex justify-between items-start mb-8">
+                                <div>
+                                    <h2 className="text-3xl font-black text-[var(--text-primary)] leading-tight">Create Gig</h2>
+                                    <p className="text-[var(--text-secondary)] font-medium mt-1">Formalize opportunities for creators.</p>
+                                </div>
+                                <button onClick={() => setShowGigModal(false)} className="w-10 h-10 bg-spark-black text-white rounded-full flex items-center justify-center hover:bg-gray-800 transition-all">
+                                    <Plus className="w-5 h-5 rotate-45" />
+                                </button>
+                            </div>
+
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Gig Type</label>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <button 
+                                            onClick={() => setGigFormData(p => ({ ...p, type: 'volunteer', reward: '0' }))}
+                                            className={`py-4 rounded-2xl font-black transition-all border-2 ${gigFormData.type === 'volunteer' ? 'border-spark-red bg-red-50 text-spark-red' : 'border-transparent bg-[var(--bg-secondary)] text-[var(--text-secondary)]'}`}
+                                        >
+                                            Volunteerism
+                                        </button>
+                                        <button 
+                                            onClick={() => setGigFormData(p => ({ ...p, type: 'paid' }))}
+                                            className={`py-4 rounded-2xl font-black transition-all border-2 ${gigFormData.type === 'paid' ? 'border-spark-red bg-red-50 text-spark-red' : 'border-transparent bg-[var(--bg-secondary)] text-[var(--text-secondary)]'}`}
+                                        >
+                                            Paid Gig
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Title</label>
+                                    <input 
+                                        type="text" 
+                                        placeholder="e.g. Graphic Designer for Event" 
+                                        value={gigFormData.title}
+                                        onChange={e => setGigFormData(p => ({ ...p, title: e.target.value }))}
+                                        className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" 
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Description / Brief</label>
+                                    <textarea 
+                                        rows={4} 
+                                        placeholder="What do you need the creator to do?"
+                                        value={gigFormData.description}
+                                        onChange={e => setGigFormData(p => ({ ...p, description: e.target.value }))}
+                                        className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all resize-none" 
+                                    />
+                                </div>
+
+                                {gigFormData.type === 'paid' && (
+                                    <div>
+                                        <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Gig Reward (₦)</label>
+                                        <input 
+                                            type="number" 
+                                            value={gigFormData.reward}
+                                            onChange={e => setGigFormData(p => ({ ...p, reward: e.target.value }))}
+                                            className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" 
+                                        />
+                                    </div>
+                                )}
+
+                                <button 
+                                    onClick={handleCreateGig}
+                                    disabled={gigSubmitting}
+                                    className="w-full py-5 bg-spark-red text-white font-black rounded-[2rem] hover:bg-red-700 transition-all shadow-xl shadow-red-200 flex items-center justify-center gap-3 disabled:opacity-50"
+                                >
+                                    {gigSubmitting ? (
+                                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+                                    ) : (
+                                        'Launch Gig'
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
             {/* Withdrawal Modal */}
             {showWithdrawModal && (
                 <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md z-[300] flex items-center justify-center p-4 animate-in fade-in duration-300">
@@ -1220,6 +1461,248 @@ const OrgDashboard: React.FC<{
                                 {withdrawing ? 'Processing Request...' : 'Confirm Withdrawal'}
                             </button>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Assign Gig Modal */}
+            {showAssignModal && selectedCreatorForAssign && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6">
+                    <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md" onClick={() => setShowAssignModal(false)}></div>
+                    <div className="relative bg-[var(--bg-primary)] w-full max-w-lg rounded-[2.5rem] shadow-2xl animate-in zoom-in-95 duration-300">
+                        <div className="p-10">
+                            <div className="flex justify-between items-start mb-8">
+                                <div>
+                                    <p className="text-[10px] font-black text-spark-red uppercase tracking-widest mb-1">Assign Opportunity</p>
+                                    <h2 className="text-3xl font-black text-[var(--text-primary)] leading-tight">Hiring {selectedCreatorForAssign.name}</h2>
+                                </div>
+                                <button onClick={() => setShowAssignModal(false)} className="w-10 h-10 bg-spark-black text-white rounded-full flex items-center justify-center hover:bg-gray-800 transition-all">
+                                    <Plus className="w-5 h-5 rotate-45" />
+                                </button>
+                            </div>
+
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Select Active Gig</label>
+                                    {gigs.filter(g => g.status === 'open').length === 0 ? (
+                                        <div className="p-6 text-center bg-[var(--bg-secondary)] rounded-2xl border-2 border-dashed border-[var(--border-color)]">
+                                            <p className="text-sm font-bold text-[var(--text-secondary)] mb-4">No active gigs available.</p>
+                                            <button 
+                                                onClick={() => {
+                                                    setShowAssignModal(false);
+                                                    setShowGigModal(true);
+                                                }}
+                                                className="text-spark-red font-black text-xs uppercase tracking-widest"
+                                            >
+                                                + Create a gig first
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <select 
+                                            value={assigningGigId}
+                                            onChange={e => setAssigningGigId(e.target.value)}
+                                            className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all"
+                                        >
+                                            <option value="">Choose a gig...</option>
+                                            {gigs.filter(g => g.status === 'open').map(g => (
+                                                <option key={g.id} value={g.id}>{g.title} ({Number(g.reward) === 0 ? 'Volunteer' : `₦${Number(g.reward).toLocaleString()}`})</option>
+                                            ))}
+                                        </select>
+                                    )}
+                                </div>
+
+                                <button 
+                                    onClick={handleAssignGig}
+                                    disabled={!assigningGigId}
+                                    className="w-full py-4 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all shadow-lg shadow-red-100 disabled:opacity-50"
+                                >
+                                    Confirm Assignment
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Gig Management Modal */}
+            {selectedGig && (
+                <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 sm:p-6">
+                    <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md" onClick={() => setSelectedGig(null)}></div>
+                    <div className="relative bg-[var(--bg-primary)] w-full max-w-2xl rounded-[2.5rem] shadow-2xl animate-in zoom-in-95 duration-300">
+                        <div className="p-10 max-h-[90vh] overflow-y-auto">
+                            <div className="flex justify-between items-start mb-8">
+                                <div>
+                                    <h2 className="text-3xl font-black text-[var(--text-primary)] leading-tight">{selectedGig.title}</h2>
+                                    <div className="flex gap-2 mt-2">
+                                        <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${Number(selectedGig.reward) === 0 ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'}`}>
+                                            {Number(selectedGig.reward) === 0 ? 'Volunteerism' : 'Paid Gig'}
+                                        </span>
+                                        <span className="px-2.5 py-1 bg-[var(--bg-secondary)] rounded-lg text-[10px] font-black text-gray-500 uppercase tracking-widest">{selectedGig.status}</span>
+                                    </div>
+                                </div>
+                                <button onClick={() => setSelectedGig(null)} className="w-10 h-10 bg-spark-black text-white rounded-full flex items-center justify-center hover:bg-gray-800 transition-all">
+                                    <Plus className="w-5 h-5 rotate-45" />
+                                </button>
+                            </div>
+
+                            <div className="space-y-8">
+                                <div>
+                                    <h4 className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-3">Gig Description</h4>
+                                    <p className="text-[var(--text-primary)] leading-relaxed">{selectedGig.description}</p>
+                                </div>
+
+                                {Number(selectedGig.reward) > 0 && (
+                                    <div className="p-6 bg-green-50 rounded-[2rem] border border-green-100 flex items-center justify-between">
+                                        <div>
+                                            <p className="text-[10px] font-black text-green-600 uppercase tracking-widest mb-1">Total Budget</p>
+                                            <p className="text-2xl font-black text-green-700">₦{Number(selectedGig.reward).toLocaleString()}</p>
+                                        </div>
+                                        <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-green-600 shadow-sm">
+                                            <Wallet className="w-6 h-6" />
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div>
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h4 className="text-xl font-black text-[var(--text-primary)]">Assigned Creators</h4>
+                                        <span className="px-3 py-1 bg-spark-red text-white text-[10px] font-black rounded-full uppercase tracking-widest">
+                                            {gigAllocations[selectedGig.id]?.length || 0} Hired
+                                        </span>
+                                    </div>
+
+                                    {(gigAllocations[selectedGig.id] || []).length === 0 ? (
+                                        <div className="text-center py-12 bg-[var(--bg-secondary)] rounded-[2rem] border-2 border-dashed border-[var(--border-color)]">
+                                            <p className="text-[var(--text-secondary)] font-medium">No creators assigned yet.</p>
+                                            <button 
+                                                onClick={() => {
+                                                    setSelectedGig(null);
+                                                    setCurrentView('creators');
+                                                }}
+                                                className="mt-4 text-spark-red font-black text-sm hover:underline"
+                                            >
+                                                Find talent to assign
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            {gigAllocations[selectedGig.id].map((alloc: any) => (
+                                                <div key={alloc.id} className="flex items-center justify-between p-5 bg-[var(--bg-secondary)] rounded-[1.5rem] border border-[var(--border-color)] hover:border-spark-red transition-all group">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="w-12 h-12 bg-[var(--bg-primary)] rounded-xl flex items-center justify-center text-xl font-black text-spark-red shadow-sm group-hover:scale-110 transition-transform">
+                                                            {alloc.studentName?.charAt(0)}
+                                                        </div>
+                                                        <div>
+                                                            <p className="font-black text-[var(--text-primary)]">{alloc.studentName}</p>
+                                                            <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest">{alloc.studentEmail}</p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="px-3 py-1 bg-green-100 text-green-600 text-[10px] font-black rounded-full uppercase tracking-widest">
+                                                            Active
+                                                        </span>
+                                                        <button 
+                                                            onClick={async () => {
+                                                                if (!window.confirm(`Unassign ${alloc.studentName}?`)) return;
+                                                                try {
+                                                                    const { doc, updateDoc } = await import('../firebase');
+                                                                    await updateDoc(doc(db, 'campaignAllocations', alloc.id), { status: 'cancelled' });
+                                                                    fetchAllocations();
+                                                                    alert('Creator unassigned.');
+                                                                } catch (e) {
+                                                                    alert('Failed to unassign.');
+                                                                }
+                                                            }}
+                                                            className="p-2 text-gray-400 hover:text-spark-red transition-colors"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Brand Details Modal */}
+            {selectedBrand && (
+                <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-300">
+                    <div className="bg-[var(--bg-primary)] w-full max-w-2xl rounded-[2rem] sm:rounded-[4rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300 my-auto">
+                        <button
+                            onClick={() => setSelectedBrand(null)}
+                            className="absolute top-8 right-8 w-12 h-12 bg-[var(--bg-tertiary)] rounded-full flex items-center justify-center hover:bg-spark-red hover:text-white transition-all z-10"
+                        >
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+
+                        <div className="h-48 bg-gradient-to-br from-spark-red to-red-400 relative">
+                            <div className="absolute -bottom-12 left-12">
+                                <div className="w-24 h-24 bg-[var(--bg-primary)] p-2 rounded-3xl shadow-xl ring-4 ring-white flex items-center justify-center text-4xl font-black text-spark-red">
+                                    {selectedBrand.imageUrl ? <img src={selectedBrand.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : (selectedBrand.name || '?').charAt(0)}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="pt-20 p-6 sm:p-12 max-h-[70vh] overflow-y-auto">
+                            <div className="flex justify-between items-start mb-8">
+                                <div>
+                                    <h3 className="text-4xl font-black text-[var(--text-primary)] mb-1">{selectedBrand.name}</h3>
+                                    <p className="text-spark-red font-black uppercase tracking-widest text-sm">{selectedBrand.role}</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-6 mb-10">
+                                <div className="p-6 bg-[var(--bg-secondary)] rounded-3xl border border-[var(--border-color)]">
+                                    <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2 opacity-60">About this Brand</p>
+                                    <p className="text-[var(--text-primary)] font-bold text-lg">{selectedBrand.bio || `${selectedBrand.name} is a leading partner in the ${selectedBrand.industry || 'Campus Spark'} ecosystem.`}</p>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    {selectedBrand.industry && (
+                                        <div className="p-4 bg-[var(--bg-secondary)] rounded-2xl">
+                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase mb-1">Industry</p>
+                                            <p className="font-black text-[var(--text-primary)] text-sm">{selectedBrand.industry}</p>
+                                        </div>
+                                    )}
+                                    {selectedBrand.companySize && (
+                                        <div className="p-4 bg-[var(--bg-secondary)] rounded-2xl">
+                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase mb-1">Company Size</p>
+                                            <p className="font-black text-[var(--text-primary)] text-sm">{selectedBrand.companySize}</p>
+                                        </div>
+                                    )}
+                                    {selectedBrand.email && (
+                                        <div className="p-4 bg-[var(--bg-secondary)] rounded-2xl col-span-2">
+                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase mb-1">Email</p>
+                                            <p className="font-bold text-[var(--text-primary)] text-sm">{selectedBrand.email}</p>
+                                        </div>
+                                    )}
+                                    {selectedBrand.website && (
+                                        <div className="p-4 bg-[var(--bg-secondary)] rounded-2xl col-span-2">
+                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase mb-1">Website</p>
+                                            <a href={selectedBrand.website} target="_blank" rel="noopener noreferrer" className="font-bold text-spark-red text-sm hover:underline">{selectedBrand.website}</a>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={() => handleOpenProposalModal(selectedBrand)}
+                                disabled={proposing}
+                                className="w-full py-6 bg-spark-black text-white font-black text-xl rounded-2xl hover:bg-spark-red transition-all shadow-xl shadow-red-100 flex items-center justify-center gap-3"
+                            >
+                                {proposing ? (
+                                    <>
+                                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                        Sending Proposal...
+                                    </>
+                                ) : 'Propose Sponsorship'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

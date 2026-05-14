@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { auth, db, createUserWithEmailAndPassword, doc, setDoc } from '../firebase';
 import { SparkIcon } from '../constants';
 import { UserRole } from '../types';
+import { notifyWelcome } from '../emailNotifier';
 
 const ProgressIndicator: React.FC<{ step: number; color: string; shadow: string }> = ({ step, color, shadow }) => (
     <div className="flex items-center justify-center space-x-4 mb-12">
@@ -81,7 +82,7 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
-    const [selectedRole, setSelectedRole] = useState<UserRole>(UserRole.Ambassador);
+    const [selectedRole, setSelectedRole] = useState<UserRole>(UserRole.Creator);
 
     const [formData, setFormData] = useState({
         email: '',
@@ -93,8 +94,8 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
         handle: '',
         clubType: '',
         companySize: 'Small/Medium (11-50)',
-        influencerType: 'Student Influencer',
-        orgType: 'Student Organization',
+        influencerType: 'Creator',
+        orgType: 'Organization',
     });
 
     const getTheme = () => {
@@ -111,7 +112,7 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                     bg: 'bg-blue-50/50',
                     accent: 'accent-blue-600'
                 };
-            case UserRole.StudentOrg:
+            case UserRole.Organization:
                 return {
                     primary: 'bg-purple-600',
                     gradient: 'bg-gradient-purple',
@@ -173,8 +174,8 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
 
         const targetPage =
             selectedRole === UserRole.Brand ? 'brand-dashboard' :
-                selectedRole === UserRole.StudentOrg ? 'org-dashboard' :
-                    'student-dashboard';
+                selectedRole === UserRole.Organization ? 'org-dashboard' :
+                    'creator-dashboard';
 
         try {
             const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
@@ -190,8 +191,8 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                     handle: formData.handle,
                     clubType: formData.clubType,
                     companySize: formData.companySize,
-                    influencerType: selectedRole === UserRole.Ambassador ? formData.influencerType : null,
-                    orgType: selectedRole === UserRole.StudentOrg ? formData.orgType : null,
+                    influencerType: selectedRole === UserRole.Creator ? formData.influencerType : null,
+                    orgType: selectedRole === UserRole.Organization ? formData.orgType : null,
                     createdAt: new Date().toISOString(),
                 });
 
@@ -203,6 +204,10 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                 } catch (fsErr) {
                     console.warn('Firestore write failed/timed out, redirecting.');
                 }
+
+                // Send welcome email (non-blocking — never delays user)
+                notifyWelcome(formData.email, formData.name, selectedRole);
+
                 onNavigate(targetPage);
             }
         } catch (err: any) {
@@ -258,10 +263,10 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
                             <h2 className="text-xl font-black text-[var(--text-primary)] mb-8">Who are you?</h2>
                             <RoleCard
-                                role={UserRole.Ambassador}
-                                selected={selectedRole === UserRole.Ambassador}
-                                onClick={() => setSelectedRole(UserRole.Ambassador)}
-                                title="I am an Influencer"
+                                role={UserRole.Creator}
+                                selected={selectedRole === UserRole.Creator}
+                                onClick={() => setSelectedRole(UserRole.Creator)}
+                                title="I am a Creator"
                                 description="I want to work with brands and earn from campaigns."
                                 icon="⚡"
                                 themeColor="bg-spark-red"
@@ -273,18 +278,18 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                                 selected={selectedRole === UserRole.Brand}
                                 onClick={() => setSelectedRole(UserRole.Brand)}
                                 title="I am a Brand / Agency"
-                                description="I want to reach students and launch campaigns."
+                                description="I want to reach creators and launch campaigns."
                                 icon="💼"
                                 themeColor="bg-blue-600"
                                 themeBorder="border-blue-600"
                                 themeBg="bg-blue-50/50"
                             />
                             <RoleCard
-                                role={UserRole.StudentOrg}
-                                selected={selectedRole === UserRole.StudentOrg}
-                                onClick={() => setSelectedRole(UserRole.StudentOrg)}
+                                role={UserRole.Organization}
+                                selected={selectedRole === UserRole.Organization}
+                                onClick={() => setSelectedRole(UserRole.Organization)}
                                 title="I am an Organization"
-                                description="I want to find sponsors for our events."
+                                description="I want to find sponsors for our vision."
                                 icon="🏛️"
                                 themeColor="bg-purple-600"
                                 themeBorder="border-purple-600"
@@ -340,22 +345,22 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                                         </select>
                                     </div>
                                 </>
-                            ) : selectedRole === UserRole.Ambassador ? (
+                            ) : selectedRole === UserRole.Creator ? (
                                 <>
                                     <div className="mb-6">
-                                        <label className="block text-sm font-black text-[var(--text-primary)] mb-3 uppercase tracking-widest">Influencer Type</label>
+                                        <label className="block text-sm font-black text-[var(--text-primary)] mb-3 uppercase tracking-widest">Creator Type</label>
                                         <div className="flex gap-4">
                                             <label className="flex-1 cursor-pointer">
-                                                <input type="radio" name="influencerType" value="Student Influencer" checked={formData.influencerType === 'Student Influencer'} onChange={handleChange} className="hidden peer" />
-                                                <div className={`p-4 border-2 border-[var(--border-color)] rounded-2xl peer-checked:${theme.border} peer-checked:${theme.bg} text-center font-bold text-[var(--text-secondary)] peer-checked:${theme.text} transition-all`}>Student Influencer</div>
+                                                <input type="radio" name="influencerType" value="Creator" checked={formData.influencerType === 'Creator'} onChange={handleChange} className="hidden peer" />
+                                                <div className={`p-4 border-2 border-[var(--border-color)] rounded-2xl peer-checked:${theme.border} peer-checked:${theme.bg} text-center font-bold text-[var(--text-secondary)] peer-checked:${theme.text} transition-all`}>Creator</div>
                                             </label>
                                             <label className="flex-1 cursor-pointer">
-                                                <input type="radio" name="influencerType" value="Professional Influencer" checked={formData.influencerType === 'Professional Influencer'} onChange={handleChange} className="hidden peer" />
-                                                <div className={`p-4 border-2 border-[var(--border-color)] rounded-2xl peer-checked:${theme.border} peer-checked:${theme.bg} text-center font-bold text-[var(--text-secondary)] peer-checked:${theme.text} transition-all`}>Professional Influencer</div>
+                                                <input type="radio" name="influencerType" value="Professional" checked={formData.influencerType === 'Professional'} onChange={handleChange} className="hidden peer" />
+                                                <div className={`p-4 border-2 border-[var(--border-color)] rounded-2xl peer-checked:${theme.border} peer-checked:${theme.bg} text-center font-bold text-[var(--text-secondary)] peer-checked:${theme.text} transition-all`}>Professional</div>
                                             </label>
                                         </div>
                                     </div>
-                                    {formData.influencerType === 'Student Influencer' && (
+                                    {formData.influencerType === 'Creator' && (
                                         <InputField id="university" label="Your University" placeholder="e.g. University of Lagos" value={formData.university} focusColor={theme.focus} onChange={handleChange} />
                                     )}
                                     <InputField id="handle" label="Primary Social Handle" placeholder="e.g. @username_spark" value={formData.handle} focusColor={theme.focus} onChange={handleChange} />
@@ -366,19 +371,19 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                                         <label className="block text-sm font-black text-[var(--text-primary)] mb-3 uppercase tracking-widest">Organization Type</label>
                                         <div className="flex gap-4">
                                             <label className="flex-1 cursor-pointer">
-                                                <input type="radio" name="orgType" value="Student Organization" checked={formData.orgType === 'Student Organization'} onChange={handleChange} className="hidden peer" />
-                                                <div className={`p-4 border-2 border-[var(--border-color)] rounded-2xl peer-checked:${theme.border} peer-checked:${theme.bg} text-center font-bold text-[var(--text-secondary)] peer-checked:${theme.text} transition-all`}>Student Org</div>
+                                                <input type="radio" name="orgType" value="Organization" checked={formData.orgType === 'Organization'} onChange={handleChange} className="hidden peer" />
+                                                <div className={`p-4 border-2 border-[var(--border-color)] rounded-2xl peer-checked:${theme.border} peer-checked:${theme.bg} text-center font-bold text-[var(--text-secondary)] peer-checked:${theme.text} transition-all`}>Organization</div>
                                             </label>
                                             <label className="flex-1 cursor-pointer">
-                                                <input type="radio" name="orgType" value="Professional Organization" checked={formData.orgType === 'Professional Organization'} onChange={handleChange} className="hidden peer" />
-                                                <div className={`p-4 border-2 border-[var(--border-color)] rounded-2xl peer-checked:${theme.border} peer-checked:${theme.bg} text-center font-bold text-[var(--text-secondary)] peer-checked:${theme.text} transition-all`}>Professional Org</div>
+                                                <input type="radio" name="orgType" value="Professional" checked={formData.orgType === 'Professional'} onChange={handleChange} className="hidden peer" />
+                                                <div className={`p-4 border-2 border-[var(--border-color)] rounded-2xl peer-checked:${theme.border} peer-checked:${theme.bg} text-center font-bold text-[var(--text-secondary)] peer-checked:${theme.text} transition-all`}>Professional</div>
                                             </label>
                                         </div>
                                     </div>
-                                    {formData.orgType === 'Student Organization' && (
+                                    {formData.orgType === 'Organization' && (
                                         <InputField id="university" label="University Location" placeholder="e.g. OAU Ife" value={formData.university} focusColor={theme.focus} onChange={handleChange} />
                                     )}
-                                    <InputField id="clubType" label="Org Type" placeholder="e.g. Tech Club, Student Union, Sports" value={formData.clubType} focusColor={theme.focus} onChange={handleChange} />
+                                    <InputField id="clubType" label="Org Type" placeholder="e.g. Tech Club, Organization, Sports" value={formData.clubType} focusColor={theme.focus} onChange={handleChange} />
                                 </>
                             )}
 

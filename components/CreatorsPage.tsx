@@ -1,8 +1,7 @@
-
 import React from 'react';
 import { CheckCircleIcon } from '../constants';
 
-const StudentsPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigate }) => {
+const CreatorsPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigate }) => {
   return (
     <div className="bg-[var(--bg-primary)] min-h-screen font-sans text-[var(--text-primary)] text-center">
       {/* Hero Section */}
@@ -50,11 +49,11 @@ const StudentsPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavi
             </div>
 
             <div className="grid md:grid-cols-3 gap-6 text-left">
-                {/* Ambassador Card */}
+                {/* Campus Creator Card */}
                 <div className="bg-[var(--bg-primary)] rounded-[2rem] overflow-hidden border border-[var(--border-color)] group card-hover shadow-sm transition-all duration-500 hover:shadow-2xl hover:shadow-spark-red/5">
                     <div className="h-2 bg-spark-red"></div>
                     <div className="p-8">
-                        <h3 className="text-lg font-bold text-[var(--text-primary)] mb-3 group-hover:text-spark-red transition-colors">Campus Ambassador</h3>
+                        <h3 className="text-lg font-bold text-[var(--text-primary)] mb-3 group-hover:text-spark-red transition-colors">Campus Creator</h3>
                         <p className="text-[var(--text-secondary)] text-sm mb-6 font-medium">
                             Become the face of a brand on your campus.
                         </p>
@@ -67,11 +66,11 @@ const StudentsPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavi
                     </div>
                 </div>
 
-                 {/* Influencer Card */}
+                 {/* Content Creator Card */}
                  <div className="bg-[var(--bg-primary)] rounded-[2rem] overflow-hidden border border-[var(--border-color)] group card-hover shadow-sm transition-all duration-500 hover:shadow-2xl hover:shadow-spark-red/5">
                     <div className="h-2 bg-[var(--text-primary)] opacity-20"></div>
                     <div className="p-8">
-                        <h3 className="text-lg font-bold text-[var(--text-primary)] mb-3 group-hover:text-spark-red transition-colors">Student Influencer</h3>
+                        <h3 className="text-lg font-bold text-[var(--text-primary)] mb-3 group-hover:text-spark-red transition-colors">Content Creator</h3>
                         <p className="text-[var(--text-secondary)] text-sm mb-6 font-medium">
                             Monetize your social media following.
                         </p>
@@ -84,20 +83,20 @@ const StudentsPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavi
                     </div>
                 </div>
 
-                 {/* Club Lead Card */}
+                 {/* Org Lead Card */}
                  <div className="bg-[var(--bg-primary)] rounded-[2rem] overflow-hidden border border-[var(--border-color)] group card-hover shadow-sm transition-all duration-500 hover:shadow-2xl hover:shadow-spark-red/5">
                     <div className="h-2 bg-[var(--text-secondary)] opacity-10"></div>
                     <div className="p-8">
-                        <h3 className="text-lg font-bold text-[var(--text-primary)] mb-3 group-hover:text-spark-red transition-colors">Student Organization</h3>
+                        <h3 className="text-lg font-bold text-[var(--text-primary)] mb-3 group-hover:text-spark-red transition-colors">Organization</h3>
                         <p className="text-[var(--text-secondary)] text-sm mb-6 font-medium">
-                            Get resources for your club or society.
+                            Get resources for your organization or society.
                         </p>
                         <ul className="space-y-3 mb-10 text-[var(--text-secondary)] font-semibold text-xs">
                             <li className="flex items-center"><span className="w-1.5 h-1.5 bg-spark-red rounded-full mr-3"></span>Secure event sponsorships</li>
                             <li className="flex items-center"><span className="w-1.5 h-1.5 bg-spark-red rounded-full mr-3"></span>Find guest speakers</li>
                             <li className="flex items-center"><span className="w-1.5 h-1.5 bg-spark-red rounded-full mr-3"></span>Partner with other clubs</li>
                         </ul>
-                         <button onClick={() => onNavigate('contact')} className="w-full block text-center bg-spark-red text-white font-bold py-3 rounded-xl hover:bg-red-700 transition-all text-sm">Register Club</button>
+                         <button onClick={() => onNavigate('contact')} className="w-full block text-center bg-spark-red text-white font-bold py-3 rounded-xl hover:bg-red-700 transition-all text-sm">Register Organization</button>
                     </div>
                 </div>
             </div>
@@ -107,4 +106,4 @@ const StudentsPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavi
   );
 };
 
-export default StudentsPage;
+export default CreatorsPage;

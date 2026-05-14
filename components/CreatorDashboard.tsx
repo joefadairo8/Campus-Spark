@@ -4,13 +4,14 @@ import { db, auth, collection, query, where, getDocs, limit, doc, getDoc, apiCli
 import { UserRole } from '../types';
 import ProfileView from './ProfileView';
 import DashboardPlaceholder from './DashboardPlaceholder';
+import { notifyWithdrawal, notifyReportSubmitted, notifyProposalReceived, notifyProposalStatus } from '../emailNotifier';
 import { ProposalFormModal } from './ProposalFormModal';
 import { ProposalDetailsModal } from './ProposalDetailsModal';
 import { EventDetailsModal } from './EventDetailsModal';
 import { WalletService } from '../WalletService';
 import { Search, Zap, Rocket, Mail, Wallet, Clock, TrendingUp, ArrowUpRight, ArrowDownLeft, Briefcase, Plus, Trash2, ExternalLink, FileText, Image as ImageIcon, Download } from 'lucide-react';
 
-const StudentDashboard: React.FC<{ 
+const CreatorDashboard: React.FC<{ 
     onNavigate: (page: string) => void, 
     onLogout: () => void,
     isDarkMode: boolean,
@@ -36,8 +37,8 @@ const StudentDashboard: React.FC<{
     const [walletLoading, setWalletLoading] = useState(false);
 
     // Gig application state
-    const [myApplications, setMyApplications] = useState<any[]>([]); // All applications for this student
-    const [myCampaigns, setMyCampaigns] = useState<any[]>([]); // Campaigns influencer is allocated to
+    const [myApplications, setMyApplications] = useState<any[]>([]); // All applications for this creator
+    const [myCampaigns, setMyCampaigns] = useState<any[]>([]); // Campaigns creator is allocated to
     const [applyingToGig, setApplyingToGig] = useState<any>(null); // Gig being applied to
     const [pitchText, setPitchText] = useState('');
     const [pitchSubmitting, setPitchSubmitting] = useState(false);
@@ -70,7 +71,7 @@ const StudentDashboard: React.FC<{
     const tabs = [
         { id: 'gigs', label: 'Opportunities' },
         { id: 'my-campaigns', label: 'My Campaigns', hasBadge: myCampaigns.some(c => c.status === 'selected' || c.status === 'in_progress') },
-        { id: 'ambassador-hub', label: 'Ambassador Hub' },
+        { id: 'creator-hub', label: 'Creator Hub' },
         { id: 'proposals', label: 'Offers', hasBadge: proposals.some(p => p.status === 'pending' && p.recipientId === userProfile?.id) },
         { id: 'brands', label: 'Explore Brands' },
         { id: 'community', label: 'Network' },
@@ -113,7 +114,7 @@ const StudentDashboard: React.FC<{
     const fetchMyCampaigns = async () => {
         if (!userProfile?.id) return;
         try {
-            const campaigns = await WalletService.getAllocationsByInfluencer(userProfile.id);
+            const campaigns = await WalletService.getAllocationsByCreator(userProfile.id);
             // Enrich with campaign details from gigs collection
             const enriched = await Promise.all(campaigns.map(async (c) => {
                 const gigDoc = await getDoc(doc(db, 'gigs', c.campaignId));
@@ -184,14 +185,14 @@ const StudentDashboard: React.FC<{
                 } else if (activeTab === 'brands') {
                     const res = await apiClient.get(`users?role=${encodeURIComponent(UserRole.Brand)}`);
                     items = res.data;
-                } else if (activeTab === 'ambassador-hub') {
+                } else if (activeTab === 'creator-hub') {
                     const [brandsRes, orgsRes] = await Promise.all([
                         apiClient.get(`users?role=${encodeURIComponent(UserRole.Brand)}`),
-                        apiClient.get(`users?role=${encodeURIComponent(UserRole.StudentOrg)}`)
+                        apiClient.get(`users?role=${encodeURIComponent(UserRole.Organization)}`)
                     ]);
                     items = [...brandsRes.data, ...orgsRes.data];
                 } else if (activeTab === 'community') {
-                    const res = await apiClient.get(`users?role=${encodeURIComponent(UserRole.Ambassador)}`);
+                    const res = await apiClient.get(`users?role=${encodeURIComponent(UserRole.Creator)}`);
                     // Filter out self
                     items = res.data.filter((u: any) => u.id !== userProfile?.id);
                 } else if (activeTab === 'events') {
@@ -261,6 +262,12 @@ const StudentDashboard: React.FC<{
                 bankDetails,
                 { name: userProfile.name, email: userProfile.email }
             );
+
+            // Notify user + admin of withdrawal request
+            if (userProfile.email) {
+                notifyWithdrawal(userProfile.email, userProfile.name, Number(withdrawalAmount), { details: bankDetails });
+            }
+
             alert('Withdrawal request submitted successfully!');
             setShowWithdrawModal(false);
             setWithdrawalAmount('');
@@ -313,8 +320,26 @@ const StudentDashboard: React.FC<{
                     report: finalSubmission.text,
                     reportLink: finalSubmission.link,
                     metricsUrl: finalSubmission.metricsUrl,
-                    reportSubmittedAt: new Date().toISOString()
+                    updatedAt: new Date().toISOString()
                 });
+            }
+
+            // Notify Brand
+            try {
+                // Fetch brand's email if possible, or trigger server with brandId
+                // The gig top level contains brandEmail 
+                const gigRes = await apiClient.get(`gigs/${selectedCampaign.campaignId}`);
+                const brandEmail = gigRes.data[0]?.brandEmail || gigRes.data[0]?.brand;
+                if (brandEmail) {
+                    notifyReportSubmitted(
+                        brandEmail,
+                        selectedCampaign.brandName || 'Brand',
+                        userProfile?.name || 'Creator',
+                        selectedCampaign.campaignTitle || 'Campaign'
+                    );
+                }
+            } catch (e) {
+                console.warn('Failed to notify brand of report submission', e);
             }
 
             alert('Work submitted successfully! The brand will review it shortly.');
@@ -388,13 +413,26 @@ const StudentDashboard: React.FC<{
         setSelectedEvent(null);
     };
 
-    // Helper: get this student's application for a specific gig
+    // Helper: get this creator's application for a specific gig
     const getMyApplication = (gigId: string) => myApplications.find((a: any) => a.gigId === gigId);
 
 
-    const handleSendProposal = async (data: { recipientId: string; message: string; budget?: string; timeline?: string; documentUrl?: string; documentName?: string; }) => {
+    const handleSendProposal = async (proposalData: { recipientId: string; message: string; budget?: string; timeline?: string; documentUrl?: string; documentName?: string; }) => {
         try {
-            await apiClient.post('proposals', data);
+            await apiClient.post('proposals', proposalData);
+
+            // Notify Recipient (Brand or Org)
+            const recipientUser = data.find((u: any) => u.id === proposalData.recipientId);
+            
+            if (recipientUser?.email) {
+                notifyProposalReceived(
+                    recipientUser.email,
+                    recipientUser.name || 'User',
+                    userProfile?.name || 'Creator',
+                    proposalData.message
+                );
+            }
+
             alert("Partnership proposal sent successfully!");
             setShowProposalModal(false);
             setProposalRecipient(null);
@@ -408,6 +446,18 @@ const StudentDashboard: React.FC<{
     const handleUpdateStatus = async (id: string, status: 'accepted' | 'rejected' | 'reviewing') => {
         try {
             await apiClient.patch(`proposals/${id}`, { status });
+
+            // Notify the sender of the status change
+            const prop = proposals.find(p => p.id === id);
+            if (prop && prop.sender?.email) {
+                notifyProposalStatus(
+                    prop.sender.email,
+                    prop.sender.name || 'User',
+                    prop.recipient?.name || userProfile?.name || 'Creator',
+                    status
+                );
+            }
+
             fetchProposals();
         } catch (error) {
             console.error("Update status error:", error);
@@ -497,7 +547,7 @@ const StudentDashboard: React.FC<{
         }
 
         switch (activeTab) {
-            case 'ambassador-hub':
+            case 'creator-hub':
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -511,12 +561,12 @@ const StudentDashboard: React.FC<{
                                         <h3 className="text-xl font-black text-[var(--text-primary)] mb-1">{partner.name}</h3>
                                         <p className="text-[10px] font-black text-spark-red uppercase tracking-widest mb-4">{partner.role === UserRole.Brand ? 'Brand' : 'Student Organization'}</p>
                                         <p className="text-sm text-[var(--text-secondary)] line-clamp-2 mb-6 min-h-[40px] font-medium leading-relaxed">
-                                            {partner.bio || `Connect with ${partner.name} to explore brand ambassador roles and campus volunteer opportunities.`}
+                                            {partner.bio || `Connect with ${partner.name} to explore brand creator roles and campus volunteer opportunities.`}
                                         </p>
                                         <button 
                                             onClick={() => {
                                                 setProposalRecipient({ id: partner.id, name: partner.name });
-                                                setProposalInitialMessage(`Hi ${partner.name}, I'm interested in being an ambassador or volunteer for your ${partner.role === UserRole.Brand ? 'brand' : 'organization'}. Here's why I'd be a great fit...`);
+                                                setProposalInitialMessage(`Hi ${partner.name}, I'm interested in being a creator or volunteer for your ${partner.role === UserRole.Brand ? 'brand' : 'organization'}. Here's why I'd be a great fit...`);
                                                 setShowProposalModal(true);
                                             }}
                                             className="w-full py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all flex items-center justify-center gap-2 shadow-lg shadow-black/5 active:scale-95"
@@ -724,14 +774,20 @@ const StudentDashboard: React.FC<{
                                             {isDirectOffer ? (
                                                 <div className="flex gap-3">
                                                     <button
-                                                        onClick={() => handleAcceptOffer(p)}
-                                                        className="px-6 py-3 bg-spark-red text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition-all"
+                                                        onClick={() => setSelectedProposal(p)}
+                                                        className="px-6 py-3 bg-[var(--bg-secondary)] text-[var(--text-primary)] rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[var(--bg-tertiary)] transition-all border border-[var(--border-color)]"
                                                     >
-                                                        Accept Offer
+                                                        View
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleUpdateStatus(p.id, 'accepted')}
+                                                        className="px-6 py-3 bg-spark-red text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition-all shadow-sm"
+                                                    >
+                                                        Accept
                                                     </button>
                                                     <button
                                                         onClick={() => handleUpdateStatus(p.id, 'rejected')}
-                                                        className="px-6 py-3 bg-spark-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-800 transition-all border border-transparent"
+                                                        className="px-6 py-3 bg-spark-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-800 transition-all border border-transparent shadow-sm"
                                                     >
                                                         Reject
                                                     </button>
@@ -794,7 +850,7 @@ const StudentDashboard: React.FC<{
                                     {member.imageUrl ? <img src={member.imageUrl} className="w-full h-full object-cover" alt={member.name} /> : (member.name || '?').charAt(0)}
                                 </div>
                                 <h3 className="font-black text-lg text-[var(--text-primary)]">{member.name}</h3>
-                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-4">{member.university || 'Influencer'}</p>
+                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-4">{member.university || 'Creator'}</p>
                                 <button
                                     onClick={() => {
                                         setProposalRecipient({ id: member.id, name: member.name });
@@ -1180,13 +1236,13 @@ const StudentDashboard: React.FC<{
     return (
         <>
         <DashboardShell
-            role={UserRole.Ambassador}
+            role={UserRole.Creator}
             activeView={currentSection}
             onViewChange={setCurrentSection}
             onLogout={onLogout}
             sidebarItems={sidebarItems}
             userName={userProfile?.name || "Spark Member"}
-            userSub={userProfile?.university || "Influencer"}
+            userSub={userProfile?.university || "Creator"}
             userImage={userProfile?.imageUrl}
             isDarkMode={isDarkMode}
             toggleTheme={toggleTheme}
@@ -1607,4 +1663,4 @@ const StudentDashboard: React.FC<{
     );
 };
 
-export default StudentDashboard;
+export default CreatorDashboard;

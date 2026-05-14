@@ -6,7 +6,7 @@ const RoleSelectionSection: React.FC<{ onNavigate: (page: string) => void }> = (
     const roles = [
         {
             id: 'ambassador',
-            title: 'Student Ambassador',
+            title: 'Campus Creator',
             description: 'Monetize your influence. Join top brand campaigns and grow your personal brand.',
             icon: <GraduationCap className="w-12 h-12" />,
             color: 'bg-spark-red',
@@ -16,7 +16,7 @@ const RoleSelectionSection: React.FC<{ onNavigate: (page: string) => void }> = (
         {
             id: 'brand',
             title: 'Brand Partner',
-            description: 'Reach the youth market. Connect with verified campus influencers for high-impact campaigns.',
+            description: 'Reach the youth market. Connect with verified campus creators for high-impact campaigns.',
             icon: <Building2 className="w-12 h-12" />,
             color: 'bg-spark-black',
             lightColor: 'bg-gray-50',
@@ -24,7 +24,7 @@ const RoleSelectionSection: React.FC<{ onNavigate: (page: string) => void }> = (
         },
         {
             id: 'org',
-            title: 'Student Organization',
+            title: 'Organization',
             description: 'Scale your impact. Secure brand sponsorships and resources for your campus events.',
             icon: <Users className="w-12 h-12" />,
             color: 'bg-spark-red',

@@ -25,7 +25,7 @@ const UsersIcon = ({ className }: { className?: string }) => (
 export const NAV_LINKS: NavLink[] = [
     { label: 'About Us', href: 'about' },
     { label: 'For Brands', href: 'for-brands' },
-    { label: 'For Students', href: 'for-students' },
+    { label: 'For Creators', href: 'for-creators' },
     { label: 'Opportunities', href: 'careers' },
     { label: 'Contact', href: 'contact' },
 ];
@@ -34,33 +34,33 @@ export const FEATURES: Feature[] = [
     {
         icon: <CalendarIcon className="w-8 h-8 text-spark-red" />,
         title: "Event Sponsorship Finder",
-        description: "Fund your next major campus event. Connect with premium Nigerian brands looking to sponsor concerts, tech fests, and student gatherings.",
+        description: "Fund your next major campus event. Connect with premium Nigerian brands looking to sponsor concerts, tech fests, and campus gatherings.",
         bullets: ["Direct sponsorship requests", "Verified organizer profiles", "Tiered visibility options"],
         useCase: "A computer science club at UNILAG secures a ₦5M tech sponsorship for their annual hackathon.",
     },
     {
         icon: <UsersIcon className="w-8 h-8 text-spark-red" />,
-        title: "Ambassador Marketplace",
-        description: "Scale your campus influence. Our marketplace allows brands to find and hire the top student voices across all 36 Nigerian states.",
-        bullets: ["Nationwide university coverage", "Performance-based rewards", "Integrated task management"],
-        useCase: "A top Nigerian lifestyle brand launches an ambassador program with 50 students across 5 universities in 24 hours.",
+        title: "Creator Marketplace",
+        description: "Scale your campus influence. Our marketplace allows brands to find and hire the top voices across all 36 Nigerian states.",
+        bullets: ["Nationwide coverage", "Performance-based rewards", "Integrated task management"],
+        useCase: "A top Nigerian lifestyle brand launches a creator program with 50 creators across 5 universities in 24 hours.",
     },
 ];
 
 export const HOW_IT_WORKS_CONTENT: HowItWorksContent = {
     [UserType.Brands]: [
         { title: "Set Your Objective", description: "Define your campaign goals—be it app downloads, brand awareness, or product sampling." },
-        { title: "Browse the Marketplace", description: "Search for influencers and student clubs by university, state, or interest group." },
-        { title: "Initiate Collaboration", description: "Send automated offers or custom sponsorship proposals to your selected student leads." },
+        { title: "Browse the Marketplace", description: "Search for creators and organizations by university, state, or interest group." },
+        { title: "Initiate Collaboration", description: "Send automated offers or custom sponsorship proposals to your selected leads." },
         { title: "Track Performance", description: "Monitor real-time engagement and growth through our integrated dashboard." },
     ],
-    [UserType.Clubs]: [
-        { title: "Build Your Profile", description: "Create a verified digital home for your student organization." },
+    [UserType.Organizations]: [
+        { title: "Build Your Profile", description: "Create a verified digital home for your organization." },
         { title: "List Your Events", description: "Post upcoming concerts, seminars, or festivals to attract corporate sponsors." },
         { title: "Secure Funding", description: "Chat directly with brand managers and finalize sponsorship agreements." },
         { title: "Execute & Grow", description: "Grow your club's impact with professional resources and corporate backing." },
     ],
-    [UserType.Ambassadors]: [
+    [UserType.Creators]: [
         { title: "Join the Elite", description: "Create a portfolio that showcases your campus influence and creative skills." },
         { title: "Apply for Campaigns", description: "Apply to work with brands you love. Get selected based on your profile." },
         { title: "Create Content", description: "Promote products, host events, and drive authentic buzz on campus." },
@@ -79,25 +79,25 @@ export const PARTNER_LOGOS = [
 
 export const TESTIMONIALS: Testimonial[] = [
     {
-        quote: "Campus Spark bridged the gap between us and the Gen-Z market in Lagos. The ROI on our ambassador program was 4x compared to traditional ads.",
+        quote: "Campus Spark bridged the gap between us and the Gen-Z market in Lagos. The ROI on our creator program was 4x compared to traditional ads.",
         name: "Damilola Ade",
         title: "Growth Lead, FinTech X",
     },
     {
-        quote: "Our student week used to be underfunded. Now, brands reach out to us directly via Spark. It's been a game changer for our organization.",
+        quote: "Our campus week used to be underfunded. Now, brands reach out to us directly via Spark. It's been a game changer for our organization.",
         name: "Ikenna Eze",
-        title: "President, UNN Student Union",
+        title: "President, UNN Campus Union",
     },
     {
-        quote: "I've worked with 3 brands this semester as an ambassador. The payments are fast and the experience is helping me build a solid marketing CV.",
-        name: "Fatima Yusuf",
-        title: "Student Influencer, ABU Zaria",
+        quote: "I've worked with 3 brands this semester as a creator. The payments are fast and the experience is helping me build a solid marketing CV.",
+        name: "Yusuf",
+        title: "Creator, ABU Zaria",
     },
 ];
 
 export const FAQ_ITEMS: FaqItem[] = [
-    { question: "How do I get verified?", answer: "Students are verified using university emails or valid student ID cards. Organizations must provide proof of registration." },
-    { question: "Is it really free for students?", answer: "Yes, 100%. We only charge brands a service fee when they hire ambassadors or sponsor events." },
+    { question: "How do I get verified?", answer: "Users are verified using university emails or valid ID cards. Organizations must provide proof of registration." },
+    { question: "Is it really free for creators?", answer: "Yes, 100%. We only charge brands a service fee when they hire creators or sponsor events." },
 ];
 
 // Mock data for campus campaigns and gigs - REMOVED for production readiness
@@ -106,7 +106,7 @@ export const LIVE_OPPORTUNITIES: Opportunity[] = [
     { id: '1', title: 'Promote Fintech App', amount: '₦20,000', type: 'Campaign', category: 'Fintech', company: 'NeoBank' },
     { id: '2', title: 'Campus Tech Event', amount: '₦150,000', type: 'Sponsorship', category: 'Technology', company: 'GlobalDev' },
     { id: '3', title: 'NGO Awareness Drive', amount: '₦80,000', type: 'Campaign', category: 'Social Impact', company: 'HealthFirst' },
-    { id: '4', title: 'Brand Ambassador', amount: '₦50,000/mo', type: 'Ambassador', category: 'Lifestyle', company: 'SparkStyle' },
+    { id: '4', title: 'Brand Creator', amount: '₦50,000/mo', type: 'Creator', category: 'Lifestyle', company: 'SparkStyle' },
 ];
 
 export const STATES = ["All", "Lagos", "Oyo", "Ogun", "Abuja", "Enugu", "Kaduna", "Rivers", "Edo"];

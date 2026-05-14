@@ -22,7 +22,7 @@ const HeroSection: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavig
           </div>
           
           <h1 className="text-3xl md:text-5xl lg:text-6xl font-fancy font-black tracking-tighter leading-[1.1] mb-8 text-[var(--text-primary)] max-w-4xl">
-            Connect with <span className="text-gradient-red italic">Influencers</span> and Youth Audiences.
+            Connect with <span className="text-gradient-red italic">Creators</span> and Youth Audiences.
           </h1>
           
           <p className="max-w-xl mx-auto text-base md:text-lg text-[var(--text-secondary)] font-medium leading-relaxed mb-12">

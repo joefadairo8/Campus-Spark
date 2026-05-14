@@ -476,7 +476,7 @@ app.post('/api/gigs/:id/apply', authenticateToken, async (req: any, res) => {
                 [gig.brandEmail || gig.brand, gig.brand]
             );
             if (brandUser?.email) {
-                sendNewApplicationEmail(brandUser.email, brandUser.name, student?.name || 'A student', gig.title, pitch).catch(() => {});
+                sendNewApplicationEmail(brandUser.email, brandUser.name, student?.name || 'A creator', gig.title, pitch).catch(() => {});
             }
         } catch (_) {}
 
@@ -490,7 +490,7 @@ app.get('/api/gigs/:id/applications', authenticateToken, async (req: any, res) =
     try {
         const [applications] = await pool.query(`
             SELECT a.*, 
-                   u.id as studentId, u.name as studentName, u.email as studentEmail, u.imageUrl as studentImageUrl, u.university as studentUniversity, u.bio as studentBio
+                   u.id as creatorId, u.name as creatorName, u.email as creatorEmail, u.imageUrl as creatorImageUrl, u.university as creatorUniversity, u.bio as creatorBio
             FROM GigApplication a
             JOIN User u ON a.studentId = u.id
             WHERE a.gigId = ?
@@ -517,7 +517,7 @@ app.patch('/api/gigs/:id/applications/:appId', authenticateToken, async (req: an
             await pool.query('UPDATE GigApplication SET status = "rejected" WHERE gigId = ? AND id != ? AND status = "pending"', [req.params.id, req.params.appId]);
         }
 
-        // Notify student of decision (non-blocking)
+        // Notify creator of decision (non-blocking)
         try {
             const [[gig]]: any = await pool.query('SELECT title, brand, brandEmail FROM Gig WHERE id = ?', [req.params.id]);
             const [[student]]: any = await pool.query('SELECT name, email FROM User WHERE id = ?', [application.studentId]);
@@ -571,8 +571,8 @@ app.post('/api/gigs/:id/report', authenticateToken, async (req: any, res) => {
         try {
             const [[student]]: any = await pool.query('SELECT name FROM User WHERE id = ?', [req.user.id]);
             const [[brandUser]]: any = await pool.query('SELECT name, email FROM User WHERE email = ? OR name = ? LIMIT 1', [gig.brandEmail || gig.brand, gig.brand]);
-            if (brandUser?.email) sendReportSubmittedEmail(brandUser.email, brandUser.name, student?.name || 'An influencer', gig.title).catch(() => {});
-            sendReportSubmittedEmail(process.env.ADMIN_EMAIL || 'hello@campusspark.com.ng', 'Admin', student?.name || 'An influencer', gig.title).catch(() => {});
+            if (brandUser?.email) sendReportSubmittedEmail(brandUser.email, brandUser.name, student?.name || 'A creator', gig.title).catch(() => {});
+            sendReportSubmittedEmail(process.env.ADMIN_EMAIL || 'hello@campusspark.com.ng', 'Admin', student?.name || 'A creator', gig.title).catch(() => {});
         } catch (_) {}
 
         res.json({ message: 'Campaign report submitted and is under review!', gig: updatedGig });
@@ -602,7 +602,7 @@ app.post('/api/gigs/:id/approve-report', authenticateToken, async (req: any, res
         await pool.query('UPDATE Gig SET status = "completed" WHERE id = ?', [req.params.id]);
         const [[updatedGig]]: any = await pool.query('SELECT * FROM Gig WHERE id = ?', [req.params.id]);
 
-        // Notify student that report was approved (non-blocking)
+        // Notify creator that report was approved (non-blocking)
         try {
             if (gig.studentId) {
                 const [[student]]: any = await pool.query('SELECT name, email FROM User WHERE id = ?', [gig.studentId]);
@@ -637,7 +637,7 @@ app.post('/api/gigs/:id/reject-report', authenticateToken, async (req: any, res)
         await pool.query('UPDATE Gig SET status = "in_progress" WHERE id = ?', [req.params.id]);
         const [[updatedGig]]: any = await pool.query('SELECT * FROM Gig WHERE id = ?', [req.params.id]);
 
-        // Notify student that revision is needed (non-blocking)
+        // Notify creator that revision is needed (non-blocking)
         try {
             if (gig.studentId) {
                 const [[student]]: any = await pool.query('SELECT name, email FROM User WHERE id = ?', [gig.studentId]);
@@ -645,7 +645,7 @@ app.post('/api/gigs/:id/reject-report', authenticateToken, async (req: any, res)
             }
         } catch (_) {}
 
-        res.json({ message: 'Report rejected. Student has been notified to revise.', gig: updatedGig });
+        res.json({ message: 'Report rejected. Creator has been notified to revise.', gig: updatedGig });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
@@ -736,9 +736,35 @@ app.get('/api/notifications', authenticateToken, async (req: any, res) => {
 
 // --- EMAIL NOTIFY ENDPOINT (for Firebase-side events: wallet, withdrawal) ---
 app.post('/api/email/notify', async (req, res) => {
-    const { type, to, name, amount, reference, bankDetails } = req.body;
+    const { type, to, name, amount, reference, bankDetails, subject, title, body, role } = req.body;
     try {
         switch (type) {
+            case 'welcome':
+                if (to && name) await sendWelcomeEmail(to, name, role || 'User');
+                sendAdminNewUserAlert(name, to, role || 'User').catch(() => {});
+                break;
+            case 'proposal_received':
+                if (to) await sendProposalReceivedEmail(to, req.body.recipientName, name, body);
+                break;
+            case 'proposal_status':
+                if (to) await sendProposalStatusEmail(to, name, req.body.recipientName, req.body.status);
+                break;
+            case 'new_application':
+                if (to) await sendNewApplicationEmail(to, name, req.body.creatorName, title, body);
+                break;
+            case 'application_decision':
+                if (to) await sendApplicationDecisionEmail(to, name, title, req.body.brandName, req.body.status);
+                break;
+            case 'report_submitted':
+                if (to) await sendReportSubmittedEmail(to, name, req.body.creatorName, title);
+                sendReportSubmittedEmail(process.env.ADMIN_EMAIL || 'hello@campusspark.com.ng', 'Admin', req.body.creatorName || 'A user', title).catch(() => {});
+                break;
+            case 'report_approved':
+                if (to) await sendReportApprovedEmail(to, name, title, req.body.brandName);
+                break;
+            case 'report_rejected':
+                if (to) await sendReportRejectedEmail(to, name, title, req.body.brandName);
+                break;
             case 'topup':
                 if (to && name && amount) await sendTopUpConfirmationEmail(to, name, Number(amount), reference || 'N/A');
                 break;
@@ -749,6 +775,9 @@ app.post('/api/email/notify', async (req, res) => {
                         sendWithdrawalConfirmationEmail(to, name, Number(amount)),
                     ]);
                 }
+                break;
+            case 'generic':
+                if (to && subject && title && body) await sendGenericNotificationEmail(to, subject, title, body);
                 break;
             default:
                 return res.status(400).json({ error: 'Unknown notification type.' });

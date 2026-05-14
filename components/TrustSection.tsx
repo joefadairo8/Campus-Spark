@@ -3,7 +3,7 @@ import { PARTNER_LOGOS } from '../constants';
 
 const TrustSection: React.FC = () => {
   const metrics = [
-    { label: 'Verified Influencers', value: '15k+' },
+    { label: 'Verified Creators', value: '15k+' },
     { label: 'Campus Partners', value: '120+' },
     { label: 'Campaign Payouts', value: '₦45M+' },
     { label: 'Active Brands', value: '250+' },

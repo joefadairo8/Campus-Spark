@@ -262,7 +262,7 @@ const AdminDashboard: React.FC<{
                                             <span className="font-black text-spark-red">₦20,000 / gig</span>
                                         </div>
                                         <div className="flex items-center justify-between p-4 bg-[var(--bg-secondary)] rounded-2xl">
-                                            <span className="text-sm font-bold text-[var(--text-secondary)]">Influencer Commission</span>
+                                            <span className="text-sm font-bold text-[var(--text-secondary)]">Creator Commission</span>
                                             <span className="font-black text-spark-red">10%</span>
                                         </div>
                                         <div className="flex items-center justify-between p-4 bg-[var(--bg-secondary)] rounded-2xl">
@@ -563,7 +563,7 @@ const AdminDashboard: React.FC<{
                                                 <td className="px-8 py-5">
                                                     <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border ${
                                                         u.role === 'Brand' ? 'bg-blue-500/10 text-blue-600 border-blue-500/20' :
-                                                        u.role?.includes('Influencer') ? 'bg-spark-red/10 text-spark-red border-spark-red/20' : 
+                                                        (u.role?.includes('Creator')) ? 'bg-spark-red/10 text-spark-red border-spark-red/20' : 
                                                         'bg-green-500/10 text-green-600 border-green-500/20'
                                                     }`}>
                                                         {u.role || 'Member'}
@@ -810,7 +810,7 @@ const AdminDashboard: React.FC<{
                                                     <div 
                                                         className={`h-full rounded-full transition-all duration-1000 ${
                                                             role === 'Brand' ? 'bg-blue-600' : 
-                                                            role.includes('Influencer') ? 'bg-spark-red' : 'bg-green-600'
+                                                            (role.includes('Creator')) ? 'bg-spark-red' : 'bg-green-600'
                                                         }`} 
                                                         style={{ width: `${pct}%` }}
                                                     ></div>

@@ -25,8 +25,8 @@ const Navbar: React.FC<{
 
   const dashboardPage = user?.role === 'Admin' ? 'admin-dashboard' :
     user?.role === 'Brand' ? 'brand-dashboard' :
-      (user?.role === 'Ambassador/Influencer' || user?.role === 'Student/Professional Influencer') ? 'student-dashboard' :
-        (user?.role === 'Student Organization' || user?.role === 'Student/Professional Organization') ? 'org-dashboard' : 'login';
+      (user?.role?.includes('Creator')) ? 'creator-dashboard' :
+        (user?.role === 'Organization') ? 'org-dashboard' : 'creator-dashboard';
 
   return (
     <nav className="bg-[var(--bg-primary)]/80 backdrop-blur-xl sticky top-0 z-50 border-b border-[var(--border-color)]">

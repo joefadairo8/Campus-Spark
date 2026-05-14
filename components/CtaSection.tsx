@@ -14,14 +14,14 @@ const CtaSection: React.FC<{ onNavigate: (page: string) => void }> = ({ onNaviga
               Start earning. Start collaborating. <br className="hidden md:block"/><span className="italic">Start growing.</span>
             </h2>
             <p className="mt-8 text-base md:text-lg leading-relaxed text-white/80 max-w-2xl mx-auto mb-10 font-medium">
-              Join the marketplace where brands, influencers, and organizations meet to create high-impact youth marketing campaigns.
+              Join the marketplace where brands, creators, and organizations meet to create high-impact youth marketing campaigns.
             </p>
             <div className="flex flex-col sm:flex-row justify-center gap-4">
                <button
                 onClick={() => onNavigate('create-account')}
                 className="bg-white text-spark-red font-black py-4 px-10 rounded-2xl text-base hover:scale-105 transition-all shadow-xl"
               >
-                Join as Influencer
+                Join as Creator
               </button>
               <button
                 onClick={() => onNavigate('create-account')}

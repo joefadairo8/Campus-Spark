@@ -9,6 +9,11 @@ import {
 import { getFirestore, collection as firebaseCollection, doc as firebaseDoc, getDocs as firebaseGetDocs, getDoc as firebaseGetDoc, setDoc as firebaseSetDoc, addDoc as firebaseAddDoc, updateDoc as firebaseUpdateDoc, deleteDoc as firebaseDeleteDoc, query as firebaseQuery, where as firebaseWhere, or as firebaseOr, limit as firebaseLimit, orderBy as firebaseOrderBy, serverTimestamp as firebaseTimestamp, runTransaction, enableIndexedDbPersistence } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getAnalytics } from "firebase/analytics";
+import { 
+  notifyProposalReceived, notifyProposalStatus, 
+  notifyNewApplication, notifyApplicationDecision, 
+  notifyReportSubmitted, notifyReportApproved, notifyReportRejected 
+} from './emailNotifier';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -256,7 +261,7 @@ export const apiClient = {
       if (!currentUser) return { data: [] };
       const q = firebaseQuery(
         firebaseCollection(db, 'applications'),
-        firebaseWhere('studentId', '==', currentUser.uid)
+        firebaseWhere('creatorId', '==', currentUser.uid)
       );
       const snapshot = await firebaseGetDocs(q);
       return { data: snapshot.docs.map(d => ({ id: d.id, ...d.data() })) };
@@ -281,7 +286,7 @@ export const apiClient = {
 
     // Special handling for legacy role filters
     if (params.role) {
-      const ambassadorRoles = ['Student/Professional Influencer', 'Ambassador', 'Ambassador/Influencer', 'Student Influencer'];
+      const ambassadorRoles = ['Creator', 'Campus Creator', 'Ambassador', 'Ambassador/Influencer'];
       if (ambassadorRoles.includes(params.role)) {
         constraints.push(firebaseWhere('role', 'in', ambassadorRoles));
       } else {
@@ -328,18 +333,18 @@ export const apiClient = {
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error('You must be logged in to apply.');
 
-      // Fetch student profile for enrichment
+      // Fetch creator profile for enrichment
       const userDoc = await firebaseGetDoc(firebaseDoc(db, 'users', currentUser.uid));
-      const studentProfile = userDoc.exists() ? (userDoc.data() as any) : {};
+      const creatorProfile = userDoc.exists() ? (userDoc.data() as any) : {};
 
       const applicationData = {
         ...cleanData,
-        studentId: currentUser.uid,
-        student: {
+        creatorId: currentUser.uid,
+        creator: {
           id: currentUser.uid,
-          name: studentProfile.name || studentProfile.fullName || currentUser.displayName || 'Unknown Student',
-          email: studentProfile.email || currentUser.email || '',
-          university: studentProfile.university || 'Campus Spark'
+          name: creatorProfile.name || creatorProfile.fullName || currentUser.displayName || 'Unknown Creator',
+          email: creatorProfile.email || currentUser.email || '',
+          university: creatorProfile.university || 'Campus Spark'
         },
         status: 'pending',
         createdAt: new Date().toISOString()
@@ -352,6 +357,21 @@ export const apiClient = {
       // Also save to top-level applications collection with the SAME ID for easy lookup/update
       const topAppDocRef = firebaseDoc(db, 'applications', docRef.id);
       await firebaseSetDoc(topAppDocRef, { ...applicationData, gigId });
+
+      // Notify Brand
+      try {
+        const gigDoc = await firebaseGetDoc(firebaseDoc(db, 'gigs', gigId));
+        if (gigDoc.exists()) {
+            const gigData = gigDoc.data() as any;
+            const brandEmail = gigData.brandEmail || gigData.brand; 
+            const brandName = gigData.brandName || gigData.brand || 'Brand User';
+            if (brandEmail) {
+                notifyNewApplication(brandEmail, brandName, applicationData.creator.name, gigData.title, applicationData.pitch || '');
+            }
+        }
+      } catch (e) {
+          console.warn('Failed to send gig application email', e);
+      }
 
       return { data: { id: docRef.id, ...applicationData } };
     }
@@ -366,10 +386,10 @@ export const apiClient = {
       const gigData = gigSnap.data() as any;
 
       const brandRef = firebaseDoc(db, 'wallets', gigData.brandId);
-      const influencerRef = firebaseDoc(db, 'wallets', gigData.studentId);
+      const creatorRef = firebaseDoc(db, 'wallets', gigData.creatorId);
       
       const bSnap = await transaction.get(brandRef);
-      const iSnap = await transaction.get(influencerRef);
+      const iSnap = await transaction.get(creatorRef);
 
       const bData = bSnap.exists() ? (bSnap.data() as any) : { balance: 0, pending: 0, escrow: 0 };
       const iData = iSnap.exists() ? (iSnap.data() as any) : { balance: 0, pending: 0, escrow: 0 };
@@ -379,17 +399,17 @@ export const apiClient = {
         escrow: (bData.escrow || 0) - amount, 
         lastUpdated: firebaseTimestamp() 
       });
-      transaction.set(influencerRef, { 
+      transaction.set(creatorRef, { 
         ...iData, 
         balance: (iData.balance || 0) + amount,
         escrow: Math.max(0, (iData.escrow || 0) - amount), 
         lastUpdated: firebaseTimestamp() 
       });
       
-      // Record Influencer Transaction
+      // Record Creator Transaction
       const iTransRef = firebaseDoc(firebaseCollection(db, 'transactions'));
       transaction.set(iTransRef, {
-        userId: gigData.studentId, amount, type: 'credit', status: 'completed',
+        userId: gigData.creatorId, amount, type: 'credit', status: 'completed',
         description: `Earnings: ${gigData.title}`, relatedUserId: gigData.brandId, createdAt: firebaseTimestamp()
       });
 
@@ -440,6 +460,17 @@ export const apiClient = {
       }
     }
   const docRef = await firebaseAddDoc(colRef, enrichedData);
+
+  // Notify Proposal Recipient
+  if (parts[0] === 'proposals' && enrichedData.recipient?.email) {
+      notifyProposalReceived(
+          enrichedData.recipient.email,
+          enrichedData.recipient.name,
+          enrichedData.sender?.name || 'A user',
+          data.message || ''
+      );
+  }
+
   return { data: { id: docRef.id, ...data } };
     } catch (err: any) {
       console.error('apiClient.post error:', err);
@@ -479,8 +510,8 @@ export const apiClient = {
           if (!appSnap.exists()) throw new Error('Application document not found in sub-collection.');
           
           const appData = appSnap.data() as any;
-          const studentId = appData.studentId || appData.student?.id;
-          if (!studentId) throw new Error('Could not identify student from application data.');
+          const creatorId = appData.creatorId || appData.creator?.id;
+          if (!creatorId) throw new Error('Could not identify creator from application data.');
 
           const gigSnap = await transaction.get(gigRef);
           if (!gigSnap.exists()) throw new Error('The associated Gig no longer exists.');
@@ -489,8 +520,8 @@ export const apiClient = {
           const brandWalletRef = firebaseDoc(db, 'wallets', gigData.brandId);
           const bSnap = await transaction.get(brandWalletRef);
           
-          const influencerWalletRef = firebaseDoc(db, 'wallets', studentId);
-          const iSnap = await transaction.get(influencerWalletRef);
+          const creatorWalletRef = firebaseDoc(db, 'wallets', creatorId);
+          const iSnap = await transaction.get(creatorWalletRef);
 
           // 3. START ALL WRITES
           const rewardAmount = allocationAmount || Number(gigData.reward || 0);
@@ -533,23 +564,23 @@ export const apiClient = {
           transaction.update(gigRef, { 
             status: 'in_progress', 
             budget: remainingBudget, // Update remaining budget on the campaign
-            studentId: studentId,
+            creatorId: creatorId,
             acceptedAppId: appId
           });
           
-          // 6. Update Influencer Wallet (Add to Escrow/Locked Funds)
+          // 6. Update Creator Wallet (Add to Escrow/Locked Funds)
           const iData = iSnap.exists() ? (iSnap.data() as any) : { balance: 0, pending: 0, escrow: 0 };
           
-          transaction.set(influencerWalletRef, {
+          transaction.set(creatorWalletRef, {
             ...iData,
             escrow: (iData.escrow || 0) + rewardAmount,
             lastUpdated: firebaseTimestamp()
           }, { merge: true });
 
-          // 7. Record Influencer Transaction (Locked)
+          // 7. Record Creator Transaction (Locked)
           const iTransRef = firebaseDoc(firebaseCollection(db, 'transactions'));
           transaction.set(iTransRef, {
-            userId: studentId,
+            userId: creatorId,
             amount: rewardAmount,
             type: 'credit',
             status: 'escrow',
@@ -565,10 +596,10 @@ export const apiClient = {
             campaignTitle: gigData.title || 'Active Campaign',
             brandId: gigData.brandId,
             brandName: gigData.brandName || gigData.brand || 'Verified Brand',
-            influencerId: studentId,
-            influencerName: appData.student?.name || 'Student',
-            influencerUniversity: appData.student?.university || '',
-            influencerEmail: appData.student?.email || '',
+            creatorId: creatorId,
+            creatorName: appData.creator?.name || 'Creator',
+            creatorUniversity: appData.creator?.university || '',
+            creatorEmail: appData.creator?.email || '',
             amount: rewardAmount,
             status: 'in_progress',
             applicationId: appId,
@@ -581,6 +612,21 @@ export const apiClient = {
           // 10. Update Application in top-level collection (best effort, creates if missing)
           const appTopRef = firebaseDoc(db, 'applications', appId);
           transaction.set(appTopRef, { status: 'accepted', updatedAt: new Date().toISOString() }, { merge: true });
+
+          // Notify Creator of Acceptance
+          try {
+            if (appData.creator?.email) {
+                notifyApplicationDecision(
+                    appData.creator.email, 
+                    appData.creator.name || 'Creator', 
+                    gigData.title || 'Campaign', 
+                    gigData.brandName || gigData.brand || 'Verified Brand', 
+                    'accepted'
+                );
+            }
+          } catch (e) {
+              console.warn('Failed to send application decision email', e);
+          }
 
           return { data: { success: true } };
         });

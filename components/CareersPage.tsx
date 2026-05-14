@@ -8,7 +8,7 @@ const CareersPage: React.FC<{ onNavigate: (page: string) => void, user?: any }> 
   const [opportunities, setOpportunities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const isInfluencer = user?.role === 'Ambassador/Influencer' || user?.role === 'Student/Professional Influencer';
+  const isCreator = user?.role?.includes('Influencer') || user?.role?.includes('Creator') || user?.role?.includes('Ambassador');
 
   useEffect(() => {
     const fetchOpportunities = async () => {
@@ -89,7 +89,7 @@ const CareersPage: React.FC<{ onNavigate: (page: string) => void, user?: any }> 
                 Gigs from the <span className="text-gradient-red italic">Brands</span> You Love.
             </h1>
             <p className="text-base md:text-lg text-[var(--text-secondary)] mb-10 leading-relaxed max-w-xl font-medium">
-              Don't wait until graduation. Join elite ambassador programs, secure sponsorships, or get hired for major campus tours.
+              Don't wait until graduation. Join elite creator programs, secure sponsorships, or get hired for major campus tours.
             </p>
             <div className="flex flex-wrap gap-4">
               <button
@@ -151,7 +151,7 @@ const CareersPage: React.FC<{ onNavigate: (page: string) => void, user?: any }> 
                     <div 
                       key={opp.id} 
                       className="group p-8 border border-[var(--border-color)] rounded-[2.5rem] bg-[var(--bg-primary)] hover:border-spark-red/30 transition-all flex flex-col lg:flex-row items-center gap-10 cursor-pointer card-hover shadow-sm shadow-black/5" 
-                      onClick={() => onNavigate(user ? (opp.type === 'Campaign' ? 'student-dashboard' : 'org-dashboard') : 'login')}
+                      onClick={() => onNavigate(user ? (opp.type === 'Campaign' ? 'creator-dashboard' : 'org-dashboard') : 'login')}
                     >
                       <div className="w-20 h-20 bg-spark-red/5 rounded-[1.5rem] flex items-center justify-center p-4 border border-spark-red/10 flex-shrink-0 group-hover:scale-110 transition-transform text-xl font-black text-spark-red">
                         {(opp.displayBrand || 'S').charAt(0)}

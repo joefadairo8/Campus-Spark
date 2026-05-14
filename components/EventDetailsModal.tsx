@@ -4,7 +4,7 @@ interface EventDetailsModalProps {
     isOpen: boolean;
     onClose: () => void;
     event: any;
-    userRole?: 'Student' | 'Brand' | 'Org';
+    userRole?: 'Creator' | 'Brand' | 'Org';
     onContact?: (event: any) => void;
 }
 

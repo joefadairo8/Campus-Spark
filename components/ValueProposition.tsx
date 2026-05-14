@@ -17,7 +17,7 @@ const ValueProposition: React.FC = () => {
                     <div className="p-8 bg-[var(--bg-primary)] rounded-xl shadow-lg hover:shadow-2xl transition-shadow duration-300">
                         <h3 className="text-xl font-bold text-[var(--text-primary)]">Our Mission</h3>
                         <p className="mt-2 text-[var(--text-secondary)]">
-                            To empower students across Nigeria by connecting them with meaningful opportunities, while enabling brands to build authentic, lasting relationships with the next generation.
+                            To empower creators across Nigeria by connecting them with meaningful opportunities, while enabling brands to build authentic, lasting relationships with the next generation.
                         </p>
                     </div>
                     <div className="p-8 bg-spark-white rounded-xl shadow-lg hover:shadow-2xl transition-shadow duration-300">

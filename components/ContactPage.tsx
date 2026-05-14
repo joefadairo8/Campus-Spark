@@ -35,7 +35,7 @@ const ContactPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavig
                   <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-[0.2em] mb-3">Subject</label>
                   <select className="w-full px-5 py-3.5 bg-spark-red/5 border border-[var(--border-color)] rounded-xl focus:ring-4 focus:ring-spark-red/10 outline-none font-bold text-sm text-[var(--text-primary)] appearance-none">
                     <option>Sponsorship Inquiry</option>
-                    <option>Ambassador Program</option>
+                    <option>Creator Program</option>
                     <option>Brand Collaboration</option>
                     <option>Technical Support</option>
                     <option>Other</option>

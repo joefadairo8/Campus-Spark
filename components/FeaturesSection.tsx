@@ -6,7 +6,7 @@ const FeaturesSection: React.FC = () => {
     const features = [
         {
             title: 'Discover Talent',
-            description: 'Browse through thousands of verified student influencers across major Nigerian universities.',
+            description: 'Browse through thousands of verified campus creators across major Nigerian universities.',
             icon: <Search className="w-6 h-6" />,
             badge: 'Intelligence'
         },
@@ -36,7 +36,7 @@ const FeaturesSection: React.FC = () => {
                             Engineered for <span className="text-gradient-red">Campus</span> Marketing.
                         </h2>
                         <p className="text-[var(--text-secondary)] text-lg font-medium leading-relaxed mb-12">
-                            The first platform designed specifically for the African student economy. We bridge the gap between high-impact student creators and global brands.
+                            The first platform designed specifically for the African creator economy. We bridge the gap between high-impact creators and global brands.
                         </p>
                         
                         <div className="space-y-6">
@@ -67,7 +67,7 @@ const FeaturesSection: React.FC = () => {
                             />
                             <div className="absolute bottom-10 left-10 right-10 glass p-6 rounded-3xl border border-white/20">
                                 <p className="text-white font-black text-xl mb-1">Verified Network</p>
-                                <p className="text-white/70 text-xs font-bold uppercase tracking-widest">Connect with 50,000+ Students</p>
+                                <p className="text-white/70 text-xs font-bold uppercase tracking-widest">Connect with 50,000+ Creators</p>
                             </div>
                         </div>
                     </div>

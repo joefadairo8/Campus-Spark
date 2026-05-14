@@ -15,7 +15,7 @@ const HowItWorksSection: React.FC = () => {
           
           <div className="flex items-center justify-center mt-10">
             <div className="inline-flex p-1 bg-spark-red/5 rounded-2xl border border-spark-red/10">
-              {[UserType.Brands, UserType.Ambassadors, UserType.Clubs].map((type) => (
+              {[UserType.Brands, UserType.Creators, UserType.Clubs].map((type) => (
                 <button
                   key={type}
                   onClick={() => setActiveTab(type)}
@@ -23,7 +23,7 @@ const HowItWorksSection: React.FC = () => {
                     activeTab === type ? 'bg-spark-red text-white shadow-lg' : 'text-[var(--text-secondary)] hover:text-spark-red'
                   }`}
                 >
-                  {type === UserType.Ambassadors ? 'Influencers' : type === UserType.Clubs ? 'Organizers' : 'Brands'}
+                  {type === UserType.Creators ? 'Creators' : type === UserType.Clubs ? 'Organizers' : 'Brands'}
                 </button>
               ))}
             </div>

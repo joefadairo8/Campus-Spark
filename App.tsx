@@ -10,9 +10,9 @@ import FaqSection from './components/FaqSection';
 import CtaSection from './components/CtaSection';
 import Footer from './components/Footer';
 import BrandsPage from './components/BrandsPage';
-import StudentsPage from './components/StudentsPage';
+import CreatorsPage from './components/CreatorsPage';
 import BrandDashboard from './components/BrandDashboard';
-import StudentDashboard from './components/StudentDashboard';
+import CreatorDashboard from './components/CreatorDashboard';
 import OrgDashboard from './components/OrgDashboard';
 import AdminDashboard from './components/AdminDashboard';
 import AboutPage from './components/AboutPage';
@@ -67,7 +67,7 @@ const App: React.FC = () => {
             localStorage.setItem('user', JSON.stringify(profile));
 
             // SECURITY ENFORCEMENT: Admins cannot access regular dashboards
-            const regularDashboards = ['student-dashboard', 'brand-dashboard', 'org-dashboard'];
+            const regularDashboards = ['creator-dashboard', 'brand-dashboard', 'org-dashboard'];
             if (profileData.role === 'Admin' && regularDashboards.includes(currentPage)) {
               setCurrentPage('admin-dashboard');
               window.history.pushState({}, '', '/admin-dashboard');
@@ -97,9 +97,9 @@ const App: React.FC = () => {
   React.useEffect(() => {
     const path = window.location.pathname.replace('/', '');
     const validPages = [
-      'login', 'create-account', 'brand-dashboard', 'student-dashboard',
+      'login', 'create-account', 'brand-dashboard', 'creator-dashboard',
       'org-dashboard', 'admin-dashboard', 'for-brands',
-      'for-students', 'about', 'careers', 'contact', 'admin-login'
+      'for-creators', 'about', 'careers', 'contact', 'admin-login'
     ];
 
     if (path === 'admin') {
@@ -127,7 +127,7 @@ const App: React.FC = () => {
 
   const isStandalonePage = [
     'brand-dashboard',
-    'student-dashboard',
+    'creator-dashboard',
     'org-dashboard',
     'admin-dashboard',
     'login',
@@ -154,13 +154,13 @@ const App: React.FC = () => {
       case 'admin-login': return <AdminLoginPage onNavigate={navigateTo} />;
       case 'create-account': return <CreateAccountPage onNavigate={navigateTo} />;
       case 'brand-dashboard': return <BrandDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} user={user} />;
-      case 'student-dashboard': return <StudentDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} user={user} />;
+      case 'creator-dashboard': return <CreatorDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} user={user} />;
       case 'org-dashboard': return <OrgDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} user={user} />;
       case 'admin-dashboard': return <AdminDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} user={user} />;
       case 'how-it-works':
       case 'about': return <AboutPage onNavigate={navigateTo} />;
       case 'for-brands': return <BrandsPage onNavigate={navigateTo} />;
-      case 'for-students': return <StudentsPage onNavigate={navigateTo} />;
+      case 'for-creators': return <CreatorsPage onNavigate={navigateTo} />;
       case 'careers': return <CareersPage onNavigate={navigateTo} user={user} />;
       case 'contact': return <ContactPage onNavigate={navigateTo} />;
       case 'home':

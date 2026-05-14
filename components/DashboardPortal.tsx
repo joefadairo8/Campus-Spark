@@ -19,7 +19,7 @@ const PortalCard: React.FC<{
                 onClick={() => onAction('create-account')}
                 className="w-full py-4 bg-gradient-red text-white font-bold rounded-2xl hover:shadow-lg hover:shadow-spark-red/20 transition-all text-xs uppercase tracking-widest"
             >
-                Start as {role === UserRole.Brand ? 'Brand' : role === UserRole.StudentOrg ? 'Org' : 'Ambassador'}
+                Start as {role === UserRole.Brand ? 'Brand' : role === UserRole.Organization ? 'Org' : 'Creator'}
             </button>
             <button 
                 onClick={() => onAction('login')}
@@ -49,16 +49,16 @@ const DashboardPortal: React.FC<{ onNavigate: (page: string) => void }> = ({ onN
                         onAction={onNavigate}
                     />
                     <PortalCard 
-                        title="For Influencers"
-                        role={UserRole.Ambassador}
-                        desc="Build your professional profile as a student or professional influencer, collaborate with brands, and track your growth."
+                        title="For Creators"
+                        role={UserRole.Creator}
+                        desc="Build your professional profile as a creator, collaborate with brands, and track your growth."
                         icon="⚡"
                         onAction={onNavigate}
                     />
                     <PortalCard 
                         title="For Organizations"
-                        role={UserRole.StudentOrg}
-                        desc="List your student or professional organization, secure corporate sponsorships for events, and grow your impact."
+                        role={UserRole.Organization}
+                        desc="List your campus organization, secure corporate sponsorships for events, and grow your impact."
                         icon="🏛️"
                         onAction={onNavigate}
                     />

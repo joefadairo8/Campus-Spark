@@ -193,14 +193,14 @@ export function sendProposalStatusEmail(to: string, senderName: string, recipien
     return sendEmail(to, `📋 Proposal ${s.label}: Response from ${recipientName}`, html);
 }
 
-/** Sent to a brand when a student applies to their gig */
-export function sendNewApplicationEmail(to: string, brandName: string, studentName: string, gigTitle: string, pitch: string): Promise<void> {
+/** Sent to a brand when a creator applies to their gig */
+export function sendNewApplicationEmail(to: string, brandName: string, creatorName: string, gigTitle: string, pitch: string): Promise<void> {
     const preview = pitch.length > 250 ? pitch.slice(0, 250) + '…' : pitch;
     const html = layout(`
         ${tag('New Application')}
         <div style="margin-top:16px;">
-            ${heading(`${studentName} applied to your campaign`)}
-            ${para(`<strong>${studentName}</strong> has applied to your campaign <strong>"${gigTitle}"</strong>.`)}
+            ${heading(`${creatorName} applied to your campaign`)}
+            ${para(`<strong>${creatorName}</strong> has applied to your campaign <strong>"${gigTitle}"</strong>.`)}
             ${divider()}
             <p style="margin:0 0 8px;font-size:12px;font-weight:800;color:#888;text-transform:uppercase;letter-spacing:1px;">Their Pitch</p>
             <div style="background:#f9f9f9;border-left:4px solid #e53e3e;padding:16px 20px;border-radius:0 8px 8px 0;">
@@ -209,16 +209,16 @@ export function sendNewApplicationEmail(to: string, brandName: string, studentNa
             ${btn('Review Application', APP_URL)}
         </div>
     `);
-    return sendEmail(to, `🎯 New Application: ${studentName} → "${gigTitle}"`, html);
+    return sendEmail(to, `🎯 New Application: ${creatorName} → "${gigTitle}"`, html);
 }
 
-/** Sent to the influencer when their application is accepted or rejected */
-export function sendApplicationDecisionEmail(to: string, studentName: string, gigTitle: string, brandName: string, status: 'accepted' | 'rejected'): Promise<void> {
+/** Sent to the creator when their application is accepted or rejected */
+export function sendApplicationDecisionEmail(to: string, creatorName: string, gigTitle: string, brandName: string, status: 'accepted' | 'rejected'): Promise<void> {
     const accepted = status === 'accepted';
     const html = layout(`
         ${tag(accepted ? 'Application Accepted ✅' : 'Application Declined ❌', accepted ? '#22c55e' : '#ef4444')}
         <div style="margin-top:16px;">
-            ${heading(accepted ? `Congratulations, ${studentName}!` : `Update on your application`)}
+            ${heading(accepted ? `Congratulations, ${creatorName}!` : `Update on your application`)}
             ${accepted
                 ? para(`Your application for <strong>"${gigTitle}"</strong> by <strong>${brandName}</strong> has been <strong style="color:#22c55e;">accepted</strong>! Log in to your dashboard to get started and review your campaign brief.`)
                 : para(`Unfortunately, your application for <strong>"${gigTitle}"</strong> by <strong>${brandName}</strong> was not selected this time. Keep building your portfolio and applying — your next opportunity is just around the corner.`)
@@ -229,25 +229,25 @@ export function sendApplicationDecisionEmail(to: string, studentName: string, gi
     return sendEmail(to, accepted ? `✅ You're In! Application Accepted for "${gigTitle}"` : `Application Update for "${gigTitle}"`, html);
 }
 
-/** Sent to the brand + admin when an influencer submits a campaign report */
-export function sendReportSubmittedEmail(to: string, brandName: string, studentName: string, gigTitle: string): Promise<void> {
+/** Sent to the brand + admin when a creator submits a campaign report */
+export function sendReportSubmittedEmail(to: string, brandName: string, creatorName: string, gigTitle: string): Promise<void> {
     const html = layout(`
         ${tag('Report Submitted', '#f59e0b')}
         <div style="margin-top:16px;">
-            ${heading(`${studentName} submitted a campaign report`)}
-            ${para(`<strong>${studentName}</strong> has submitted their execution report for <strong>"${gigTitle}"</strong>. Please review and approve (or request revisions) in your dashboard.`)}
+            ${heading(`${creatorName} submitted a campaign report`)}
+            ${para(`<strong>${creatorName}</strong> has submitted their execution report for <strong>"${gigTitle}"</strong>. Please review and approve (or request revisions) in your dashboard.`)}
             ${btn('Review Report', APP_URL)}
         </div>
     `);
-    return sendEmail(to, `📊 Report Submitted: "${gigTitle}" by ${studentName}`, html);
+    return sendEmail(to, `📊 Report Submitted: "${gigTitle}" by ${creatorName}`, html);
 }
 
-/** Sent to the influencer when their report is approved */
-export function sendReportApprovedEmail(to: string, studentName: string, gigTitle: string, brandName: string): Promise<void> {
+/** Sent to the creator when their report is approved */
+export function sendReportApprovedEmail(to: string, creatorName: string, gigTitle: string, brandName: string): Promise<void> {
     const html = layout(`
         ${tag('Report Approved ✅', '#22c55e')}
         <div style="margin-top:16px;">
-            ${heading(`Your report was approved, ${studentName}!`)}
+            ${heading(`Your report was approved, ${creatorName}!`)}
             ${para(`<strong>${brandName}</strong> has reviewed and approved your execution report for <strong>"${gigTitle}"</strong>. Your payment will be processed shortly — check your wallet.`)}
             ${btn('Check My Wallet', APP_URL)}
         </div>
@@ -255,8 +255,8 @@ export function sendReportApprovedEmail(to: string, studentName: string, gigTitl
     return sendEmail(to, `✅ Report Approved & Payment Processing for "${gigTitle}"`, html);
 }
 
-/** Sent to the influencer when their report is rejected/revision requested */
-export function sendReportRejectedEmail(to: string, studentName: string, gigTitle: string, brandName: string): Promise<void> {
+/** Sent to the creator when their report is rejected/revision requested */
+export function sendReportRejectedEmail(to: string, creatorName: string, gigTitle: string, brandName: string): Promise<void> {
     const html = layout(`
         ${tag('Revision Requested', '#f59e0b')}
         <div style="margin-top:16px;">

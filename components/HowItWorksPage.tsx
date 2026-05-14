@@ -8,8 +8,8 @@ const HowItWorksPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNa
 
     const subtitles: Record<UserType, string> = {
         [UserType.Brands]: "Maximize your reach across Nigerian universities with targeted campaigns.",
-        [UserType.Clubs]: "Secure sponsorships and funding to take your student organization's events to the next level.",
-        [UserType.Ambassadors]: "Turn your influence into income by collaborating with top brands on your campus.",
+        [UserType.Clubs]: "Secure sponsorships and funding to take your organization's events to the next level.",
+        [UserType.Creators]: "Turn your influence into income by collaborating with top brands on your campus.",
     };
 
     return (
@@ -22,7 +22,7 @@ const HowItWorksPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNa
                     How <span className="text-gradient-red italic">Campus Spark</span> Works
                 </h1>
                 <p className="max-w-2xl mx-auto text-base md:text-lg text-[var(--text-secondary)] font-medium">
-                    Simple, transparent, and built for Nigerian students and brands.
+                    Simple, transparent, and built for Nigerian creators and brands.
                 </p>
             </div>
 
@@ -67,7 +67,7 @@ const HowItWorksPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNa
                         onClick={() => onNavigate('contact')}
                         className="inline-flex items-center justify-center px-10 py-4 border border-transparent text-base font-bold rounded-2xl text-white bg-gradient-red hover:shadow-xl hover:shadow-spark-red/20 transition-all active:scale-95"
                     >
-                        Get Started as {activeTab === UserType.Brands ? 'a Brand' : activeTab === UserType.Clubs ? 'an Organization' : 'an Ambassador'}
+                        Get Started as {activeTab === UserType.Brands ? 'a Brand' : activeTab === UserType.Clubs ? 'an Organization' : 'a Creator'}
                     </button>
                 </div>
             </div>

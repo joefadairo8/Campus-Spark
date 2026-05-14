@@ -17,23 +17,23 @@ export interface Feature {
 
 export enum UserType {
   Brands = 'For Brands',
-  Clubs = 'For Student & Professional Orgs',
-  Ambassadors = 'For Student & Professional Influencers',
+  Organizations = 'For Organizations',
+  Creators = 'For Creators',
 }
 
 export interface Opportunity {
   id: string;
   title: string;
   amount: string;
-  type: 'Campaign' | 'Sponsorship' | 'Role' | 'Ambassador';
+  type: 'Campaign' | 'Sponsorship' | 'Role' | 'Creator';
   category: string;
   company?: string;
 }
 
 export enum UserRole {
   Brand = 'Brand',
-  StudentOrg = 'Student/Professional Organization',
-  Ambassador = 'Student/Professional Influencer',
+  Organization = 'Organization',
+  Creator = 'Creator',
   Admin = 'Admin',
 }
 

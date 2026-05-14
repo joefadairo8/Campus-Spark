@@ -18,7 +18,7 @@ const BrandsPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNaviga
               Captivate the <span className="text-gradient-red italic">Next Generation</span> of Nigerian Consumers.
             </h1>
             <p className="text-base md:text-lg text-[var(--text-secondary)] mb-12 leading-relaxed max-w-3xl mx-auto font-medium">
-              Campus Spark is your direct line to millions of students. Build authentic connections, drive adoption, and gather deep insights through verified campus ambassadors.
+              Campus Spark is your direct line to millions of creators. Build authentic connections, drive adoption, and gather deep insights through verified campus creators.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <button 
@@ -44,13 +44,13 @@ const BrandsPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNaviga
                 Why Nigerian <span className="text-gradient-red italic">Campuses?</span>
             </h2>
             <p className="text-base text-[var(--text-secondary)] mb-12 leading-relaxed font-medium">
-                Nigeria has one of the youngest populations, with a rapidly growing student demographic that drives culture, technology adoption, and consumption trends.
+                Nigeria has one of the youngest populations, with a rapidly growing youth demographic that drives culture, technology adoption, and consumption trends.
             </p>
             <div className="grid sm:grid-cols-2 gap-6 text-left">
                 {[
-                    "Access a market of millions of students.",
+                    "Access a market of millions of creators.",
                     "Build brand loyalty at a pivotal life stage.",
-                    "Leverage the high influence of student leaders.",
+                    "Leverage the high influence of campus leaders.",
                     "Bypass traditional ad-blockers with P2P marketing."
                 ].map((item, i) => (
                     <div key={i} className="flex items-start bg-[var(--bg-primary)] border border-[var(--border-color)] p-6 rounded-[2rem] card-hover">
@@ -78,11 +78,11 @@ const BrandsPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNaviga
 
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 text-left">
                 {[
-                    { title: "Student Ambassador Programs", desc: "Recruit long-term reps to drive downloads, sign-ups, and awareness on specific campuses.", icon: "🎓" },
-                    { title: "Event Sponsorships", desc: "Find high-traffic student events and secure sponsorship tiers that guarantee visibility.", icon: "🎉" },
-                    { title: "Influencer Marketing", desc: "Collaborate with micro-influencers who have high engagement within university bubbles.", icon: "📱" },
+                    { title: "Campus Creator Programs", desc: "Recruit long-term reps to drive downloads, sign-ups, and awareness on specific campuses.", icon: "🎓" },
+                    { title: "Event Sponsorships", desc: "Find high-traffic campus events and secure sponsorship tiers that guarantee visibility.", icon: "🎉" },
+                    { title: "Creator Marketing", desc: "Collaborate with micro-creators who have high engagement within university bubbles.", icon: "📱" },
                     { title: "Product Activations", desc: "Coordinate on-ground teams to distribute samples or manage pop-up stalls directly.", icon: "📦" },
-                    { title: "Market Research", desc: "Gain rapid feedback on products by deploying surveys to verified student audiences.", icon: "📊" },
+                    { title: "Market Research", desc: "Gain rapid feedback on products by deploying surveys to verified audiences.", icon: "📊" },
                     { title: "Direct Recruitment", desc: "Spot top talent early. Connect with leaders of clubs for internships and grad roles.", icon: "🤝" }
                 ].map((card, i) => (
                     <div key={i} className="bg-[var(--bg-primary)] p-8 rounded-[2rem] border border-[var(--border-color)] group card-hover shadow-sm transition-all duration-500 hover:shadow-2xl hover:shadow-spark-red/5">

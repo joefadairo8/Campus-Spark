@@ -1,5 +1,6 @@
 import { db, runTransaction, doc, collection, addDoc, serverTimestamp, getDoc, setDoc } from './firebase';
 import { getFirestore, collection as fsCollection, addDoc as fsAddDoc, getDocs as fsGetDocs, doc as fsDoc, setDoc as fsSetDoc, updateDoc as fsUpdateDoc, query as fsQuery, where as fsWhere, orderBy as fsOrderBy, deleteDoc as fsDeleteDoc, serverTimestamp as fsTimestamp, runTransaction as fsRunTransaction, getDoc as fsGetDoc } from 'firebase/firestore';
+import { notifyReportApproved } from './emailNotifier';
 
 export interface Transaction {
     id?: string;
@@ -24,10 +25,10 @@ export interface CampaignAllocation {
     id?: string;
     campaignId: string;
     brandId: string;
-    influencerId: string;
-    influencerName: string;
-    influencerUniversity?: string;
-    influencerEmail?: string;
+    creatorId: string;
+    creatorName: string;
+    creatorUniversity?: string;
+    creatorEmail?: string;
     amount: number;
     status: 'selected' | 'in_progress' | 'submitted' | 'approved' | 'paid' | 'rejected';
     createdAt: any;
@@ -95,9 +96,9 @@ export const WalletService = {
     },
 
     /**
-     * Move funds from Brand to Escrow (When hiring an influencer)
+     * Move funds from Brand to Escrow (When hiring a creator)
      */
-    async lockFundsForGig(brandId: string, influencerId: string, amount: number, gigTitle: string) {
+    async lockFundsForGig(brandId: string, creatorId: string, amount: number, gigTitle: string) {
         return await fsRunTransaction(db, async (transaction) => {
             const brandWalletRef = fsDoc(db, 'wallets', brandId);
             const brandSnap = await transaction.get(brandWalletRef);
@@ -123,7 +124,7 @@ export const WalletService = {
                 type: 'debit',
                 status: 'escrow',
                 description: `Payment locked for gig: ${gigTitle}`,
-                relatedUserId: influencerId,
+                relatedUserId: creatorId,
                 createdAt: fsTimestamp()
             });
         });
@@ -149,16 +150,16 @@ export const WalletService = {
                 throw new Error('No valid campaign report found. A report must be submitted before payment release.');
             }
 
-            const influencerId = allocData.influencerId;
+            const creatorId = allocData.creatorId;
             const amount = allocData.amount;
 
             // Define wallet refs
             const brandRef = fsDoc(db, 'wallets', brandId);
-            const influencerRef = fsDoc(db, 'wallets', influencerId);
+            const creatorRef = fsDoc(db, 'wallets', creatorId);
             const systemRef = fsDoc(db, 'wallets', REVENUE_WALLET_ID);
             
             const bSnap = await transaction.get(brandRef);
-            const iSnap = await transaction.get(influencerRef);
+            const iSnap = await transaction.get(creatorRef);
             const sSnap = await transaction.get(systemRef);
 
             const bData = bSnap.data() as Wallet;
@@ -166,7 +167,7 @@ export const WalletService = {
             const sData = sSnap.exists() ? sSnap.data() as Wallet : { balance: 0, pending: 0, escrow: 0 };
 
             const serviceFee = amount * SERVICE_FEE_PCT;
-            const influencerPay = amount - serviceFee;
+            const creatorPay = amount - serviceFee;
 
             // 1. Deduct from Brand Escrow
             transaction.update(brandRef, {
@@ -174,11 +175,11 @@ export const WalletService = {
                 lastUpdated: fsTimestamp()
             });
 
-            // 2. Add to Influencer (90%)
-            transaction.set(influencerRef, {
+            // 2. Add to Creator (90%)
+            transaction.set(creatorRef, {
                 ...iData,
-                balance: (iData.balance || 0) + influencerPay,
-                // If the influencer has a conceptual escrow, subtract from it (best effort)
+                balance: (iData.balance || 0) + creatorPay,
+                // If the creator has a conceptual escrow, subtract from it (best effort)
                 escrow: Math.max(0, (iData.escrow || 0) - amount),
                 lastUpdated: fsTimestamp()
             });
@@ -193,8 +194,8 @@ export const WalletService = {
             // 4. Record Transactions
             const iTransRef = fsDoc(fsCollection(db, 'transactions'));
             transaction.set(iTransRef, {
-                userId: influencerId,
-                amount: influencerPay,
+                userId: creatorId,
+                amount: creatorPay,
                 type: 'credit',
                 status: 'completed',
                 description: `Earnings: ${gigTitle} (Report Approved)`,
@@ -208,8 +209,8 @@ export const WalletService = {
                 amount: serviceFee,
                 type: 'credit',
                 status: 'completed',
-                description: `Service fee: ${gigTitle} (Influencer: ${influencerId})`,
-                relatedUserId: influencerId,
+                description: `Service fee: ${gigTitle} (Creator: ${creatorId})`,
+                relatedUserId: creatorId,
                 createdAt: fsTimestamp()
             });
 
@@ -219,21 +220,36 @@ export const WalletService = {
                 amount: amount,
                 type: 'debit',
                 status: 'completed',
-                description: `Payment Released: ${gigTitle} (Student Paid)`,
-                relatedUserId: influencerId,
+                description: `Payment Released: ${gigTitle} (Creator Paid)`,
+                relatedUserId: creatorId,
                 createdAt: fsTimestamp()
             });
 
             // 5. Update Allocation Status
             transaction.update(allocRef, { status: 'paid', updatedAt: fsTimestamp() });
+            
+            // Notify Creator of Report Approval
+            try {
+                if (allocData.creatorEmail) {
+                    notifyReportApproved(
+                        allocData.creatorEmail,
+                        allocData.creatorName || 'Creator',
+                        gigTitle,
+                        allocData.brandName || 'Verified Brand'
+                    );
+                }
+            } catch (e) {
+                console.warn('Failed to notify creator of report approval', e);
+            }
+
             return { success: true };
         });
     },
 
     /**
-     * Refund an allocation back from escrow to available balance (When influencer is rejected)
+     * Refund an allocation back from escrow to available balance (When creator is rejected)
      */
-    async refundAllocation(brandId: string, amount: number, description: string, influencerId?: string) {
+    async refundAllocation(brandId: string, amount: number, description: string, creatorId?: string) {
         return await fsRunTransaction(db, async (transaction) => {
             const walletRef = fsDoc(db, 'wallets', brandId);
             // 1. ALL READS FIRST
@@ -252,8 +268,8 @@ export const WalletService = {
                 lastUpdated: fsTimestamp()
             });
 
-            // Note: Influencer escrow is handled via client-side calculation from allocations
-            // This avoids 'Missing or insufficient permissions' when a brand tries to read/write influencer wallets.
+            // Note: Creator escrow is handled via client-side calculation from allocations
+            // This avoids 'Missing or insufficient permissions' when a brand tries to read/write creator wallets.
 
             // Record Transaction for Brand
             const transRef = fsDoc(fsCollection(db, 'transactions'));
@@ -271,14 +287,14 @@ export const WalletService = {
     // ─── Campaign Allocation Firestore CRUD ──────────────────────────────────
 
     /**
-     * Create a new campaign allocation in Firestore & update influencer escrow
+     * Create a new campaign allocation in Firestore & update creator escrow
      */
     async createAllocation(allocation: Omit<CampaignAllocation, 'id' | 'createdAt'>): Promise<CampaignAllocation> {
         return await fsRunTransaction(db, async (transaction) => {
             const colRef = fsCollection(db, 'campaignAllocations');
             const docRef = fsDoc(colRef);
             
-            // 1. NO READS NEEDED for influencer wallet (Avoids permission issues)
+            // 1. NO READS NEEDED for creator wallet (Avoids permission issues)
 
             // 2. ALL WRITES AFTER
             const payload = {
@@ -290,7 +306,7 @@ export const WalletService = {
             // Create the allocation doc
             transaction.set(docRef, payload);
 
-            // Note: Influencer's 'Locked Funds' will be calculated in the UI from this record
+            // Note: Creator's 'Locked Funds' will be calculated in the UI from this record
             return { id: docRef.id, ...payload } as CampaignAllocation;
         });
     },
@@ -341,11 +357,11 @@ export const WalletService = {
     },
 
     /**
-     * Fetch all allocations for a given influencer
+     * Fetch all allocations for a given creator
      */
-    async getAllocationsByInfluencer(influencerId: string): Promise<CampaignAllocation[]> {
+    async getAllocationsByCreator(creatorId: string): Promise<CampaignAllocation[]> {
         const colRef = fsCollection(db, 'campaignAllocations');
-        const q = fsQuery(colRef, fsWhere('influencerId', '==', influencerId));
+        const q = fsQuery(colRef, fsWhere('creatorId', '==', creatorId));
         const snap = await fsGetDocs(q);
         return snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })) as CampaignAllocation[];
     },
