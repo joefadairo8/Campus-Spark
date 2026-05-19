@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { FAQ_ITEMS } from '../constants';
 import { FaqItem } from '../types';
 

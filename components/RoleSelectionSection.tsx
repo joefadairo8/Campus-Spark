@@ -1,4 +1,4 @@
-
+﻿
 import React from 'react';
 import { GraduationCap, Building2, Users } from 'lucide-react';
 
@@ -24,7 +24,7 @@ const RoleSelectionSection: React.FC<{ onNavigate: (page: string) => void }> = (
         },
         {
             id: 'org',
-            title: 'Organization',
+            title: 'Association',
             description: 'Scale your impact. Secure brand sponsorships and resources for your campus events.',
             icon: <Users className="w-12 h-12" />,
             color: 'bg-spark-red',
@@ -38,7 +38,7 @@ const RoleSelectionSection: React.FC<{ onNavigate: (page: string) => void }> = (
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="text-center mb-16">
                     <h2 className="text-3xl md:text-5xl font-fancy font-black tracking-tighter text-[var(--text-primary)] mb-4">Choose Your Path</h2>
-                    <p className="text-[var(--text-secondary)] font-medium max-w-2xl mx-auto">Whether you're looking to grow as a creator, reach new audiences, or scale your organization, we have the tools for you.</p>
+                    <p className="text-[var(--text-secondary)] font-medium max-w-2xl mx-auto">Whether you're looking to grow as a creator, reach new audiences, or scale your Association, we have the tools for you.</p>
                 </div>
 
                 <div className="grid md:grid-cols-3 gap-8">

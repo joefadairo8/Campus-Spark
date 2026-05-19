@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 
 const ContactPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigate }) => {
   return (
@@ -76,7 +76,7 @@ const ContactPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavig
               <div className="mt-16 p-8 bg-spark-red/5 rounded-3xl border border-spark-red/10">
                 <h4 className="font-bold text-[var(--text-primary)] mb-2">Frequently Asked?</h4>
                 <p className="text-[var(--text-secondary)] mb-6 text-sm font-medium">Check our FAQ for quick answers to common questions about Spark.</p>
-                <button onClick={() => onNavigate('home')} className="text-spark-red font-black uppercase tracking-[0.2em] text-[10px] hover:underline">Go to FAQ →</button>
+                <button onClick={() => onNavigate('home')} className="text-spark-red font-black uppercase tracking-[0.2em] text-[10px] hover:underline">Go to FAQ â†’</button>
               </div>
             </div>
           </div>

@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useEffect, useRef } from 'react';
 import { SparkIcon } from '../constants';
 import { UserRole } from '../types';
@@ -90,14 +90,14 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
                 />
             )}
 
-            {/* Sidebar — full on desktop, drawer on mobile */}
+            {/* Sidebar â€” full on desktop, drawer on mobile */}
             <aside className={`fixed lg:static inset-y-0 left-0 flex flex-col flex-shrink-0 z-[130] transition-all duration-300 bg-[var(--bg-primary)] border-r border-[var(--border-color)] 
                 ${isSidebarOpen ? 'w-72 translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0 lg:w-64'}`}>
 
                 {/* Logo */}
                 <div className="h-20 flex items-center px-6 border-b border-[var(--border-color)]">
                     <div className="flex items-center gap-3 cursor-pointer" onClick={() => (window.location.href = '/')}>
-                        <SparkIcon className="w-7 h-7 text-spark-red flex-shrink-0" />
+                        <SparkIcon className={`w-7 h-7 flex-shrink-0 ${role === 'Organization' ? 'text-spark-purple' : 'text-spark-red'}`} />
                         <span className="font-fancy font-black text-[var(--text-primary)] text-base tracking-tighter">Campus Spark</span>
                     </div>
                 </div>
@@ -106,12 +106,15 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
                 <nav className="flex-1 py-6 flex flex-col gap-1 px-3 overflow-y-auto">
                     {sidebarItems.map((item) => {
                         const isActive = activeView === item.id;
+                        const accentColorClass = role === 'Organization' ? 'spark-purple' : 'spark-red';
                         return (
                             <button
                                 key={item.id}
                                 onClick={() => { onViewChange(item.id); setIsSidebarOpen(false); }}
                                 className={`group w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-300 
-                                    ${isActive ? 'bg-spark-red text-white shadow-lg shadow-spark-red/20 scale-[1.02]' : 'text-[var(--text-secondary)] hover:bg-spark-red/5 hover:text-spark-red'}`}
+                                    ${isActive 
+                                        ? (role === 'Organization' ? 'bg-spark-purple text-white shadow-lg shadow-spark-purple/20 scale-[1.02]' : 'bg-spark-red text-white shadow-lg shadow-spark-red/20 scale-[1.02]') 
+                                        : (role === 'Organization' ? 'text-[var(--text-secondary)] hover:bg-spark-purple/5 hover:text-spark-purple' : 'text-[var(--text-secondary)] hover:bg-spark-red/5 hover:text-spark-red')}`}
                             >
                                 <span className={`flex-shrink-0 transition-transform duration-300 ${isActive ? 'scale-110' : 'group-hover:scale-110'}`}>{item.icon}</span>
                                 <span className="font-bold text-xs truncate uppercase tracking-widest">{item.label}</span>
@@ -147,7 +150,7 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
                             {sidebarItems.find(i => i.id === activeView)?.label || 'Dashboard'}
                         </h2>
                     </div>
-                    {/* Wallet Strip — rendered only when provided by parent */}
+                    {/* Wallet Strip â€” rendered only when provided by parent */}
                     {walletStrip && (
                         <div className="flex-1 flex justify-center px-4 order-3 lg:order-2 w-full lg:w-auto pb-1 lg:pb-0">
                             {walletStrip}
@@ -180,7 +183,7 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
                             >
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
                                 {unreadCount > 0 && (
-                                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-spark-red text-white text-[8px] font-black rounded-full border-2 border-[var(--bg-primary)] flex items-center justify-center animate-pulse">
+                                    <span className={`absolute -top-1 -right-1 w-4 h-4 text-white text-[8px] font-black rounded-full border-2 border-[var(--bg-primary)] flex items-center justify-center animate-pulse ${role === 'Organization' ? 'bg-spark-purple' : 'bg-spark-red'}`}>
                                         {unreadCount}
                                     </span>
                                 )}
@@ -200,7 +203,7 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
                                 onClick={() => setShowUserMenu(!showUserMenu)}
                                 className="flex items-center space-x-3 pl-4 sm:pl-5 border-l border-[var(--border-color)] hover:opacity-80 transition-opacity"
                             >
-                                <div className="w-9 h-9 rounded-xl bg-spark-red overflow-hidden flex items-center justify-center font-black text-white shadow-lg shadow-spark-red/10 ring-2 ring-[var(--bg-primary)] flex-shrink-0">
+                                <div className={`w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center font-black text-white shadow-lg ring-2 ring-[var(--bg-primary)] flex-shrink-0 ${role === 'Organization' ? 'bg-spark-purple shadow-spark-purple/10' : 'bg-spark-red shadow-spark-red/10'}`}>
                                     {userImage ? (
                                         <img src={userImage} alt={userName} className="w-full h-full object-cover" />
                                     ) : (
@@ -219,7 +222,7 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
                                     <div className="px-5 py-5 border-b border-[var(--border-color)]">
                                         <p className="font-black text-[var(--text-primary)] text-xs truncate">{userName}</p>
                                         <p className="text-[10px] text-[var(--text-secondary)] opacity-70 truncate uppercase tracking-widest mt-1">{userSub}</p>
-                                        <span className="mt-2.5 inline-block px-2 py-0.5 bg-spark-red/10 text-spark-red text-[8px] font-black rounded-lg uppercase tracking-[0.2em]">{role}</span>
+                                        <span className={`mt-2.5 inline-block px-2 py-0.5 text-[8px] font-black rounded-lg uppercase tracking-[0.2em] ${role === 'Organization' ? 'bg-spark-purple/10 text-spark-purple' : 'bg-spark-red/10 text-spark-red'}`}>{role}</span>
                                     </div>
                                     <button
                                         onClick={() => { setShowUserMenu(false); onLogout(); }}

@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { CheckCircleIcon } from '../constants';
 
 const CreatorsPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigate }) => {
@@ -87,16 +87,16 @@ const CreatorsPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavi
                  <div className="bg-[var(--bg-primary)] rounded-[2rem] overflow-hidden border border-[var(--border-color)] group card-hover shadow-sm transition-all duration-500 hover:shadow-2xl hover:shadow-spark-red/5">
                     <div className="h-2 bg-[var(--text-secondary)] opacity-10"></div>
                     <div className="p-8">
-                        <h3 className="text-lg font-bold text-[var(--text-primary)] mb-3 group-hover:text-spark-red transition-colors">Organization</h3>
+                        <h3 className="text-lg font-bold text-[var(--text-primary)] mb-3 group-hover:text-spark-red transition-colors">Association</h3>
                         <p className="text-[var(--text-secondary)] text-sm mb-6 font-medium">
-                            Get resources for your organization or society.
+                            Get resources for your Association or society.
                         </p>
                         <ul className="space-y-3 mb-10 text-[var(--text-secondary)] font-semibold text-xs">
                             <li className="flex items-center"><span className="w-1.5 h-1.5 bg-spark-red rounded-full mr-3"></span>Secure event sponsorships</li>
                             <li className="flex items-center"><span className="w-1.5 h-1.5 bg-spark-red rounded-full mr-3"></span>Find guest speakers</li>
                             <li className="flex items-center"><span className="w-1.5 h-1.5 bg-spark-red rounded-full mr-3"></span>Partner with other clubs</li>
                         </ul>
-                         <button onClick={() => onNavigate('contact')} className="w-full block text-center bg-spark-red text-white font-bold py-3 rounded-xl hover:bg-red-700 transition-all text-sm">Register Organization</button>
+                         <button onClick={() => onNavigate('contact')} className="w-full block text-center bg-spark-red text-white font-bold py-3 rounded-xl hover:bg-red-700 transition-all text-sm">Register Association</button>
                     </div>
                 </div>
             </div>

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+﻿import React, { useState, useRef } from 'react';
 import { updateDoc, doc, db } from '../firebase';
 import { User, UserRole } from '../types';
 
@@ -29,6 +29,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
         instagram: user?.instagram || '',
         twitter: user?.twitter || '',
         linkedin: user?.linkedin || '',
+        tiktok: user?.tiktok || '',
         university: user?.university || '',
         handle: user?.handle || '',
         industry: user?.industry || '',
@@ -132,7 +133,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
                             <h3 className="text-3xl font-fancy font-black text-[var(--text-primary)] mb-2 tracking-tighter">{formData.name || 'Set Your Name'}</h3>
                             <div className="flex items-center gap-3">
                                 <span className="px-3 py-1 bg-spark-red/10 text-spark-red text-[10px] font-black uppercase tracking-widest rounded-lg">{user.role}</span>
-                                {formData.location && <span className="text-[var(--text-secondary)] font-bold text-xs">📍 {formData.location}</span>}
+                                {formData.location && <span className="text-[var(--text-secondary)] font-bold text-xs">ðŸ“ {formData.location}</span>}
                             </div>
                         </div>
                     </div>
@@ -156,7 +157,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
                     <form onSubmit={handleSubmit} className="space-y-10 transition-all">
                         {activeTab === 'personal' && (
                             <div className="grid md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-left-4 duration-500">
-                                {renderInput('Full Name', 'name', 'e.g. John Doe')}
+                                {renderInput(user.role === 'Organization' ? 'Association Name' : 'Full Name', 'name', 'e.g. John Doe')}
                                 {renderInput('Phone Number', 'phoneNumber', '+234 ...')}
                                 {renderInput('Location', 'location', 'e.g. Lagos, Nigeria')}
                                 <div className="md:col-span-2 space-y-2">
@@ -177,10 +178,11 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
                                     <>
                                         {renderInput('University', 'university', 'Your school name')}
                                         {renderInput('Spark Handle', 'handle', '@yourusername')}
+                                        {renderInput('Portfolio URL', 'portfolioUrl', 'https://yourportfolio.com')}
                                     </>
                                 )}
 
-                                {user.role === UserRole.Brand && (
+                                {user.role === 'Brand' && (
                                     <>
                                         {renderInput('Industry Sector', 'industry', 'e.g. Fintech, Fashion')}
                                         <div className="space-y-2">
@@ -199,7 +201,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
                                     </>
                                 )}
 
-                                {user.role === UserRole.Organization && (
+                                {user.role === 'Organization' && (
                                     <>
                                         {renderInput('University', 'university', 'Where you are based')}
                                         {renderInput('Club Category', 'clubType', 'e.g. Sports, Tech')}
@@ -210,7 +212,11 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
 
                         {activeTab === 'social' && (
                             <div className="grid md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-left-4 duration-500">
-                                {renderInput('Website URL', 'website', 'https://...')}
+                                {user.role?.includes('Creator') ? (
+                                    renderInput('TikTok Handle', 'tiktok', '@handle')
+                                ) : (
+                                    renderInput('Website URL', 'website', 'https://...')
+                                )}
                                 {renderInput('Instagram', 'instagram', '@handle')}
                                 {renderInput('X / Twitter', 'twitter', '@handle')}
                                 {renderInput('LinkedIn', 'linkedin', 'linkedin.com/in/...')}

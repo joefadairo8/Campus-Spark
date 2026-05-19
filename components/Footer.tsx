@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { NAV_LINKS, SparkIcon } from '../constants';
 
 const SocialIconLink: React.FC<{ href: string; children: React.ReactNode }> = ({ href, children }) => (

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { auth, db, signInWithEmailAndPassword, doc, getDoc } from '../firebase';
 import { Shield, Lock, User, ArrowRight, Loader2, AlertCircle, ChevronLeft } from 'lucide-react';
 
@@ -106,7 +106,7 @@ const AdminLoginPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNa
                                         value={formData.password}
                                         onChange={handleChange}
                                         className="w-full pl-14 pr-6 py-5 bg-white/5 border border-white/10 rounded-2xl text-white font-bold outline-none focus:border-spark-red/50 focus:ring-4 focus:ring-spark-red/5 transition-all"
-                                        placeholder="••••••••••••"
+                                        placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
                                     />
                                 </div>
                             </div>

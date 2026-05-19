@@ -1,11 +1,11 @@
-import React from 'react';
+﻿import React from 'react';
 import { PARTNER_LOGOS } from '../constants';
 
 const TrustSection: React.FC = () => {
   const metrics = [
     { label: 'Verified Creators', value: '15k+' },
     { label: 'Campus Partners', value: '120+' },
-    { label: 'Campaign Payouts', value: '₦45M+' },
+    { label: 'Campaign Payouts', value: 'â‚¦45M+' },
     { label: 'Active Brands', value: '250+' },
   ];
 

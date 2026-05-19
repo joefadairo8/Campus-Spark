@@ -245,6 +245,74 @@ export const WalletService = {
             return { success: true };
         });
     },
+    
+    /**
+     * Release payment for an Org-led gig (Where money is ALREADY in creator's escrow)
+     */
+    async releaseOrgGigPayment(orgId: string, allocId: string, gigTitle: string) {
+        return await runTransaction(db, async (transaction) => {
+            const allocRef = fsDoc(db, 'campaignAllocations', allocId);
+            const allocSnap = await transaction.get(allocRef);
+            if (!allocSnap.exists()) throw new Error('Allocation not found');
+            const allocData = allocSnap.data();
+            const creatorId = allocData.studentId;
+            const amount = allocData.amount;
+
+            const creatorRef = fsDoc(db, 'wallets', creatorId);
+            const systemRef = fsDoc(db, 'wallets', REVENUE_WALLET_ID);
+            
+            const iSnap = await transaction.get(creatorRef);
+            const sSnap = await transaction.get(systemRef);
+
+            const iData = iSnap.exists() ? iSnap.data() as Wallet : { balance: 0, pending: 0, escrow: 0 };
+            const sData = sSnap.exists() ? sSnap.data() as Wallet : { balance: 0, pending: 0, escrow: 0 };
+
+            const serviceFee = amount * SERVICE_FEE_PCT;
+            const creatorPay = amount - serviceFee;
+
+            // 1. Deduct from Creator Escrow
+            transaction.update(creatorRef, {
+                escrow: (iData.escrow || 0) - amount,
+                balance: (iData.balance || 0) + creatorPay,
+                lastUpdated: fsTimestamp()
+            });
+
+            // 2. Add Fee to Platform
+            transaction.set(systemRef, {
+                ...sData,
+                balance: (sData.balance || 0) + serviceFee,
+                lastUpdated: fsTimestamp()
+            }, { merge: true });
+
+            // 3. Record Transactions
+            const cTransRef = fsDoc(fsCollection(db, 'transactions'));
+            transaction.set(cTransRef, {
+                userId: creatorId,
+                amount: creatorPay,
+                type: 'credit',
+                status: 'completed',
+                description: `Earnings: ${gigTitle} (Report Accepted)`,
+                relatedUserId: orgId,
+                createdAt: fsTimestamp()
+            });
+
+            const sTransRef = fsDoc(fsCollection(db, 'transactions'));
+            transaction.set(sTransRef, {
+                userId: REVENUE_WALLET_ID,
+                amount: serviceFee,
+                type: 'credit',
+                status: 'completed',
+                description: `Service fee: ${gigTitle} (Creator: ${creatorId})`,
+                relatedUserId: creatorId,
+                createdAt: fsTimestamp()
+            });
+
+            // 4. Update Allocation Status
+            transaction.update(allocRef, { status: 'paid', updatedAt: fsTimestamp() });
+            
+            return { success: true };
+        });
+    },
 
     /**
      * Refund an allocation back from escrow to available balance (When creator is rejected)
@@ -555,7 +623,7 @@ export const WalletService = {
     },
 
     /**
-     * Release sponsorship funds to an organization with 10% platform fee
+     * Release sponsorship funds to an Association with 10% platform fee
      */
     async releaseSponsorshipFunds(brandId: string, orgId: string, amount: number, eventName: string) {
         return await fsRunTransaction(db, async (transaction) => {
@@ -620,7 +688,7 @@ export const WalletService = {
     },
 
     /**
-     * Direct sponsorship payment from Brand Balance to Organization Balance
+     * Direct sponsorship payment from Brand Balance to Association Balance
      */
     async paySponsorship(brandId: string, orgId: string, amount: number, eventName: string) {
         return await fsRunTransaction(db, async (transaction) => {
@@ -693,6 +761,41 @@ export const WalletService = {
                 status: 'completed',
                 description: `Sponsorship Commission: ${eventName} (Org: ${orgId})`,
                 relatedUserId: orgId,
+                createdAt: fsTimestamp()
+            });
+        });
+    },
+
+    /**
+     * Move funds from available balance to escrow
+     */
+    async lockEscrow(userId: string, amount: number, description: string) {
+        return await fsRunTransaction(db, async (transaction) => {
+            const walletRef = fsDoc(db, 'wallets', userId);
+            const walletSnap = await transaction.get(walletRef);
+
+            const currentWallet = walletSnap.exists()
+                ? walletSnap.data() as Wallet
+                : { balance: 0, pending: 0, escrow: 0 };
+
+            if (currentWallet.balance < amount) {
+                throw new Error(`Insufficient wallet balance.`);
+            }
+
+            transaction.set(walletRef, {
+                ...currentWallet,
+                balance: currentWallet.balance - amount,
+                escrow: (currentWallet.escrow || 0) + amount,
+                lastUpdated: fsTimestamp()
+            });
+
+            const transRef = fsDoc(fsCollection(db, 'transactions'));
+            transaction.set(transRef, {
+                userId,
+                amount,
+                type: 'debit',
+                status: 'escrow',
+                description: description || 'Funds moved to escrow',
                 createdAt: fsTimestamp()
             });
         });

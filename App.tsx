@@ -13,7 +13,7 @@ import BrandsPage from './components/BrandsPage';
 import CreatorsPage from './components/CreatorsPage';
 import BrandDashboard from './components/BrandDashboard';
 import CreatorDashboard from './components/CreatorDashboard';
-import OrgDashboard from './components/OrgDashboard';
+import AssociationDashboard from './components/AssociationDashboard';
 import AdminDashboard from './components/AdminDashboard';
 import AboutPage from './components/AboutPage';
 import CareersPage from './components/CareersPage';
@@ -26,6 +26,9 @@ import LiveOpportunitiesSection from './components/LiveOpportunitiesSection';
 import TrustSection from './components/TrustSection';
 import SocialProofSection from './components/SocialProofSection';
 import ScrollToTop from './components/ScrollToTop';
+import ScheduleCallPage from './components/ScheduleCallPage';
+import BlogPage from './components/BlogPage';
+import LatestBlogsSection from './components/LatestBlogsSection';
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState('home');
@@ -67,7 +70,7 @@ const App: React.FC = () => {
             localStorage.setItem('user', JSON.stringify(profile));
 
             // SECURITY ENFORCEMENT: Admins cannot access regular dashboards
-            const regularDashboards = ['creator-dashboard', 'brand-dashboard', 'org-dashboard'];
+            const regularDashboards = ['creator-dashboard', 'brand-dashboard', 'association-dashboard'];
             if (profileData.role === 'Admin' && regularDashboards.includes(currentPage)) {
               setCurrentPage('admin-dashboard');
               window.history.pushState({}, '', '/admin-dashboard');
@@ -98,12 +101,15 @@ const App: React.FC = () => {
     const path = window.location.pathname.replace('/', '');
     const validPages = [
       'login', 'create-account', 'brand-dashboard', 'creator-dashboard',
-      'org-dashboard', 'admin-dashboard', 'for-brands',
-      'for-creators', 'about', 'careers', 'contact', 'admin-login'
+      'association-dashboard', 'admin-dashboard', 'for-brands',
+      'for-creators', 'about', 'careers', 'contact', 'admin-login', 'schedule-call', 'blog'
     ];
 
     if (path === 'admin') {
       setCurrentPage('admin-login');
+    } else if (path === 'org-dashboard') {
+      setCurrentPage('association-dashboard');
+      window.history.replaceState({}, '', '/association-dashboard');
     } else if (validPages.includes(path)) {
       // Basic Role Protection
       const adminOnly = ['admin-dashboard'];
@@ -128,7 +134,7 @@ const App: React.FC = () => {
   const isStandalonePage = [
     'brand-dashboard',
     'creator-dashboard',
-    'org-dashboard',
+    'association-dashboard',
     'admin-dashboard',
     'login',
     'create-account',
@@ -155,7 +161,7 @@ const App: React.FC = () => {
       case 'create-account': return <CreateAccountPage onNavigate={navigateTo} />;
       case 'brand-dashboard': return <BrandDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} user={user} />;
       case 'creator-dashboard': return <CreatorDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} user={user} />;
-      case 'org-dashboard': return <OrgDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} user={user} />;
+      case 'association-dashboard': return <AssociationDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} user={user} />;
       case 'admin-dashboard': return <AdminDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} user={user} />;
       case 'how-it-works':
       case 'about': return <AboutPage onNavigate={navigateTo} />;
@@ -163,6 +169,8 @@ const App: React.FC = () => {
       case 'for-creators': return <CreatorsPage onNavigate={navigateTo} />;
       case 'careers': return <CareersPage onNavigate={navigateTo} user={user} />;
       case 'contact': return <ContactPage onNavigate={navigateTo} />;
+      case 'schedule-call': return <ScheduleCallPage onNavigate={navigateTo} />;
+      case 'blog': return <BlogPage onNavigate={navigateTo} />;
       case 'home':
       default:
         return (
@@ -175,6 +183,7 @@ const App: React.FC = () => {
             <TrustSection />
             <SocialProofSection />
             <DashboardPortal onNavigate={navigateTo} />
+            <LatestBlogsSection onNavigate={navigateTo} />
             <FaqSection />
             <CtaSection onNavigate={navigateTo} />
           </>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { auth, db, signInWithEmailAndPassword, doc, getDoc } from '../firebase';
 import { UserRole } from '../types';
 
@@ -32,13 +32,13 @@ const LoginPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigat
         email: '',
         password: '',
     });
-    const [selectedRole, setSelectedRole] = useState<UserRole>(UserRole.Creator);
+    const [selectedRole, setSelectedRole] = useState<UserRole>('Creator');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
     const getTheme = () => {
         switch (selectedRole) {
-            case UserRole.Brand:
+            case 'Brand':
                 return {
                     primary: 'bg-blue-600',
                     text: 'text-blue-600',
@@ -47,7 +47,7 @@ const LoginPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigat
                     lightBg: 'bg-blue-50/50',
                     border: 'border-blue-600'
                 };
-            case UserRole.Organization:
+            case 'Organization':
                 return {
                     primary: 'bg-purple-600',
                     text: 'text-purple-600',
@@ -106,7 +106,7 @@ const LoginPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigat
                                 onNavigate('creator-dashboard');
                                 break;
                             case 'Organization':
-                                onNavigate('org-dashboard');
+                                onNavigate('association-dashboard');
                                 break;
                             case 'Admin':
                                 await auth.signOut();
@@ -164,22 +164,22 @@ const LoginPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigat
                 {/* Role Switcher */}
                 <div className="flex bg-[var(--bg-primary)] p-1.5 rounded-2xl border border-[var(--border-color)] mb-8 shadow-sm">
                     <button 
-                        onClick={() => setSelectedRole(UserRole.Creator)}
-                        className={`flex-1 py-3 px-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${selectedRole === UserRole.Creator ? 'bg-spark-red text-white shadow-lg' : 'text-[var(--text-secondary)] hover:bg-red-50 hover:text-spark-red'}`}
+                        onClick={() => setSelectedRole('Creator')}
+                        className={`flex-1 py-3 px-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${selectedRole === 'Creator' ? 'bg-spark-red text-white shadow-lg' : 'text-[var(--text-secondary)] hover:bg-red-50 hover:text-spark-red'}`}
                     >
                         Creator
                     </button>
                     <button 
-                        onClick={() => setSelectedRole(UserRole.Brand)}
-                        className={`flex-1 py-3 px-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${selectedRole === UserRole.Brand ? 'bg-blue-600 text-white shadow-lg' : 'text-[var(--text-secondary)] hover:bg-blue-50 hover:text-blue-600'}`}
+                        onClick={() => setSelectedRole('Brand')}
+                        className={`flex-1 py-3 px-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${selectedRole === 'Brand' ? 'bg-blue-600 text-white shadow-lg' : 'text-[var(--text-secondary)] hover:bg-blue-50 hover:text-blue-600'}`}
                     >
                         Brand
                     </button>
                     <button 
-                        onClick={() => setSelectedRole(UserRole.Organization)}
-                        className={`flex-1 py-3 px-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${selectedRole === UserRole.Organization ? 'bg-purple-600 text-white shadow-lg' : 'text-[var(--text-secondary)] hover:bg-purple-50 hover:text-purple-600'}`}
+                        onClick={() => setSelectedRole('Organization')}
+                        className={`flex-1 py-3 px-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${selectedRole === 'Organization' ? 'bg-purple-600 text-white shadow-lg' : 'text-[var(--text-secondary)] hover:bg-purple-50 hover:text-purple-600'}`}
                     >
-                        Organization
+                        Association
                     </button>
                 </div>
 
@@ -200,7 +200,7 @@ const LoginPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigat
                                 id="password"
                                 label="Password"
                                 type="password"
-                                placeholder="••••••••"
+                                placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
                                 value={formData.password}
                                 focusColor={theme.focus}
                                 onChange={handleChange}

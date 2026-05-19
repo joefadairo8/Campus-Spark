@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { UserRole } from '../types';
 
 const PortalCard: React.FC<{ 
@@ -19,7 +19,7 @@ const PortalCard: React.FC<{
                 onClick={() => onAction('create-account')}
                 className="w-full py-4 bg-gradient-red text-white font-bold rounded-2xl hover:shadow-lg hover:shadow-spark-red/20 transition-all text-xs uppercase tracking-widest"
             >
-                Start as {role === UserRole.Brand ? 'Brand' : role === UserRole.Organization ? 'Org' : 'Creator'}
+                Start as {role === 'Brand' ? 'Brand' : role === 'Organization' ? 'Org' : 'Creator'}
             </button>
             <button 
                 onClick={() => onAction('login')}
@@ -43,23 +43,23 @@ const DashboardPortal: React.FC<{ onNavigate: (page: string) => void }> = ({ onN
                 <div className="grid lg:grid-cols-3 gap-8">
                     <PortalCard 
                         title="For Brands"
-                        role={UserRole.Brand}
+                        role={'Brand'}
                         desc="Access a nationwide directory of talent, manage large-scale campaigns, and track real-time ROI."
-                        icon="💼"
+                        icon="ðŸ’¼"
                         onAction={onNavigate}
                     />
                     <PortalCard 
                         title="For Creators"
-                        role={UserRole.Creator}
+                        role={'Creator'}
                         desc="Build your professional profile as a creator, collaborate with brands, and track your growth."
-                        icon="⚡"
+                        icon="âš¡"
                         onAction={onNavigate}
                     />
                     <PortalCard 
-                        title="For Organizations"
-                        role={UserRole.Organization}
-                        desc="List your campus organization, secure corporate sponsorships for events, and grow your impact."
-                        icon="🏛️"
+                        title="For Associations"
+                        role={'Organization'}
+                        desc="List your campus Association, secure corporate sponsorships for events, and grow your impact."
+                        icon="ðŸ›ï¸"
                         onAction={onNavigate}
                     />
                 </div>

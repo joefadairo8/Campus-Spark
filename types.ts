@@ -15,11 +15,13 @@ export interface Feature {
   image: string;
 }
 
-export enum UserType {
-  Brands = 'For Brands',
-  Organizations = 'For Organizations',
-  Creators = 'For Creators',
-}
+export const UserType = {
+  Brands: 'For Brands',
+  Associations: 'For Associations',
+  Creators: 'For Creators',
+} as const;
+
+export type UserType = typeof UserType[keyof typeof UserType];
 
 export interface Opportunity {
   id: string;
@@ -30,12 +32,14 @@ export interface Opportunity {
   company?: string;
 }
 
-export enum UserRole {
-  Brand = 'Brand',
-  Organization = 'Organization',
-  Creator = 'Creator',
-  Admin = 'Admin',
-}
+export const UserRole = {
+  Brand: 'Brand',
+  Association: 'Organization',
+  Creator: 'Creator',
+  Admin: 'Admin',
+} as const;
+
+export type UserRole = typeof UserRole[keyof typeof UserRole];
 
 export interface HowItWorksStep {
   title: string;
@@ -80,6 +84,7 @@ export interface User {
   instagram?: string;
   twitter?: string;
   linkedin?: string;
+  tiktok?: string;
   industry?: string;
   university?: string;
   handle?: string;

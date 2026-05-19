@@ -72,7 +72,7 @@ service cloud.firestore {
     match /gigs/{gigId}/applications/{appId} {
       allow read: if isAuth();
       allow create: if isAuth()
-        && request.resource.data.studentId == request.auth.uid;
+        && (request.resource.data.studentId == request.auth.uid || request.resource.data.creatorId == request.auth.uid);
       allow update: if isAuth();   // brand accepts/rejects
       allow delete: if isAdmin();
     }
@@ -130,5 +130,45 @@ service cloud.firestore {
         && resource.data.brandId == request.auth.uid;
       allow delete: if isAdmin();
     }
+
+    // ─────────────────────────────────────────────────────
+    // BLOGS
+    // ─────────────────────────────────────────────────────
+    match /blogs/{document=**} {
+      allow read: if true;
+      allow write: if isAuth() && (
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin'
+      );
+    }
+
+    // ─────────────────────────────────────────────────────
+    // CAMPAIGNS & ALLOCATIONS
+    // ─────────────────────────────────────────────────────
+    match /campaigns/{id} {
+      allow read: if true;
+      allow write: if isAuth();
+
+      match /applications/{appId} {
+        allow read: if isAuth();
+        allow create: if isAuth() 
+          && (request.resource.data.creatorId == request.auth.uid || request.resource.data.studentId == request.auth.uid);
+        allow update: if isAuth();
+        allow delete: if isAdmin();
+      }
+    }
+    match /campaignAllocations/{id} {
+      allow read: if true;
+      allow write: if isAuth();
+    }
+
+    // ─────────────────────────────────────────────────────
+    // NOTIFICATIONS
+    // ─────────────────────────────────────────────────────
+    match /notifications/{id} {
+      allow read: if isAuth();
+      allow write: if isAuth();
+      allow delete: if isAuth();
+    }
   }
 }
+// Force rules deployment v2

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { apiClient } from '../firebase';
 import { ArrowRight, CheckCircle2, XCircle, Bell, Megaphone, Wallet, Clock } from 'lucide-react';
 
@@ -151,7 +151,7 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({ notifications, on
                                     <div className="flex-1">
                                         {renderNotificationContent(n)}
                                         <p className="text-[10px] text-[var(--text-secondary)] mt-2 font-bold uppercase tracking-wider">
-                                            {new Date(n.createdAt).toLocaleDateString()} • {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            {new Date(n.createdAt).toLocaleDateString()} â€¢ {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                         </p>
                                     </div>
                                 </div>

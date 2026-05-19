@@ -1,15 +1,15 @@
-
+﻿
 import React, { useState } from 'react';
 import { HOW_IT_WORKS_CONTENT } from '../constants';
 import { UserType } from '../types';
 
 const HowItWorksPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigate }) => {
-    const [activeTab, setActiveTab] = useState<UserType>(UserType.Brands);
+    const [activeTab, setActiveTab] = useState<UserType>('For Brands');
 
     const subtitles: Record<UserType, string> = {
-        [UserType.Brands]: "Maximize your reach across Nigerian universities with targeted campaigns.",
-        [UserType.Clubs]: "Secure sponsorships and funding to take your organization's events to the next level.",
-        [UserType.Creators]: "Turn your influence into income by collaborating with top brands on your campus.",
+        ['For Brands']: "Maximize your reach across Nigerian universities with targeted campaigns.",
+        ['For Associations']: "Secure sponsorships and funding to take your Association's events to the next level.",
+        ['For Creators']: "Turn your influence into income by collaborating with top brands on your campus.",
     };
 
     return (
@@ -67,7 +67,7 @@ const HowItWorksPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNa
                         onClick={() => onNavigate('contact')}
                         className="inline-flex items-center justify-center px-10 py-4 border border-transparent text-base font-bold rounded-2xl text-white bg-gradient-red hover:shadow-xl hover:shadow-spark-red/20 transition-all active:scale-95"
                     >
-                        Get Started as {activeTab === UserType.Brands ? 'a Brand' : activeTab === UserType.Clubs ? 'an Organization' : 'a Creator'}
+                        Get Started as {activeTab === 'For Brands' ? 'a Brand' : activeTab === 'For Associations' ? 'an Association' : 'a Creator'}
                     </button>
                 </div>
             </div>

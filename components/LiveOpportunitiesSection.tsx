@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { apiClient } from '../firebase';
 
 const LiveOpportunitiesSection: React.FC<{ onNavigate?: (page: string) => void }> = ({ onNavigate }) => {
@@ -9,6 +9,7 @@ const LiveOpportunitiesSection: React.FC<{ onNavigate?: (page: string) => void }
     const fetchOpportunities = async () => {
       try {
         let gigs: any[] = [];
+        let campaigns: any[] = [];
         let events: any[] = [];
 
         try {
@@ -16,6 +17,13 @@ const LiveOpportunitiesSection: React.FC<{ onNavigate?: (page: string) => void }
           gigs = res.data || [];
         } catch (e) {
           console.error('Error fetching gigs:', e);
+        }
+
+        try {
+          const res = await apiClient.get('campaigns');
+          campaigns = res.data || [];
+        } catch (e) {
+          console.error('Error fetching campaigns:', e);
         }
 
         try {
@@ -36,6 +44,17 @@ const LiveOpportunitiesSection: React.FC<{ onNavigate?: (page: string) => void }
           location: g.location || g.university || 'Nationwide'
         }));
 
+        const openCampaigns = campaigns.filter((g: any) => 
+          !g.status || (g.status.toLowerCase() !== 'closed' && g.status.toLowerCase() !== 'draft')
+        ).map((g: any) => ({
+          ...g,
+          category: 'Gig',
+          title: g.title,
+          brandName: g.hostName || 'Association',
+          reward: g.reward,
+          location: g.university || 'Campus'
+        }));
+
         const publishedEvents = events.filter((e: any) => 
           !e.status || (e.status.toLowerCase() !== 'closed' && e.status.toLowerCase() !== 'draft')
         ).map((e: any) => ({
@@ -47,8 +66,9 @@ const LiveOpportunitiesSection: React.FC<{ onNavigate?: (page: string) => void }
           location: e.university || 'Campus'
         }));
 
-        const all = [...openGigs, ...publishedEvents].sort((a: any, b: any) => 
-          new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime()
+        const all = [...openGigs, ...openCampaigns, ...publishedEvents].sort((a: any, b: any) => 
+          new Date(b.createdAt?.seconds ? b.createdAt.seconds * 1000 : (b.createdAt || b.date || 0)).getTime() - 
+          new Date(a.createdAt?.seconds ? a.createdAt.seconds * 1000 : (a.createdAt || a.date || 0)).getTime()
         );
 
         setOpportunities(all.slice(0, 4));
@@ -109,7 +129,7 @@ const LiveOpportunitiesSection: React.FC<{ onNavigate?: (page: string) => void }
                   }`}>
                     {opp.category || 'Campaign'}
                   </span>
-                  <span className="text-spark-red font-black text-base">₦{(opp.reward || opp.budget || 0).toLocaleString()}</span>
+                  <span className="text-spark-red font-black text-base">â‚¦{(opp.reward || opp.budget || 0).toLocaleString()}</span>
                 </div>
                 <h3 className="text-lg font-bold text-[var(--text-primary)] mb-1 group-hover:text-spark-red transition-colors line-clamp-2">{opp.title}</h3>
                 <p className="text-[var(--text-secondary)] text-[10px] mb-4 font-medium uppercase tracking-widest truncate">by {opp.brandName || opp.company || 'Partner'}</p>

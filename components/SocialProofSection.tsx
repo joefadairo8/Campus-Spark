@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { TESTIMONIALS } from '../constants';
 
 const SocialProofSection: React.FC = () => {

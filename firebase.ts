@@ -90,16 +90,19 @@ export const serverTimestamp = firebaseTimestamp;
 export const getDocs = async (q: any) => {
   try {
     const querySnapshot = await firebaseGetDocs(q);
+    const docs = querySnapshot.docs.map(d => ({
+      id: d.id,
+      data: () => d.data()
+    }));
     return {
       empty: querySnapshot.empty,
-      docs: querySnapshot.docs.map(d => ({
-        id: d.id,
-        data: () => d.data()
-      }))
+      size: querySnapshot.size,
+      docs: docs,
+      forEach: (callback: (doc: any) => void) => docs.forEach(callback)
     };
   } catch (err: any) {
     console.error('getDocs error:', err);
-    if (err.code === 'unavailable') return { empty: true, docs: [] };
+    if (err.code === 'unavailable') return { empty: true, size: 0, docs: [], forEach: () => {} };
     throw err;
   }
 };
@@ -138,16 +141,19 @@ export const apiClient = {
   getDocs: async (q: any) => {
     try {
       const snapshot = await firebaseGetDocs(q);
+      const docs = snapshot.docs.map(d => ({
+        id: d.id,
+        data: () => d.data()
+      }));
       return {
         empty: snapshot.empty,
-        docs: snapshot.docs.map(d => ({
-          id: d.id,
-          data: () => d.data()
-        }))
+        size: snapshot.size,
+        docs: docs,
+        forEach: (callback: (doc: any) => void) => docs.forEach(callback)
       };
     } catch (err: any) {
       console.error('apiClient.getDocs error:', err);
-      if (err.code === 'unavailable') return { empty: true, docs: [] };
+      if (err.code === 'unavailable') return { empty: true, size: 0, docs: [], forEach: () => {} };
       throw err;
     }
   },
@@ -327,9 +333,12 @@ export const apiClient = {
 
     let enrichedData = { ...cleanData, createdAt: new Date().toISOString() };
 
-    // CUSTOM ACTION: Apply to Gig
-    if (parts[0] === 'gigs' && parts[2] === 'apply') {
+    // CUSTOM ACTION: Apply to Gig or Campaign
+    if ((parts[0] === 'gigs' || parts[0] === 'campaigns') && parts[2] === 'apply') {
       const gigId = parts[1];
+      const sourceCol = parts[0];
+      console.log(`[apiClient.post] Applying to ${sourceCol}:`, gigId);
+      
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error('You must be logged in to apply.');
 
@@ -340,6 +349,7 @@ export const apiClient = {
       const applicationData = {
         ...cleanData,
         creatorId: currentUser.uid,
+        studentId: currentUser.uid, // Alias for legacy rules
         creator: {
           id: currentUser.uid,
           name: creatorProfile.name || creatorProfile.fullName || currentUser.displayName || 'Unknown Creator',
@@ -350,30 +360,39 @@ export const apiClient = {
         createdAt: new Date().toISOString()
       };
 
+      console.log('[apiClient.post] Application data:', applicationData);
+
       // Save to sub-collection
-      const appColRef = firebaseCollection(db, 'gigs', gigId, 'applications');
-      const docRef = await firebaseAddDoc(appColRef, applicationData);
-      
-      // Also save to top-level applications collection with the SAME ID for easy lookup/update
-      const topAppDocRef = firebaseDoc(db, 'applications', docRef.id);
-      await firebaseSetDoc(topAppDocRef, { ...applicationData, gigId });
-
-      // Notify Brand
       try {
-        const gigDoc = await firebaseGetDoc(firebaseDoc(db, 'gigs', gigId));
-        if (gigDoc.exists()) {
-            const gigData = gigDoc.data() as any;
-            const brandEmail = gigData.brandEmail || gigData.brand; 
-            const brandName = gigData.brandName || gigData.brand || 'Brand User';
-            if (brandEmail) {
-                notifyNewApplication(brandEmail, brandName, applicationData.creator.name, gigData.title, applicationData.pitch || '');
-            }
-        }
-      } catch (e) {
-          console.warn('Failed to send gig application email', e);
-      }
+        const appColRef = firebaseCollection(db, sourceCol, gigId, 'applications');
+        const docRef = await firebaseAddDoc(appColRef, applicationData);
+        console.log('[apiClient.post] Sub-collection doc created:', docRef.id);
+        
+        // Also save to top-level applications collection with the SAME ID for easy lookup/update
+        const topAppDocRef = firebaseDoc(db, 'applications', docRef.id);
+        await firebaseSetDoc(topAppDocRef, { ...applicationData, gigId, sourceCollection: sourceCol });
+        console.log('[apiClient.post] Top-level application doc created');
 
-      return { data: { id: docRef.id, ...applicationData } };
+        // Notify Brand/Host
+        try {
+            const gigDoc = await firebaseGetDoc(firebaseDoc(db, sourceCol, gigId));
+            if (gigDoc.exists()) {
+                const gigData = gigDoc.data() as any;
+                const brandEmail = gigData.brandEmail || gigData.brand || gigData.hostEmail; 
+                const brandName = gigData.brandName || gigData.brand || gigData.hostName || 'Host';
+                if (brandEmail) {
+                    notifyNewApplication(brandEmail, brandName, applicationData.creator.name, gigData.title, applicationData.pitch || '');
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to send gig application email', e);
+        }
+
+        return { data: { id: docRef.id, ...applicationData } };
+      } catch (err: any) {
+        console.error('[apiClient.post] CRITICAL ERROR during application save:', err);
+        throw err;
+      }
     }
 
     // Wallet Logic: Approve Report (Escrow -> Influencer)

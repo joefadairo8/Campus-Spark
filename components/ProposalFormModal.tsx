@@ -129,7 +129,7 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-300">
+        <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md z-[300] flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-300">
             <div className="bg-[var(--bg-primary)] w-full max-w-2xl rounded-[2rem] sm:rounded-[4rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300 my-auto border border-[var(--border-color)]">
                 {/* Close Button */}
                 <button
@@ -179,7 +179,7 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
                             type="text"
                             value={budget}
                             onChange={(e) => setBudget(e.target.value)}
-                            placeholder="e.g., ₦50,000 - ₦100,000"
+                            placeholder="e.g., â‚¦50,000 - â‚¦100,000"
                             className="w-full px-4 py-3 border-2 border-[var(--border-color)] bg-[var(--bg-primary)] rounded-2xl focus:border-spark-red focus:outline-none font-bold text-[var(--text-primary)]"
                             disabled={submitting}
                         />
@@ -207,7 +207,6 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
                         </label>
                         <input
                             type="file"
-                            accept=".pdf,.doc,.docx"
                             onChange={handleFileChange}
                             className="w-full px-4 py-3 border-2 border-[var(--border-color)] bg-[var(--bg-primary)] rounded-2xl focus:border-spark-red focus:outline-none font-bold text-[var(--text-secondary)] file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-spark-red/10 file:text-spark-red hover:file:bg-spark-red/20 transition-all"
                             disabled={submitting}

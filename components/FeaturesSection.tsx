@@ -1,4 +1,4 @@
-
+﻿
 import React from 'react';
 import { Search, Rocket, Wallet } from 'lucide-react';
 

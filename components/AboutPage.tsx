@@ -1,15 +1,15 @@
-
+﻿
 import React, { useState } from 'react';
 import { SparkIcon, HOW_IT_WORKS_CONTENT } from '../constants';
 import { UserType } from '../types';
 
 const AboutPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigate }) => {
-  const [activeTab, setActiveTab] = useState<UserType>(UserType.Brands);
+  const [activeTab, setActiveTab] = useState<UserType>('For Brands');
 
   const subtitles: Record<UserType, string> = {
-    [UserType.Brands]: "Maximize your reach across Nigerian universities with targeted campaigns.",
-    [UserType.Organizations]: "Secure sponsorships and funding to take your organization's events to the next level.",
-    [UserType.Creators]: "Turn your influence into income by collaborating with top brands on your campus.",
+    ['For Brands']: "Maximize your reach across Nigerian universities with targeted campaigns.",
+    ['For Associations']: "Secure sponsorships and funding to take your Association's events to the next level.",
+    ['For Creators']: "Turn your influence into income by collaborating with top brands on your campus.",
   };
 
   return (

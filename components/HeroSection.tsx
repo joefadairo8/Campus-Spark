@@ -1,4 +1,4 @@
-
+﻿
 import React from 'react';
 import { Smartphone, TrendingUp } from 'lucide-react';
 
@@ -59,7 +59,7 @@ const HeroSection: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavig
                <span className="text-[9px] uppercase tracking-widest font-black text-[var(--text-secondary)]">Events</span>
              </div>
              <div className="flex flex-col items-center">
-               <span className="text-xl font-black text-[var(--text-primary)]">₦100M+</span>
+               <span className="text-xl font-black text-[var(--text-primary)]">â‚¦100M+</span>
                <span className="text-[9px] uppercase tracking-widest font-black text-[var(--text-secondary)]">Value Created</span>
              </div>
           </div>

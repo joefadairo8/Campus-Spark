@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import DashboardShell from './DashboardShell';
 import { db, auth, collection, query, where, getDocs, addDoc, serverTimestamp, doc, getDoc, limit, apiClient, updateDoc, orderBy } from '../firebase';
 import { UserRole } from '../types';
@@ -7,11 +7,12 @@ import DashboardPlaceholder from './DashboardPlaceholder';
 import { ProposalFormModal } from './ProposalFormModal';
 import { ProposalDetailsModal } from './ProposalDetailsModal';
 import { EventDetailsModal } from './EventDetailsModal';
+import { CreatorProfileModal } from './CreatorProfileModal';
 import { WalletService } from '../WalletService';
 import { notifyTopUp, notifyWithdrawal, notifyProposalReceived, notifyProposalStatus } from '../emailNotifier';
 import { Wallet, TrendingUp, Lock, Plus, Minus, Ticket, Edit, Trash2, Search, Handshake, Building2, FileText, Mail, BarChart3, Target, Smartphone, Lightbulb, Award, GraduationCap, BookOpen, Calendar, Users, Megaphone, Inbox, Timer } from 'lucide-react';
 
-const OrgDashboard: React.FC<{ 
+const AssociationDashboard: React.FC<{ 
     onNavigate: (page: string) => void, 
     onLogout: () => void,
     isDarkMode: boolean,
@@ -42,6 +43,7 @@ const OrgDashboard: React.FC<{
     const [selectedProposal, setSelectedProposal] = useState<any>(null);
     const [selectedEvent, setSelectedEvent] = useState<any>(null);
     const [creators, setCreators] = useState<any[]>([]);
+    const [creatorsLoading, setCreatorsLoading] = useState(false);
     const [allEvents, setAllEvents] = useState<any[]>([]);
     const [editingEvent, setEditingEvent] = useState<any>(null);
     const [editFormData, setEditFormData] = useState({ name: '', date: '', description: '', targetSponsorship: '' });
@@ -56,6 +58,8 @@ const OrgDashboard: React.FC<{
     const [showAssignModal, setShowAssignModal] = useState(false);
     const [selectedCreatorForAssign, setSelectedCreatorForAssign] = useState<any>(null);
     const [assigningGigId, setAssigningGigId] = useState('');
+    const [showCreatorProfile, setShowCreatorProfile] = useState(false);
+    const [selectedCreatorProfile, setSelectedCreatorProfile] = useState<any>(null);
 
     useEffect(() => {
         const script = document.createElement("script");
@@ -114,7 +118,7 @@ const OrgDashboard: React.FC<{
         { id: 'proposals', label: 'Brand Partnerships', icon: <Handshake className="w-5 h-5" /> },
         { id: 'brands', label: 'Explore Brands', icon: <Building2 className="w-5 h-5" /> },
         { id: 'resources', label: 'Resource Hub', icon: <BookOpen className="w-5 h-5" /> },
-        { id: 'profile', label: 'Org Profile', icon: <Users className="w-5 h-5" /> },
+        { id: 'profile', label: 'Association Profile', icon: <Users className="w-5 h-5" /> },
     ];
 
     const fetchOrgData = async () => {
@@ -128,11 +132,11 @@ const OrgDashboard: React.FC<{
                     setOrgProfile({ id: uid, ...userDoc.data() });
                 } else {
                     onNavigate('creator-dashboard');
-                    console.warn('[OrgDashboard] No user doc found for:', uid);
-                    setOrgProfile({ id: uid, role: UserRole.Organization }); // Minimal profile to allow loading
+                    console.warn('[AssociationDashboard] No user doc found for:', uid);
+                    setOrgProfile({ id: uid, role: 'Organization' }); // Minimal profile to allow loading
                 }
             } catch (err) {
-                console.error("Error fetching org profile:", err);
+                console.error("Error fetching Association Profile:", err);
             } finally {
                 setLoading(false);
             }
@@ -173,7 +177,7 @@ const OrgDashboard: React.FC<{
 
             // TERTIARY FALLBACK: Full collection scan filtered client-side
             if (allMyEvents.length === 0) {
-                console.warn('[fetchMyEvents] Indexed queries returned 0 — doing full scan fallback.');
+                console.warn('[fetchMyEvents] Indexed queries returned 0 â€” doing full scan fallback.');
                 const allRes = await apiClient.get('events');
                 const allEventsList: any[] = allRes.data || [];
                 allMyEvents = allEventsList.filter((e: any) => 
@@ -208,7 +212,7 @@ const OrgDashboard: React.FC<{
 
     const fetchBrands = async () => {
         try {
-            const q = query(collection(db, "users"), where("role", "==", UserRole.Brand), limit(20));
+            const q = query(collection(db, "users"), where("role", "==", 'Brand'), limit(20));
             const snap = await getDocs(q);
             setBrands(snap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })));
         } catch (error) {
@@ -242,23 +246,40 @@ const OrgDashboard: React.FC<{
     useEffect(() => {
         if (currentView === 'creators') {
             const fetchCreators = async () => {
-                setLoading(true);
+                setCreatorsLoading(true);
                 try {
-                    const creatorRoles = [
-                        UserRole.Creator,
-                        'Creator',
-                        'Ambassador',
-                        'Ambassador/Influencer',
-                        'Campus Creator'
-                    ];
-                    const q = query(collection(db, "users"), where("role", "in", creatorRoles), limit(50));
+                    // Fetch users with a generous limit
+                    const q = query(collection(db, "users"), limit(200));
                     const querySnapshot = await getDocs(q);
-                    const creatorsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
+                    
+                    const creatorRoles = [
+                        'Creator', 'Ambassador', 'Ambassador/Influencer', 'Campus Creator',
+                        'Student', 'Student/Professional Influencer', 'Professional', 'Influencer',
+                        'Creator'
+                    ];
+                    
+                    const creatorRoleSet = new Set(creatorRoles);
+
+                    const creatorsData = querySnapshot.docs
+                        .map(doc => ({ id: doc.id, ...(doc.data() as any) }))
+                        .filter((u: any) => {
+                            // Match if explicitly in our list
+                            if (creatorRoleSet.has(u.role)) return true;
+                            // Match if contains key keywords (case insensitive)
+                            const role = (u.role || '').toLowerCase();
+                            if (role.includes('influencer') || role.includes('creator')) {
+                                // Exclude Associations even if they have 'influencer' in name (unlikely but safe)
+                                if (!role.includes('Association') && !role.includes('brand')) return true;
+                            }
+                            return false;
+                        });
+                    
+                    console.log('[fetchCreators] Final creators found:', creatorsData.length);
                     setCreators(creatorsData);
-                } catch (e) {
+                } catch (e: any) {
                     console.error("Creator fetch error:", e);
                 } finally {
-                    setLoading(false);
+                    setCreatorsLoading(false);
                 }
             };
             fetchCreators();
@@ -289,7 +310,7 @@ const OrgDashboard: React.FC<{
 
         setSubmitting(true);
         try {
-            const orgName = orgProfile?.name || "Organization";
+            const orgName = orgProfile?.name || "Association";
             const uni = orgProfile?.university || "Unknown";
             const payload = {
                 name: formData.name.trim(),
@@ -363,7 +384,7 @@ const OrgDashboard: React.FC<{
                 notifyProposalReceived(
                     brand.email || brand.brandEmail,
                     brand.name || 'Brand',
-                    orgProfile?.name || 'Organization',
+                    orgProfile?.name || 'Association',
                     data.message
                 );
             }
@@ -388,7 +409,7 @@ const OrgDashboard: React.FC<{
                 notifyProposalStatus(
                     prop.sender.email,
                     prop.sender.name || 'User',
-                    prop.recipient?.name || orgProfile?.name || 'Organization',
+                    prop.recipient?.name || orgProfile?.name || 'Association',
                     status
                 );
             }
@@ -415,14 +436,13 @@ const OrgDashboard: React.FC<{
         const orgId = orgProfile?.id || auth.currentUser?.uid;
         if (!orgId) return;
         try {
-            const q = query(collection(db, 'campaigns'), where('hostId', '==', orgId), orderBy('createdAt', 'desc'));
-            const snap = await getDocs(q);
-            setGigs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            const snap = await getDocs(query(collection(db, 'campaigns'), where('hostId', '==', orgId)));
+            const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            // Sort in memory to avoid index requirements
+            data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+            setGigs(data);
         } catch (e) {
-            // Fallback for missing index
-            const q = query(collection(db, 'campaigns'), where('hostId', '==', orgId));
-            const snap = await getDocs(q);
-            setGigs(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a:any, b:any) => b.createdAt?.seconds - a.createdAt?.seconds));
+            console.error("fetchGigs error:", e);
         }
     };
 
@@ -456,7 +476,7 @@ const OrgDashboard: React.FC<{
             if (reward > 0) {
                 const w = await WalletService.getOrCreateWallet(orgId);
                 if (w.balance < reward) {
-                    throw new Error(`Insufficient funds. You need ₦${reward.toLocaleString()} but only have ₦${w.balance.toLocaleString()}.`);
+                    throw new Error(`Insufficient funds. You need â‚¦${reward.toLocaleString()} but only have â‚¦${w.balance.toLocaleString()}.`);
                 }
                 await WalletService.lockEscrow(orgId, reward, `Escrow for gig: ${gigFormData.title}`);
                 await fetchWallet();
@@ -466,7 +486,7 @@ const OrgDashboard: React.FC<{
                 ...gigFormData,
                 reward,
                 hostId: orgId,
-                hostName: orgProfile?.name || 'Organization',
+                hostName: orgProfile?.name || 'Association',
                 status: 'open',
                 createdAt: serverTimestamp()
             });
@@ -499,26 +519,90 @@ const OrgDashboard: React.FC<{
             }
 
             const gig = gigs.find(g => g.id === assigningGigId);
+            const reward = Number(gig?.reward || 0);
 
-            await addDoc(collection(db, 'campaignAllocations'), {
-                campaignId: assigningGigId,
-                campaignTitle: gig?.title,
-                studentId: selectedCreatorForAssign.id,
-                studentName: selectedCreatorForAssign.name,
-                studentEmail: selectedCreatorForAssign.email,
-                hostId: orgId,
-                status: 'active',
-                assignedAt: serverTimestamp()
+            // Use a transaction to ensure all updates happen atomically
+            await runTransaction(db, async (transaction) => {
+                // 1. Create Allocation
+                const allocRef = doc(collection(db, 'campaignAllocations'));
+                transaction.set(allocRef, {
+                    campaignId: assigningGigId,
+                    campaignTitle: gig?.title,
+                    studentId: selectedCreatorForAssign.id,
+                    studentName: selectedCreatorForAssign.name,
+                    studentEmail: selectedCreatorForAssign.email,
+                    hostId: orgId,
+                    amount: reward,
+                    status: 'active',
+                    assignedAt: serverTimestamp()
+                });
+
+                // 2. Update Creator's Wallet (Locked Funds)
+                const creatorWalletRef = doc(db, 'wallets', selectedCreatorForAssign.id);
+                const creatorSnap = await transaction.get(creatorWalletRef);
+                const creatorData = creatorSnap.exists() ? creatorSnap.data() : { balance: 0, pending: 0, escrow: 0 };
+                
+                transaction.set(creatorWalletRef, {
+                    ...creatorData,
+                    escrow: (creatorData.escrow || 0) + reward,
+                    lastUpdated: serverTimestamp()
+                }, { merge: true });
+
+                // 3. Record Creator Transaction
+                const transRef = doc(collection(db, 'transactions'));
+                transaction.set(transRef, {
+                    userId: selectedCreatorForAssign.id,
+                    amount: reward,
+                    type: 'credit',
+                    status: 'escrow',
+                    description: `Locked: ${gig?.title || 'New Gig'}`,
+                    relatedUserId: orgId,
+                    createdAt: serverTimestamp()
+                });
             });
 
             setShowAssignModal(false);
             setSelectedCreatorForAssign(null);
             setAssigningGigId('');
             fetchAllocations();
-            alert(`Assigned ${selectedCreatorForAssign.name} to gig!`);
+            alert(`Assigned ${selectedCreatorForAssign.name} to gig! Money moved to their locked funds.`);
         } catch (e) {
             console.error(e);
             alert('Failed to assign gig.');
+        }
+    };
+
+    const handleReleasePayment = async (alloc: any) => {
+        if (!orgProfile?.id || !alloc.id) return;
+        if (!window.confirm(`Accept report and release â‚¦${alloc.amount.toLocaleString()} to ${alloc.studentName}?`)) return;
+        
+        setSubmitting(true);
+        try {
+            await WalletService.releaseOrgGigPayment(
+                orgProfile.id,
+                alloc.id,
+                alloc.campaignTitle || 'Gig'
+            );
+            fetchAllocations();
+            alert('Report accepted and payment released!');
+        } catch (e: any) {
+            alert(e.message || 'Failed to release payment.');
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const handleRejectReport = async (alloc: any) => {
+        if (!alloc.id) return;
+        const reason = window.prompt('Why are you rejecting this report?');
+        if (!reason) return;
+
+        try {
+            await WalletService.updateAllocationStatus(alloc.id, 'revision', reason);
+            fetchAllocations();
+            alert('Report rejected. Creator notified for revision.');
+        } catch (e) {
+            alert('Failed to reject report.');
         }
     };
 
@@ -562,9 +646,9 @@ const OrgDashboard: React.FC<{
                                 {/* Summary Cards */}
                                 <div className="grid md:grid-cols-3 gap-8">
                                     {[
-                                        { label: 'Available Balance', value: `₦${(wallet?.balance || 0).toLocaleString()}`, icon: <Wallet className="w-6 h-6" />, color: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' },
-                                        { label: 'Total Sponsorship', value: `₦${transactions.reduce((acc, t) => acc + (t.type === 'credit' ? (Number(t.amount) || 0) : 0), 0).toLocaleString()}`, icon: <TrendingUp className="w-6 h-6" />, color: 'bg-spark-purple/10 text-spark-purple border border-spark-purple/20' },
-                                        { label: 'Locked in Escrow', value: `₦${(wallet?.escrow || 0).toLocaleString()}`, icon: <Lock className="w-6 h-6" />, color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' },
+                                        { label: 'Available Balance', value: `â‚¦${(wallet?.balance || 0).toLocaleString()}`, icon: <Wallet className="w-6 h-6" />, color: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' },
+                                        { label: 'Total Spent', value: `â‚¦${transactions.reduce((acc, t) => acc + (t.type === 'debit' && t.status === 'completed' ? (Number(t.amount) || 0) : 0), 0).toLocaleString()}`, icon: <TrendingUp className="w-6 h-6" />, color: 'bg-spark-purple/10 text-spark-purple border border-spark-purple/20' },
+                                        { label: 'Locked in Escrow', value: `â‚¦${(wallet?.escrow || 0).toLocaleString()}`, icon: <Lock className="w-6 h-6" />, color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' },
                                     ].map((stat, i) => (
                                         <div key={i} className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm">
                                             <div className={`w-12 h-12 ${stat.color} rounded-2xl flex items-center justify-center text-xl mb-4`}>{stat.icon}</div>
@@ -577,7 +661,7 @@ const OrgDashboard: React.FC<{
                                 {/* Wallet Actions */}
                                 <div className="bg-spark-black rounded-[2.5rem] p-10 text-white shadow-xl flex flex-col md:flex-row items-center justify-between gap-8">
                                     <div>
-                                        <h3 className="text-2xl font-black mb-2 text-white">Organization Finances</h3>
+                                        <h3 className="text-2xl font-black mb-2 text-white">Association Finances</h3>
                                         <p className="text-purple-100 font-medium">Manage sponsorship funds and pay for campus event resources.</p>
                                     </div>
                                     <div className="flex flex-col sm:flex-row items-center gap-4">
@@ -586,15 +670,15 @@ const OrgDashboard: React.FC<{
                                             disabled={(wallet?.balance || 0) < 1000}
                                             className="px-10 py-5 bg-white text-spark-black font-black rounded-2xl hover:bg-gray-100 transition-all shadow-lg disabled:opacity-50 whitespace-nowrap"
                                         >
-                                            {(wallet?.balance || 0) < 1000 ? 'Min ₦1,000' : 'Request Withdrawal'}
+                                            {(wallet?.balance || 0) < 1000 ? 'Min â‚¦1,000' : 'Request Withdrawal'}
                                         </button>
                                         <div className="relative w-full sm:w-48">
-                                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">₦</span>
+                                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">â‚¦</span>
                                             <input 
                                                 type="number" 
                                                 value={topUpAmount}
                                                 onChange={e => setTopUpAmount(e.target.value)}
-                                                className="w-full pl-8 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white font-black outline-none focus:border-spark-red transition-all"
+                                                className="w-full pl-8 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl text-white font-black outline-none focus:border-spark-purple transition-all"
                                                 placeholder="Amount"
                                             />
                                         </div>
@@ -630,10 +714,10 @@ const OrgDashboard: React.FC<{
 
                                                                 // Notify user + admin of top-up
                                                                 const email = orgProfile.email || user?.email;
-                                                                const name = orgProfile.name || user?.name || 'Organization User';
+                                                                const name = orgProfile.name || user?.name || 'Association User';
                                                                 if (email) notifyTopUp(email, name, amount, response.reference);
 
-                                                                alert(`Successfully topped up ₦${amount.toLocaleString()}!`);
+                                                                alert(`Successfully topped up â‚¦${amount.toLocaleString()}!`);
                                                                 fetchWallet();
                                                             } catch (err: any) {
                                                                 alert("Error updating wallet: " + err.message);
@@ -659,42 +743,6 @@ const OrgDashboard: React.FC<{
                                     </button>
                                     </div>
                                 </div>
-
-                                {/* Transactions Table */}
-                                <div className="bg-[var(--bg-primary)] rounded-[3rem] border border-[var(--border-color)] shadow-sm p-10">
-                                    <h3 className="text-2xl font-black text-[var(--text-primary)] mb-8">Recent Activity</h3>
-                                    <div className="space-y-6">
-                                        {transactions.length === 0 ? (
-                                            <p className="text-[var(--text-secondary)] text-center py-4 italic font-medium">No transactions found.</p>
-                                        ) : (
-                                            transactions.map((trans: any, i) => (
-                                                <div key={i} className="flex items-center justify-between p-6 bg-[var(--bg-secondary)] rounded-2xl">
-                                                    <div className="flex items-center space-x-4">
-                                                        <div className={`w-10 h-10 rounded-xl shadow-sm flex items-center justify-center text-lg ${trans.type === 'credit' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                                                            {trans.type === 'credit' ? <Plus className="w-5 h-5" /> : <Minus className="w-5 h-5" />}
-                                                        </div>
-                                                        <div>
-                                                            <p className="font-black text-[var(--text-primary)]">{trans.description}</p>
-                                                            <p className="text-xs text-[var(--text-secondary)] font-bold">
-                                                                {(() => {
-                                                                    if (!trans.createdAt) return 'Just now';
-                                                                    const date = trans.createdAt.seconds ? new Date(trans.createdAt.seconds * 1000) : new Date(trans.createdAt);
-                                                                    return date.toLocaleDateString();
-                                                                })()}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <p className={`font-black ${trans.type === 'credit' ? 'text-green-600' : 'text-spark-red'}`}>
-                                                            {trans.type === 'credit' ? '+' : '-'} ₦{Number(trans.amount).toLocaleString()}
-                                                        </p>
-                                                        <p className="text-[10px] font-black uppercase text-[var(--text-secondary)]">{trans.status}</p>
-                                                    </div>
-                                                </div>
-                                            ))
-                                        )}
-                                    </div>
-                                </div>
                             </>
                         )}
                     </div>
@@ -706,23 +754,23 @@ const OrgDashboard: React.FC<{
                             <h3 className="text-xl font-black">My Campus Events</h3>
                             <button
                                 onClick={() => setShowCreateModal(true)}
-                                className="bg-spark-red text-white px-6 py-3 rounded-xl font-black shadow-lg shadow-red-100 hover:bg-red-700 transition-all active:scale-95"
+                                className="bg-spark-purple text-white px-6 py-3 rounded-xl font-black shadow-lg shadow-purple-100 hover:bg-purple-700 transition-all active:scale-95"
                             >
                                 + List New Event
                             </button>
                         </div>
                         {loading ? (
-                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
+                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-purple"></div></div>
                         ) : myEvents.length === 0 ? (
                             <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)] animate-in fade-in duration-500">
-                                <div className="w-20 h-20 bg-spark-red/5 rounded-3xl flex items-center justify-center mx-auto mb-6 text-spark-red">
+                                <div className="w-20 h-20 bg-spark-purple/5 rounded-3xl flex items-center justify-center mx-auto mb-6 text-spark-purple">
                                     <Ticket className="w-10 h-10" />
                                 </div>
                                 <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">No events listed yet.</h3>
                                 <p className="text-[var(--text-secondary)] font-medium">Create your first event to start attracting brand sponsors.</p>
                                 <button
                                     onClick={() => setShowCreateModal(true)}
-                                    className="mt-8 px-8 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all"
+                                    className="mt-8 px-8 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-purple transition-all"
                                 >
                                     Get Started
                                 </button>
@@ -733,8 +781,8 @@ const OrgDashboard: React.FC<{
                                     <div key={event.id} className="bg-[var(--bg-primary)] p-10 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm group hover:shadow-xl transition-all">
                                         <div className="flex justify-between items-start mb-8">
                                             <div>
-                                                <h4 className="text-2xl font-black mb-1 group-hover:text-spark-red transition-colors text-[var(--text-primary)]">{event.name}</h4>
-                                                <p className="text-sm font-bold text-spark-red uppercase tracking-widest">{event.date}</p>
+                                                <h4 className="text-2xl font-black mb-1 group-hover:text-spark-purple transition-colors text-[var(--text-primary)]">{event.name}</h4>
+                                                <p className="text-sm font-bold text-spark-purple uppercase tracking-widest">{event.date}</p>
                                             </div>
                                             <span className="px-4 py-1.5 bg-green-50 text-green-600 rounded-full text-[10px] font-black uppercase tracking-widest">Published</span>
                                         </div>
@@ -742,12 +790,12 @@ const OrgDashboard: React.FC<{
                                         <div className="flex items-center justify-between mb-8 pb-8 border-b border-[var(--border-color)]">
                                             <div>
                                                 <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Target Funding</p>
-                                                <p className="text-xl font-black text-[var(--text-primary)]">₦{Number(event.targetSponsorship).toLocaleString()}</p>
+                                                <p className="text-xl font-black text-[var(--text-primary)]">â‚¦{Number(event.targetSponsorship).toLocaleString()}</p>
                                             </div>
                                         </div>
                                         <button
                                             onClick={() => setSelectedEvent(event)}
-                                            className="w-full py-4 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all"
+                                            className="w-full py-4 bg-spark-purple text-white font-black rounded-2xl hover:bg-purple-700 transition-all"
                                         >
                                             Manage Sponsorships
                                         </button>
@@ -760,7 +808,7 @@ const OrgDashboard: React.FC<{
                                             </button>
                                             <button
                                                 onClick={() => handleDeleteEvent(event.id)}
-                                                className="flex-1 py-3 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all text-sm flex items-center justify-center gap-2"
+                                                className="flex-1 py-3 bg-spark-purple text-white font-black rounded-2xl hover:bg-purple-700 transition-all text-sm flex items-center justify-center gap-2"
                                             >
                                                 <Trash2 className="w-4 h-4" /> Delete
                                             </button>
@@ -784,7 +832,7 @@ const OrgDashboard: React.FC<{
                                     setGigFormData({ title: '', description: '', reward: '0', type: 'volunteer' });
                                     setShowGigModal(true);
                                 }} 
-                                className="bg-spark-red text-white px-6 py-3 rounded-xl font-black shadow-lg shadow-red-100 hover:bg-red-700 transition-all active:scale-95"
+                                className="bg-spark-purple text-white px-6 py-3 rounded-xl font-black shadow-lg shadow-purple-100 hover:bg-purple-700 transition-all active:scale-95"
                             >
                                 + Create New Gig
                             </button>
@@ -792,12 +840,12 @@ const OrgDashboard: React.FC<{
 
                         {gigs.length === 0 ? (
                             <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)]">
-                                <div className="text-6xl mb-6">📢</div>
+                                <div className="text-6xl mb-6">ðŸ“¢</div>
                                 <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">No Gigs Yet</h3>
                                 <p className="text-[var(--text-secondary)] mb-8">Start by creating a volunteer or paid gig to assign to creators.</p>
                                 <button 
                                     onClick={() => setShowGigModal(true)} 
-                                    className="px-8 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all"
+                                    className="px-8 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-purple transition-all"
                                 >
                                     Create First Gig
                                 </button>
@@ -810,7 +858,7 @@ const OrgDashboard: React.FC<{
                                         <div key={g.id} className="bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] p-8 hover:shadow-xl transition-all group">
                                             <div className="flex justify-between items-start mb-4">
                                                 <div>
-                                                    <h4 className="text-xl font-black text-[var(--text-primary)] group-hover:text-spark-red transition-colors">{g.title}</h4>
+                                                    <h4 className="text-xl font-black text-[var(--text-primary)] group-hover:text-spark-purple transition-colors">{g.title}</h4>
                                                     <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${Number(g.reward) === 0 ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'}`}>
                                                         {Number(g.reward) === 0 ? 'Volunteerism' : 'Paid Gig'}
                                                     </span>
@@ -821,7 +869,7 @@ const OrgDashboard: React.FC<{
 
                                             <div className="mb-5 space-y-2">
                                                 <div className="flex justify-between text-xs font-black">
-                                                    <span className="text-[var(--text-secondary)]">Reward: <span className="text-spark-red">{Number(g.reward) === 0 ? 'Experience/Perks' : `₦${Number(g.reward).toLocaleString()}`}</span></span>
+                                                    <span className="text-[var(--text-secondary)]">Reward: <span className="text-spark-purple">{Number(g.reward) === 0 ? 'Experience/Perks' : `â‚¦${Number(g.reward).toLocaleString()}`}</span></span>
                                                     <span className="text-[var(--text-secondary)]">Assigned: <span className="text-green-600">{allocations.length} Creators</span></span>
                                                 </div>
                                             </div>
@@ -831,7 +879,7 @@ const OrgDashboard: React.FC<{
                                                     onClick={() => {
                                                         setSelectedGig(g);
                                                     }} 
-                                                    className="flex-1 py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all text-sm"
+                                                    className="flex-1 py-3 bg-spark-purple text-white font-black rounded-xl hover:bg-purple-700 transition-all text-sm"
                                                 >
                                                     Manage Gig
                                                 </button>
@@ -866,11 +914,11 @@ const OrgDashboard: React.FC<{
                             <p className="text-[var(--text-secondary)] mt-1">Discover and connect with creators and influencers for your events.</p>
                         </div>
 
-                        {loading ? (
-                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
+                        {creatorsLoading ? (
+                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-purple"></div></div>
                         ) : creators.length === 0 ? (
                             <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)]">
-                                <div className="w-20 h-20 bg-spark-red/5 rounded-3xl flex items-center justify-center mx-auto mb-6 text-spark-red">
+                                <div className="w-20 h-20 bg-spark-purple/5 rounded-3xl flex items-center justify-center mx-auto mb-6 text-spark-purple">
                                     <Search className="w-10 h-10" />
                                 </div>
                                 <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">No Talent Found</h3>
@@ -880,9 +928,9 @@ const OrgDashboard: React.FC<{
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {creators.map(profile => (
                                     <div key={profile.id} className="group bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] overflow-hidden shadow-sm hover:shadow-xl transition-all">
-                                        <div className="h-20 bg-gradient-to-r from-spark-red/10 to-orange-50"></div>
+                                        <div className="h-20 bg-gradient-to-r from-spark-purple/10 to-orange-50"></div>
                                         <div className="px-6 pb-6 -mt-8">
-                                            <div className="w-16 h-16 rounded-2xl bg-[var(--bg-primary)] border-4 border-[var(--bg-primary)] shadow-lg flex items-center justify-center text-2xl font-black text-spark-red overflow-hidden mb-3">
+                                            <div className="w-16 h-16 rounded-2xl bg-[var(--bg-primary)] border-4 border-[var(--bg-primary)] shadow-lg flex items-center justify-center text-2xl font-black text-spark-purple overflow-hidden mb-3">
                                                 {profile.imageUrl ? <img src={profile.imageUrl} className="w-full h-full object-cover" alt={profile.name} /> : (profile.name || '?').charAt(0)}
                                             </div>
                                             <h3 className="font-black text-lg text-[var(--text-primary)]">{profile.name}</h3>
@@ -890,13 +938,13 @@ const OrgDashboard: React.FC<{
                                             {(profile.email || profile.phoneNumber) && (
                                                 <div className="space-y-1 mb-2">
                                                     {profile.email && (
-                                                        <a href={`mailto:${profile.email}`} className="flex items-center gap-2 text-[10px] text-[var(--text-secondary)] hover:text-spark-red transition-colors">
+                                                        <a href={`mailto:${profile.email}`} className="flex items-center gap-2 text-[10px] text-[var(--text-secondary)] hover:text-spark-purple transition-colors">
                                                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
                                                             <span className="truncate max-w-[150px]">{profile.email}</span>
                                                         </a>
                                                     )}
                                                     {profile.phoneNumber && (
-                                                        <a href={`tel:${profile.phoneNumber}`} className="flex items-center gap-2 text-[10px] text-[var(--text-secondary)] hover:text-spark-red transition-colors">
+                                                        <a href={`tel:${profile.phoneNumber}`} className="flex items-center gap-2 text-[10px] text-[var(--text-secondary)] hover:text-spark-purple transition-colors">
                                                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
                                                             <span>{profile.phoneNumber}</span>
                                                         </a>
@@ -905,6 +953,15 @@ const OrgDashboard: React.FC<{
                                             )}
                                             {profile.bio && <p className="text-sm text-[var(--text-secondary)] line-clamp-2 mb-4 mt-2 leading-relaxed">{profile.bio}</p>}
                                             <div className="flex gap-3 mt-4">
+                                                <button
+                                                    onClick={() => {
+                                                        setSelectedCreatorProfile(profile);
+                                                        setShowCreatorProfile(true);
+                                                    }}
+                                                    className="flex-1 py-3 bg-[var(--bg-secondary)] text-[var(--text-primary)] font-black rounded-xl hover:bg-[var(--bg-tertiary)] transition-all text-sm border border-[var(--border-color)]"
+                                                >
+                                                    View Profile
+                                                </button>
                                                 <button
                                                     onClick={() => handleOpenProposalModal(profile)}
                                                     className="flex-1 py-3 bg-spark-black text-white font-black rounded-xl hover:bg-gray-800 transition-all text-sm shadow-lg shadow-gray-100"
@@ -916,7 +973,7 @@ const OrgDashboard: React.FC<{
                                                         setSelectedCreatorForAssign(profile);
                                                         setShowAssignModal(true);
                                                     }}
-                                                    className="flex-1 py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all text-sm shadow-lg shadow-red-100 flex items-center justify-center gap-2"
+                                                    className="flex-1 py-3 bg-spark-purple text-white font-black rounded-xl hover:bg-purple-700 transition-all text-sm shadow-lg shadow-purple-100 flex items-center justify-center gap-2"
                                                 >
                                                     <Megaphone className="w-4 h-4" /> Assign
                                                 </button>
@@ -932,7 +989,7 @@ const OrgDashboard: React.FC<{
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                         {loading ? (
-                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
+                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-purple"></div></div>
                         ) : proposals.length === 0 ? (
                             <DashboardPlaceholder
                                 title="No Partnerships"
@@ -949,12 +1006,12 @@ const OrgDashboard: React.FC<{
                                     return (
                                         <div key={p.id} className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm flex items-center justify-between">
                                             <div className="flex items-center space-x-6">
-                                                <div className="w-16 h-16 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-2xl flex items-center justify-center text-2xl font-black text-spark-red shadow-inner">
+                                                <div className="w-16 h-16 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-2xl flex items-center justify-center text-2xl font-black text-spark-purple shadow-inner">
                                                     {otherParty?.imageUrl ? <img src={otherParty.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : (displayName.charAt(0))}
                                                 </div>
                                                 <div>
                                                     <h4 className="text-xl font-black text-[var(--text-primary)]">{displayName}</h4>
-                                                    <p className="text-xs text-spark-red font-black uppercase tracking-widest">{otherParty.role}</p>
+                                                    <p className="text-xs text-spark-purple font-black uppercase tracking-widest">{otherParty.role}</p>
                                                     <p className="text-[10px] text-[var(--text-secondary)] font-bold mt-1 uppercase tracking-wider">{new Date(p.createdAt).toLocaleDateString()}</p>
                                                 </div>
                                             </div>
@@ -969,7 +1026,7 @@ const OrgDashboard: React.FC<{
                                                         </button>
                                                         <button
                                                             onClick={() => handleUpdateStatus(p.id, 'accepted')}
-                                                            className="px-6 py-3 bg-spark-red text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition-all shadow-sm"
+                                                            className="px-6 py-3 bg-spark-purple text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-purple-700 transition-all shadow-sm"
                                                         >
                                                             Accept
                                                         </button>
@@ -992,7 +1049,7 @@ const OrgDashboard: React.FC<{
                                                             <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${
                                                                 p.status === 'accepted' ? 'bg-green-50 text-green-600' :
                                                                 p.status === 'paid' ? 'bg-green-100 text-green-700 border border-green-200' :
-                                                                p.status === 'rejected' ? 'bg-red-50 text-red-600' :
+                                                                p.status === 'rejected' ? 'bg-purple-50 text-red-600' :
                                                                 'bg-blue-50 text-blue-600'
                                                             }`}>
                                                                 {p.status === 'paid' ? 'Paid & Confirmed' : p.status}
@@ -1012,10 +1069,10 @@ const OrgDashboard: React.FC<{
                 return (
                     <div className="animate-in slide-in-from-bottom-4 duration-500">
                         {loading ? (
-                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
+                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-purple"></div></div>
                         ) : brands.length === 0 ? (
                             <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)]">
-                                <div className="w-20 h-20 bg-spark-red/5 rounded-3xl flex items-center justify-center mx-auto mb-6 text-spark-red">
+                                <div className="w-20 h-20 bg-spark-purple/5 rounded-3xl flex items-center justify-center mx-auto mb-6 text-spark-purple">
                                     <Building2 className="w-10 h-10" />
                                 </div>
                                 <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">No Brands Found</h3>
@@ -1025,7 +1082,7 @@ const OrgDashboard: React.FC<{
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
                         {brands.map(profile => (
                             <div key={profile.id} className="bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] p-6 flex items-center space-x-4">
-                                <div className="w-14 h-14 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl flex items-center justify-center text-xl font-black text-spark-red">
+                                <div className="w-14 h-14 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl flex items-center justify-center text-xl font-black text-spark-purple">
                                     {profile.imageUrl ? <img src={profile.imageUrl} className="w-full h-full object-cover rounded-xl" /> : (profile.name || '?').charAt(0)}
                                 </div>
                                 <div className="flex-1 min-w-0">
@@ -1037,7 +1094,7 @@ const OrgDashboard: React.FC<{
                                 </div>
                                 <button
                                     onClick={() => setSelectedBrand(profile)}
-                                    className="px-4 py-2 bg-spark-red text-white rounded-xl text-[10px] font-black uppercase tracking-widest"
+                                    className="px-4 py-2 bg-spark-purple text-white rounded-xl text-[10px] font-black uppercase tracking-widest"
                                 >
                                     Propose
                                 </button>
@@ -1059,7 +1116,7 @@ const OrgDashboard: React.FC<{
                         icon: <Lightbulb className="w-8 h-8" />, title: 'Event ROI Calculator', desc: "Quantify your event's impact for sponsors. Calculate reach, engagement rates, estimated media value, and brand awareness scores.", tag: 'Tool', href: '#'
                     },
                     { icon: <Award className="w-8 h-8" />, title: 'Post-Event Report Template', desc: 'A polished report template to share results with sponsors after the event. Build long-term brand relationships with transparency.', tag: 'Template', href: '#' },
-                    { icon: <GraduationCap className="w-8 h-8" />, title: 'Sponsorship 101: Video Course', desc: 'A curated series of short-form videos on how to structure, pitch, and close sponsorship deals as an organization.', tag: 'Course', href: '#' },
+                    { icon: <GraduationCap className="w-8 h-8" />, title: 'Sponsorship 101: Video Course', desc: 'A curated series of short-form videos on how to structure, pitch, and close sponsorship deals as an Association.', tag: 'Course', href: '#' },
                 ];
                 const tagColors: Record<string, string> = {
                     Template: 'bg-blue-50 text-blue-600',
@@ -1072,7 +1129,7 @@ const OrgDashboard: React.FC<{
                 };
                 return (
                     <div className="space-y-10 animate-in slide-in-from-bottom-4 duration-500">
-                        <div className="bg-gradient-to-br from-spark-red to-red-500 rounded-[2.5rem] p-10 text-white relative overflow-hidden">
+                        <div className="bg-gradient-to-br from-spark-purple to-purple-500 rounded-[2.5rem] p-10 text-white relative overflow-hidden">
                             <div className="absolute top-0 right-0 p-10 opacity-10">
                                 <BookOpen className="w-32 h-32" />
                             </div>
@@ -1080,21 +1137,21 @@ const OrgDashboard: React.FC<{
                                 <BookOpen className="w-8 h-8" />
                             </div>
                             <h2 className="text-3xl font-black mb-2">Resource Hub</h2>
-                            <p className="text-white/80 text-lg font-medium max-w-xl">Everything you need to run successful events, secure sponsors, and grow your organization.</p>
+                            <p className="text-white/80 text-lg font-medium max-w-xl">Everything you need to run successful events, secure sponsors, and grow your Association.</p>
                         </div>
 
                         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {resources.map((r, i) => (
-                                <a key={i} href={r.href} className="group bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] p-7 hover:shadow-xl hover:border-spark-red/20 transition-all block">
-                                    <div className="w-14 h-14 bg-spark-red/5 text-spark-red rounded-xl flex items-center justify-center mb-5 group-hover:bg-spark-red group-hover:text-white transition-all">
+                                <a key={i} href={r.href} className="group bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] p-7 hover:shadow-xl hover:border-spark-purple/20 transition-all block">
+                                    <div className="w-14 h-14 bg-spark-purple/5 text-spark-purple rounded-xl flex items-center justify-center mb-5 group-hover:bg-spark-purple group-hover:text-white transition-all">
                                         {r.icon}
                                     </div>
                                     <div className="flex items-start justify-between gap-2 mb-3">
-                                        <h3 className="font-black text-[var(--text-primary)] text-base leading-snug group-hover:text-spark-red transition-colors">{r.title}</h3>
+                                        <h3 className="font-black text-[var(--text-primary)] text-base leading-snug group-hover:text-spark-purple transition-colors">{r.title}</h3>
                                         <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest flex-shrink-0 ${tagColors[r.tag] || 'bg-[var(--bg-primary)] text-[var(--text-secondary)]'}`}>{r.tag}</span>
                                     </div>
                                     <p className="text-sm text-[var(--text-secondary)] leading-relaxed">{r.desc}</p>
-                                    <div className="mt-5 flex items-center gap-2 text-spark-red font-black text-sm opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className="mt-5 flex items-center gap-2 text-spark-purple font-black text-sm opacity-0 group-hover:opacity-100 transition-opacity">
                                         <span>Access Resource</span>
                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path></svg>
                                     </div>
@@ -1103,9 +1160,9 @@ const OrgDashboard: React.FC<{
                         </div>
 
                         <div className="bg-[var(--bg-primary)] rounded-[2rem] p-8 border border-[var(--border-color)]">
-                            <h3 className="text-xl font-black text-[var(--text-primary)] mb-2">💬 Need more?</h3>
-                            <p className="text-[var(--text-secondary)] mb-6">Request a custom resource or template for your organization's specific needs. Our team will create it for you.</p>
-                            <button className="px-6 py-3 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all">
+                            <h3 className="text-xl font-black text-[var(--text-primary)] mb-2">ðŸ’¬ Need more?</h3>
+                            <p className="text-[var(--text-secondary)] mb-6">Request a custom resource or template for your Association's specific needs. Our team will create it for you.</p>
+                            <button className="px-6 py-3 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-purple transition-all">
                                 Request a Resource
                             </button>
                         </div>
@@ -1120,52 +1177,19 @@ const OrgDashboard: React.FC<{
 
     return (
         <DashboardShell
-            role={UserRole.Organization}
+            role={'Organization'}
             activeView={currentView}
             onViewChange={setCurrentView}
             onLogout={onLogout}
             sidebarItems={sidebarItems}
-            userName={orgProfile?.name || "Organization Leader"}
+            userName={orgProfile?.name || "Association Leader"}
             userSub={orgProfile?.university || "Campus Organizer"}
             userImage={orgProfile?.imageUrl}
             isDarkMode={isDarkMode}
             toggleTheme={toggleTheme}
         >
             {/* Wallet Summary Strip - Always visible for quick access */}
-            {orgProfile && currentView !== 'wallet' && currentView !== 'profile' && (
-                <div className="mb-10 animate-in slide-in-from-top-4 duration-500">
-                    <div className="bg-spark-black text-white rounded-[2.5rem] p-8 shadow-2xl flex flex-col md:flex-row items-center justify-between gap-8 border border-white/5">
-                        <div className="flex items-center gap-6">
-                            <div className="w-16 h-16 bg-white/10 rounded-3xl flex items-center justify-center text-spark-red shadow-inner">
-                                <Wallet className="w-8 h-8" />
-                            </div>
-                            <div>
-                                <p className="text-[10px] font-black text-spark-red uppercase tracking-[0.2em] mb-1">Available Funds</p>
-                                <div className="flex items-baseline gap-2">
-                                    <h2 className="text-4xl font-black">₦{(wallet?.balance || 0).toLocaleString()}</h2>
-                                    <span className="text-green-400 text-xs font-bold flex items-center gap-1">
-                                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> Live
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div className="flex items-center gap-4 w-full md:w-auto">
-                            <div className="h-12 w-[1px] bg-white/10 hidden md:block mx-4" />
-                            <div className="flex-1 md:flex-none">
-                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 text-center md:text-left">Locked (Escrow)</p>
-                                <p className="text-xl font-black text-center md:text-left">₦{(wallet?.escrow || 0).toLocaleString()}</p>
-                            </div>
-                            <button 
-                                onClick={() => setCurrentView('wallet')}
-                                className="px-8 py-4 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all shadow-lg shadow-red-900/20 active:scale-95 text-sm"
-                            >
-                                Finance Hub
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* Wallet Summary Strip removed from landing page per user request */}
             {renderContent()}
 
             {showCreateModal && (
@@ -1174,7 +1198,7 @@ const OrgDashboard: React.FC<{
                     <div className="relative bg-[var(--bg-primary)] w-full max-w-2xl rounded-[2rem] sm:rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 my-auto">
                         <div className="p-10 border-b border-[var(--border-color)] flex justify-between items-center">
                             <h3 className="text-3xl font-black text-[var(--text-primary)]">List New Event</h3>
-                            <button onClick={() => setShowCreateModal(false)} className="text-[var(--text-secondary)] hover:text-spark-red transition-colors">
+                            <button onClick={() => setShowCreateModal(false)} className="text-[var(--text-secondary)] hover:text-spark-purple transition-colors">
                                 <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                             </button>
                         </div>
@@ -1184,7 +1208,7 @@ const OrgDashboard: React.FC<{
                                 <input
                                     required
                                     type="text"
-                                    className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-red/10 outline-none font-bold"
+                                    className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-purple/10 outline-none font-bold"
                                     placeholder="e.g. Annual Tech Hackathon 2024"
                                     value={formData.name}
                                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -1196,17 +1220,17 @@ const OrgDashboard: React.FC<{
                                     <input
                                         required
                                         type="date"
-                                        className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-red/10 outline-none font-bold"
+                                        className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-purple/10 outline-none font-bold"
                                         value={formData.date}
                                         onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                                     />
                                 </div>
                                 <div className="space-y-3">
-                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Sponsorship Target (₦)</label>
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Sponsorship Target (â‚¦)</label>
                                     <input
                                         required
                                         type="number"
-                                        className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-red/10 outline-none font-bold"
+                                        className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-purple/10 outline-none font-bold"
                                         placeholder="e.g. 500000"
                                         value={formData.targetSponsorship}
                                         onChange={(e) => setFormData({ ...formData, targetSponsorship: e.target.value })}
@@ -1218,7 +1242,7 @@ const OrgDashboard: React.FC<{
                                 <textarea
                                     required
                                     rows={4}
-                                    className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-red/10 outline-none font-bold resize-none"
+                                    className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-purple/10 outline-none font-bold resize-none"
                                     placeholder="Describe your event and what sponsors get in return..."
                                     value={formData.description}
                                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -1237,7 +1261,7 @@ const OrgDashboard: React.FC<{
                                 <button
                                     type="submit"
                                     disabled={submitting}
-                                    className="flex-[2] py-5 bg-spark-red text-white font-black rounded-2xl text-lg hover:bg-red-700 transition-all shadow-xl shadow-red-200 flex items-center justify-center gap-3 disabled:opacity-50"
+                                    className="flex-[2] py-5 bg-spark-purple text-white font-black rounded-2xl text-lg hover:bg-purple-700 transition-all shadow-xl shadow-purple-200 flex items-center justify-center gap-3 disabled:opacity-50"
                                 >
                                     {submitting ? (
                                         <>
@@ -1291,25 +1315,25 @@ const OrgDashboard: React.FC<{
                             <form onSubmit={handleSaveEdit} className="space-y-6">
                                 <div>
                                     <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Event Name</label>
-                                    <input type="text" required value={editFormData.name} onChange={e => setEditFormData(p => ({ ...p, name: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" />
+                                    <input type="text" required value={editFormData.name} onChange={e => setEditFormData(p => ({ ...p, name: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-purple rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Event Date</label>
-                                    <input type="date" required value={editFormData.date} onChange={e => setEditFormData(p => ({ ...p, date: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" />
+                                    <input type="date" required value={editFormData.date} onChange={e => setEditFormData(p => ({ ...p, date: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-purple rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Description</label>
-                                    <textarea required rows={3} value={editFormData.description} onChange={e => setEditFormData(p => ({ ...p, description: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all resize-none" />
+                                    <textarea required rows={3} value={editFormData.description} onChange={e => setEditFormData(p => ({ ...p, description: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-purple rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all resize-none" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Target Sponsorship (₦)</label>
-                                    <input type="number" required min="0" value={editFormData.targetSponsorship} onChange={e => setEditFormData(p => ({ ...p, targetSponsorship: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" />
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Target Sponsorship (â‚¦)</label>
+                                    <input type="number" required min="0" value={editFormData.targetSponsorship} onChange={e => setEditFormData(p => ({ ...p, targetSponsorship: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-purple rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" />
                                 </div>
                                 <div className="flex gap-4 pt-2">
                                     <button type="button" onClick={() => setEditingEvent(null)} className="flex-1 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-gray-800 transition-all">
                                         Cancel
                                     </button>
-                                    <button type="submit" disabled={editSubmitting} className="flex-[2] py-4 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all shadow-xl shadow-red-200 flex items-center justify-center gap-3 disabled:opacity-50">
+                                    <button type="submit" disabled={editSubmitting} className="flex-[2] py-4 bg-spark-purple text-white font-black rounded-2xl hover:bg-purple-700 transition-all shadow-xl shadow-purple-200 flex items-center justify-center gap-3 disabled:opacity-50">
                                         {editSubmitting ? (
                                             <><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div> Saving...</>
                                         ) : 'Save Changes'}
@@ -1342,13 +1366,13 @@ const OrgDashboard: React.FC<{
                                     <div className="grid grid-cols-2 gap-4">
                                         <button 
                                             onClick={() => setGigFormData(p => ({ ...p, type: 'volunteer', reward: '0' }))}
-                                            className={`py-4 rounded-2xl font-black transition-all border-2 ${gigFormData.type === 'volunteer' ? 'border-spark-red bg-red-50 text-spark-red' : 'border-transparent bg-[var(--bg-secondary)] text-[var(--text-secondary)]'}`}
+                                            className={`py-4 rounded-2xl font-black transition-all border-2 ${gigFormData.type === 'volunteer' ? 'border-spark-purple bg-purple-50 text-spark-purple' : 'border-transparent bg-[var(--bg-secondary)] text-[var(--text-secondary)]'}`}
                                         >
                                             Volunteerism
                                         </button>
                                         <button 
                                             onClick={() => setGigFormData(p => ({ ...p, type: 'paid' }))}
-                                            className={`py-4 rounded-2xl font-black transition-all border-2 ${gigFormData.type === 'paid' ? 'border-spark-red bg-red-50 text-spark-red' : 'border-transparent bg-[var(--bg-secondary)] text-[var(--text-secondary)]'}`}
+                                            className={`py-4 rounded-2xl font-black transition-all border-2 ${gigFormData.type === 'paid' ? 'border-spark-purple bg-purple-50 text-spark-purple' : 'border-transparent bg-[var(--bg-secondary)] text-[var(--text-secondary)]'}`}
                                         >
                                             Paid Gig
                                         </button>
@@ -1362,7 +1386,7 @@ const OrgDashboard: React.FC<{
                                         placeholder="e.g. Graphic Designer for Event" 
                                         value={gigFormData.title}
                                         onChange={e => setGigFormData(p => ({ ...p, title: e.target.value }))}
-                                        className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" 
+                                        className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-purple rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" 
                                     />
                                 </div>
 
@@ -1373,18 +1397,18 @@ const OrgDashboard: React.FC<{
                                         placeholder="What do you need the creator to do?"
                                         value={gigFormData.description}
                                         onChange={e => setGigFormData(p => ({ ...p, description: e.target.value }))}
-                                        className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all resize-none" 
+                                        className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-purple rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all resize-none" 
                                     />
                                 </div>
 
                                 {gigFormData.type === 'paid' && (
                                     <div>
-                                        <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Gig Reward (₦)</label>
+                                        <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Gig Reward (â‚¦)</label>
                                         <input 
                                             type="number" 
                                             value={gigFormData.reward}
                                             onChange={e => setGigFormData(p => ({ ...p, reward: e.target.value }))}
-                                            className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" 
+                                            className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-purple rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" 
                                         />
                                     </div>
                                 )}
@@ -1392,7 +1416,7 @@ const OrgDashboard: React.FC<{
                                 <button 
                                     onClick={handleCreateGig}
                                     disabled={gigSubmitting}
-                                    className="w-full py-5 bg-spark-red text-white font-black rounded-[2rem] hover:bg-red-700 transition-all shadow-xl shadow-red-200 flex items-center justify-center gap-3 disabled:opacity-50"
+                                    className="w-full py-5 bg-spark-purple text-white font-black rounded-[2rem] hover:bg-purple-700 transition-all shadow-xl shadow-purple-200 flex items-center justify-center gap-3 disabled:opacity-50"
                                 >
                                     {gigSubmitting ? (
                                         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
@@ -1411,19 +1435,19 @@ const OrgDashboard: React.FC<{
                     <div className="bg-[var(--bg-primary)] w-full max-w-md rounded-[2.5rem] border border-[var(--border-color)] p-8 shadow-2xl animate-in zoom-in-95 duration-300">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-2xl font-black text-[var(--text-primary)]">Withdraw Funds</h3>
-                            <button onClick={() => setShowWithdrawModal(false)} className="text-[var(--text-secondary)] hover:text-spark-red transition-colors">
+                            <button onClick={() => setShowWithdrawModal(false)} className="text-[var(--text-secondary)] hover:text-spark-purple transition-colors">
                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                             </button>
                         </div>
                         <form onSubmit={handleWithdraw} className="space-y-6">
                             <div>
-                                <label className="block text-[10px] font-black uppercase text-[var(--text-secondary)] mb-2">Available: ₦{(wallet?.balance || 0).toLocaleString()}</label>
+                                <label className="block text-[10px] font-black uppercase text-[var(--text-secondary)] mb-2">Available: â‚¦{(wallet?.balance || 0).toLocaleString()}</label>
                                 <input 
                                     type="number" 
                                     value={withdrawalAmount}
                                     onChange={(e) => setWithdrawalAmount(e.target.value)}
                                     placeholder="Amount to withdraw"
-                                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 focus:outline-none focus:border-spark-red font-bold text-[var(--text-primary)]"
+                                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 focus:outline-none focus:border-spark-purple font-bold text-[var(--text-primary)]"
                                     required
                                 />
                             </div>
@@ -1433,7 +1457,7 @@ const OrgDashboard: React.FC<{
                                     placeholder="Bank Name"
                                     value={bankDetails.bank}
                                     onChange={(e) => setBankDetails({...bankDetails, bank: e.target.value})}
-                                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 focus:outline-none focus:border-spark-red font-bold text-[var(--text-primary)]"
+                                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 focus:outline-none focus:border-spark-purple font-bold text-[var(--text-primary)]"
                                     required
                                 />
                                 <input 
@@ -1441,7 +1465,7 @@ const OrgDashboard: React.FC<{
                                     placeholder="Account Number"
                                     value={bankDetails.account}
                                     onChange={(e) => setBankDetails({...bankDetails, account: e.target.value})}
-                                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 focus:outline-none focus:border-spark-red font-bold text-[var(--text-primary)]"
+                                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 focus:outline-none focus:border-spark-purple font-bold text-[var(--text-primary)]"
                                     required
                                 />
                                 <input 
@@ -1449,14 +1473,14 @@ const OrgDashboard: React.FC<{
                                     placeholder="Account Name"
                                     value={bankDetails.name}
                                     onChange={(e) => setBankDetails({...bankDetails, name: e.target.value})}
-                                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 focus:outline-none focus:border-spark-red font-bold text-[var(--text-primary)]"
+                                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-4 py-3 focus:outline-none focus:border-spark-purple font-bold text-[var(--text-primary)]"
                                     required
                                 />
                             </div>
                             <button 
                                 type="submit" 
                                 disabled={withdrawing || !withdrawalAmount}
-                                className="w-full py-4 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all disabled:opacity-50"
+                                className="w-full py-4 bg-spark-purple text-white font-black rounded-xl hover:bg-purple-700 transition-all disabled:opacity-50"
                             >
                                 {withdrawing ? 'Processing Request...' : 'Confirm Withdrawal'}
                             </button>
@@ -1473,7 +1497,7 @@ const OrgDashboard: React.FC<{
                         <div className="p-10">
                             <div className="flex justify-between items-start mb-8">
                                 <div>
-                                    <p className="text-[10px] font-black text-spark-red uppercase tracking-widest mb-1">Assign Opportunity</p>
+                                    <p className="text-[10px] font-black text-spark-purple uppercase tracking-widest mb-1">Assign Opportunity</p>
                                     <h2 className="text-3xl font-black text-[var(--text-primary)] leading-tight">Hiring {selectedCreatorForAssign.name}</h2>
                                 </div>
                                 <button onClick={() => setShowAssignModal(false)} className="w-10 h-10 bg-spark-black text-white rounded-full flex items-center justify-center hover:bg-gray-800 transition-all">
@@ -1492,7 +1516,7 @@ const OrgDashboard: React.FC<{
                                                     setShowAssignModal(false);
                                                     setShowGigModal(true);
                                                 }}
-                                                className="text-spark-red font-black text-xs uppercase tracking-widest"
+                                                className="text-spark-purple font-black text-xs uppercase tracking-widest"
                                             >
                                                 + Create a gig first
                                             </button>
@@ -1501,11 +1525,11 @@ const OrgDashboard: React.FC<{
                                         <select 
                                             value={assigningGigId}
                                             onChange={e => setAssigningGigId(e.target.value)}
-                                            className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all"
+                                            className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-purple rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all"
                                         >
                                             <option value="">Choose a gig...</option>
                                             {gigs.filter(g => g.status === 'open').map(g => (
-                                                <option key={g.id} value={g.id}>{g.title} ({Number(g.reward) === 0 ? 'Volunteer' : `₦${Number(g.reward).toLocaleString()}`})</option>
+                                                <option key={g.id} value={g.id}>{g.title} ({Number(g.reward) === 0 ? 'Volunteer' : `â‚¦${Number(g.reward).toLocaleString()}`})</option>
                                             ))}
                                         </select>
                                     )}
@@ -1514,7 +1538,7 @@ const OrgDashboard: React.FC<{
                                 <button 
                                     onClick={handleAssignGig}
                                     disabled={!assigningGigId}
-                                    className="w-full py-4 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all shadow-lg shadow-red-100 disabled:opacity-50"
+                                    className="w-full py-4 bg-spark-purple text-white font-black rounded-2xl hover:bg-purple-700 transition-all shadow-lg shadow-purple-100 disabled:opacity-50"
                                 >
                                     Confirm Assignment
                                 </button>
@@ -1555,7 +1579,7 @@ const OrgDashboard: React.FC<{
                                     <div className="p-6 bg-green-50 rounded-[2rem] border border-green-100 flex items-center justify-between">
                                         <div>
                                             <p className="text-[10px] font-black text-green-600 uppercase tracking-widest mb-1">Total Budget</p>
-                                            <p className="text-2xl font-black text-green-700">₦{Number(selectedGig.reward).toLocaleString()}</p>
+                                            <p className="text-2xl font-black text-green-700">â‚¦{Number(selectedGig.reward).toLocaleString()}</p>
                                         </div>
                                         <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-green-600 shadow-sm">
                                             <Wallet className="w-6 h-6" />
@@ -1566,7 +1590,7 @@ const OrgDashboard: React.FC<{
                                 <div>
                                     <div className="flex justify-between items-center mb-6">
                                         <h4 className="text-xl font-black text-[var(--text-primary)]">Assigned Creators</h4>
-                                        <span className="px-3 py-1 bg-spark-red text-white text-[10px] font-black rounded-full uppercase tracking-widest">
+                                        <span className="px-3 py-1 bg-spark-purple text-white text-[10px] font-black rounded-full uppercase tracking-widest">
                                             {gigAllocations[selectedGig.id]?.length || 0} Hired
                                         </span>
                                     </div>
@@ -1579,17 +1603,17 @@ const OrgDashboard: React.FC<{
                                                     setSelectedGig(null);
                                                     setCurrentView('creators');
                                                 }}
-                                                className="mt-4 text-spark-red font-black text-sm hover:underline"
+                                                className="mt-4 text-spark-purple font-black text-sm hover:underline"
                                             >
                                                 Find talent to assign
                                             </button>
                                         </div>
                                     ) : (
                                         <div className="space-y-4">
-                                            {gigAllocations[selectedGig.id].map((alloc: any) => (
-                                                <div key={alloc.id} className="flex items-center justify-between p-5 bg-[var(--bg-secondary)] rounded-[1.5rem] border border-[var(--border-color)] hover:border-spark-red transition-all group">
+                                            {(gigAllocations[selectedGig.id] || []).map((alloc: any) => (
+                                                <div key={alloc.id} className="flex items-center justify-between p-5 bg-[var(--bg-secondary)] rounded-[1.5rem] border border-[var(--border-color)] hover:border-spark-purple transition-all group">
                                                     <div className="flex items-center gap-4">
-                                                        <div className="w-12 h-12 bg-[var(--bg-primary)] rounded-xl flex items-center justify-center text-xl font-black text-spark-red shadow-sm group-hover:scale-110 transition-transform">
+                                                        <div className="w-12 h-12 bg-[var(--bg-primary)] rounded-xl flex items-center justify-center text-xl font-black text-spark-purple shadow-sm group-hover:scale-110 transition-transform">
                                                             {alloc.studentName?.charAt(0)}
                                                         </div>
                                                         <div>
@@ -1598,25 +1622,33 @@ const OrgDashboard: React.FC<{
                                                         </div>
                                                     </div>
                                                     <div className="flex items-center gap-3">
-                                                        <span className="px-3 py-1 bg-green-100 text-green-600 text-[10px] font-black rounded-full uppercase tracking-widest">
-                                                            Active
+                                                        <span className={`px-3 py-1 text-[10px] font-black rounded-full uppercase tracking-widest ${
+                                                            alloc.status === 'paid' ? 'bg-green-100 text-green-600' : 
+                                                            alloc.status === 'submitted' ? 'bg-blue-100 text-blue-600' :
+                                                            alloc.status === 'revision' ? 'bg-yellow-100 text-yellow-600' :
+                                                            'bg-gray-100 text-gray-600'
+                                                        }`}>
+                                                            {alloc.status}
                                                         </span>
-                                                        <button 
-                                                            onClick={async () => {
-                                                                if (!window.confirm(`Unassign ${alloc.studentName}?`)) return;
-                                                                try {
-                                                                    const { doc, updateDoc } = await import('../firebase');
-                                                                    await updateDoc(doc(db, 'campaignAllocations', alloc.id), { status: 'cancelled' });
-                                                                    fetchAllocations();
-                                                                    alert('Creator unassigned.');
-                                                                } catch (e) {
-                                                                    alert('Failed to unassign.');
-                                                                }
-                                                            }}
-                                                            className="p-2 text-gray-400 hover:text-spark-red transition-colors"
-                                                        >
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </button>
+                                                        
+                                                        {alloc.status === 'submitted' && (
+                                                            <div className="flex gap-2">
+                                                                <button 
+                                                                    onClick={() => handleReleasePayment(alloc)}
+                                                                    disabled={submitting}
+                                                                    className="px-3 py-1.5 bg-spark-black text-white rounded-lg text-[10px] font-black uppercase hover:bg-gray-800 transition-colors"
+                                                                >
+                                                                    Accept Report
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => handleRejectReport(alloc)}
+                                                                    className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-purple-700 transition-colors"
+                                                                >
+                                                                    Reject Report
+                                                                </button>
+                                                            </div>
+                                                        )}
+
                                                     </div>
                                                 </div>
                                             ))}
@@ -1635,14 +1667,14 @@ const OrgDashboard: React.FC<{
                     <div className="bg-[var(--bg-primary)] w-full max-w-2xl rounded-[2rem] sm:rounded-[4rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300 my-auto">
                         <button
                             onClick={() => setSelectedBrand(null)}
-                            className="absolute top-8 right-8 w-12 h-12 bg-[var(--bg-tertiary)] rounded-full flex items-center justify-center hover:bg-spark-red hover:text-white transition-all z-10"
+                            className="absolute top-8 right-8 w-12 h-12 bg-[var(--bg-tertiary)] rounded-full flex items-center justify-center hover:bg-spark-purple hover:text-white transition-all z-10"
                         >
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12"></path></svg>
                         </button>
 
-                        <div className="h-48 bg-gradient-to-br from-spark-red to-red-400 relative">
+                        <div className="h-48 bg-gradient-to-br from-spark-purple to-purple-400 relative">
                             <div className="absolute -bottom-12 left-12">
-                                <div className="w-24 h-24 bg-[var(--bg-primary)] p-2 rounded-3xl shadow-xl ring-4 ring-white flex items-center justify-center text-4xl font-black text-spark-red">
+                                <div className="w-24 h-24 bg-[var(--bg-primary)] p-2 rounded-3xl shadow-xl ring-4 ring-white flex items-center justify-center text-4xl font-black text-spark-purple">
                                     {selectedBrand.imageUrl ? <img src={selectedBrand.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : (selectedBrand.name || '?').charAt(0)}
                                 </div>
                             </div>
@@ -1652,7 +1684,7 @@ const OrgDashboard: React.FC<{
                             <div className="flex justify-between items-start mb-8">
                                 <div>
                                     <h3 className="text-4xl font-black text-[var(--text-primary)] mb-1">{selectedBrand.name}</h3>
-                                    <p className="text-spark-red font-black uppercase tracking-widest text-sm">{selectedBrand.role}</p>
+                                    <p className="text-spark-purple font-black uppercase tracking-widest text-sm">{selectedBrand.role}</p>
                                 </div>
                             </div>
 
@@ -1684,7 +1716,7 @@ const OrgDashboard: React.FC<{
                                     {selectedBrand.website && (
                                         <div className="p-4 bg-[var(--bg-secondary)] rounded-2xl col-span-2">
                                             <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase mb-1">Website</p>
-                                            <a href={selectedBrand.website} target="_blank" rel="noopener noreferrer" className="font-bold text-spark-red text-sm hover:underline">{selectedBrand.website}</a>
+                                            <a href={selectedBrand.website} target="_blank" rel="noopener noreferrer" className="font-bold text-spark-purple text-sm hover:underline">{selectedBrand.website}</a>
                                         </div>
                                     )}
                                 </div>
@@ -1693,7 +1725,7 @@ const OrgDashboard: React.FC<{
                             <button
                                 onClick={() => handleOpenProposalModal(selectedBrand)}
                                 disabled={proposing}
-                                className="w-full py-6 bg-spark-black text-white font-black text-xl rounded-2xl hover:bg-spark-red transition-all shadow-xl shadow-red-100 flex items-center justify-center gap-3"
+                                className="w-full py-6 bg-spark-black text-white font-black text-xl rounded-2xl hover:bg-spark-purple transition-all shadow-xl shadow-purple-100 flex items-center justify-center gap-3"
                             >
                                 {proposing ? (
                                     <>
@@ -1706,8 +1738,13 @@ const OrgDashboard: React.FC<{
                     </div>
                 </div>
             )}
+            <CreatorProfileModal
+                isOpen={showCreatorProfile}
+                onClose={() => { setShowCreatorProfile(false); setSelectedCreatorProfile(null); }}
+                creator={selectedCreatorProfile}
+            />
         </DashboardShell>
     );
 };
 
-export default OrgDashboard;
+export default AssociationDashboard;

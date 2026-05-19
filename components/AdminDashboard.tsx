@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import DashboardShell from './DashboardShell';
 import { db, auth, collection, query, where, getDocs, limit, doc, getDoc, apiClient, orderBy, updateDoc, deleteDoc } from '../firebase';
+import { addDoc, serverTimestamp } from 'firebase/firestore';
 import { UserRole } from '../types';
 import ProfileView from './ProfileView';
 import DashboardPlaceholder from './DashboardPlaceholder';
@@ -9,7 +10,7 @@ import {
     BarChart3, Users, Megaphone, Building2, Shield, Wallet, 
     Search, ArrowUpRight, ArrowDownLeft, Clock, CheckCircle2, 
     XCircle, ArrowRight, Calendar, Activity, Database, Trash2, Edit,
-    Eye, Ban, CheckCircle, Info, ExternalLink, MapPin, TrendingUp
+    Eye, Ban, CheckCircle, Info, ExternalLink, MapPin, TrendingUp, FileText, Plus
 } from 'lucide-react';
 
 interface AdminStats {
@@ -47,6 +48,11 @@ const AdminDashboard: React.FC<{
     const [allGigs, setAllGigs] = useState<any[]>([]);
     const [allEvents, setAllEvents] = useState<any[]>([]);
     const [allTransactions, setAllTransactions] = useState<any[]>([]);
+    
+    // Blog State
+    const [allBlogs, setAllBlogs] = useState<any[]>([]);
+    const [showBlogModal, setShowBlogModal] = useState(false);
+    const [blogFormData, setBlogFormData] = useState({ title: '', excerpt: '', content: '', imageUrl: '', status: 'draft', id: '' });
     
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -108,6 +114,12 @@ const AdminDashboard: React.FC<{
                     new Date(b.createdAt?.seconds ? b.createdAt.seconds * 1000 : b.createdAt).getTime() - 
                     new Date(a.createdAt?.seconds ? a.createdAt.seconds * 1000 : a.createdAt).getTime()
                 ));
+            } else if (currentView === 'blogs') {
+                const snap = await getDocs(collection(db, "blogs"));
+                const blogs = snap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
+                // Sort in memory by createdAt to avoid requiring a composite Firestore index
+                blogs.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                setAllBlogs(blogs);
             }
 
             setError('');
@@ -201,6 +213,53 @@ const AdminDashboard: React.FC<{
         }
     };
 
+    const handleSaveBlog = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            if (blogFormData.id) {
+                // Update
+                const blogRef = doc(db, 'blogs', blogFormData.id);
+                await updateDoc(blogRef, {
+                    title: blogFormData.title,
+                    excerpt: blogFormData.excerpt,
+                    content: blogFormData.content,
+                    imageUrl: blogFormData.imageUrl,
+                    status: blogFormData.status,
+                    updatedAt: serverTimestamp()
+                });
+                alert('Blog updated successfully!');
+            } else {
+                // Create
+                await addDoc(collection(db, 'blogs'), {
+                    title: blogFormData.title,
+                    excerpt: blogFormData.excerpt,
+                    content: blogFormData.content,
+                    imageUrl: blogFormData.imageUrl,
+                    status: blogFormData.status,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp()
+                });
+                alert('Blog created successfully!');
+            }
+            setShowBlogModal(false);
+            setBlogFormData({ title: '', excerpt: '', content: '', imageUrl: '', status: 'draft', id: '' });
+            fetchAdminData();
+        } catch (err: any) {
+            alert('Failed to save blog: ' + err.message);
+        }
+    };
+
+    const handleDeleteBlog = async (id: string) => {
+        if (!window.confirm('Are you sure you want to delete this blog post?')) return;
+        try {
+            await deleteDoc(doc(db, 'blogs', id));
+            alert('Blog deleted successfully.');
+            fetchAdminData();
+        } catch (err: any) {
+            alert('Failed to delete blog: ' + err.message);
+        }
+    };
+
     const sidebarItems = [
         { id: 'overview', label: 'Network Pulse', icon: <Activity className="w-5 h-5" /> },
         { id: 'users', label: 'User Directory', icon: <Users className="w-5 h-5" /> },
@@ -210,6 +269,7 @@ const AdminDashboard: React.FC<{
         { id: 'revenue', label: 'Revenue Engine', icon: <TrendingUp className="w-5 h-5" /> },
         { id: 'withdrawals', label: 'Withdrawals', icon: <CheckCircle2 className="w-5 h-5" />, badge: allTransactions.filter(t => t.type === 'debit' && t.status === 'pending').length },
         { id: 'proposals', label: 'Proposal Monitor', icon: <Database className="w-5 h-5" /> },
+        { id: 'blogs', label: 'Blog Manager', icon: <FileText className="w-5 h-5" /> },
     ];
 
     const renderContent = () => {
@@ -248,8 +308,8 @@ const AdminDashboard: React.FC<{
                                         <span className="w-2 h-2 rounded-full bg-spark-red animate-pulse"></span>
                                         Platform Revenue Hub
                                     </p>
-                                    <h2 className="text-6xl font-black mb-4">₦{stats?.platformRevenue?.toLocaleString() || '0'}</h2>
-                                    <p className="text-gray-400 font-medium leading-relaxed max-w-xs">Accumulated earnings from platform commissions (10%) and campaign listing fees (₦20,000).</p>
+                                    <h2 className="text-6xl font-black mb-4">â‚¦{stats?.platformRevenue?.toLocaleString() || '0'}</h2>
+                                    <p className="text-gray-400 font-medium leading-relaxed max-w-xs">Accumulated earnings from platform commissions (10%) and campaign listing fees (â‚¦20,000).</p>
                                 </div>
                             </div>
 
@@ -259,7 +319,7 @@ const AdminDashboard: React.FC<{
                                     <div className="space-y-4 mt-6">
                                         <div className="flex items-center justify-between p-4 bg-[var(--bg-secondary)] rounded-2xl">
                                             <span className="text-sm font-bold text-[var(--text-secondary)]">Campaign Listing Fee</span>
-                                            <span className="font-black text-spark-red">₦20,000 / gig</span>
+                                            <span className="font-black text-spark-red">â‚¦20,000 / gig</span>
                                         </div>
                                         <div className="flex items-center justify-between p-4 bg-[var(--bg-secondary)] rounded-2xl">
                                             <span className="text-sm font-bold text-[var(--text-secondary)]">Creator Commission</span>
@@ -296,7 +356,7 @@ const AdminDashboard: React.FC<{
                                                     </div>
                                                 </div>
                                                 <div className="text-right">
-                                                    <p className="font-black text-green-600 text-lg">+ ₦{Number(t.amount).toLocaleString()}</p>
+                                                    <p className="font-black text-green-600 text-lg">+ â‚¦{Number(t.amount).toLocaleString()}</p>
                                                     <p className="text-[10px] font-black uppercase text-[var(--text-secondary)]">{t.status}</p>
                                                 </div>
                                             </div>
@@ -314,7 +374,7 @@ const AdminDashboard: React.FC<{
                             <div className="p-8 border-b border-[var(--border-color)] flex justify-between items-center">
                                 <div>
                                     <h3 className="text-2xl font-black text-[var(--text-primary)]">Campus Events</h3>
-                                    <p className="text-[var(--text-secondary)] font-bold text-sm">Monitor all organization-led experiences.</p>
+                                    <p className="text-[var(--text-secondary)] font-bold text-sm">Monitor all Association-led experiences.</p>
                                 </div>
                                 <div className="px-4 py-2 bg-spark-red/10 text-spark-red rounded-xl font-black text-xs uppercase tracking-widest border border-spark-red/20">
                                     {allEvents.length} Active Events
@@ -348,7 +408,7 @@ const AdminDashboard: React.FC<{
                                                     <td className="px-8 py-6">
                                                         <div className="flex items-center gap-2">
                                                             <div className="w-8 h-8 rounded-lg bg-[var(--bg-tertiary)] flex items-center justify-center font-black text-xs">{(ev.hostName || '?').charAt(0)}</div>
-                                                            <p className="text-sm font-bold text-[var(--text-primary)]">{ev.hostName || 'Organization'}</p>
+                                                            <p className="text-sm font-bold text-[var(--text-primary)]">{ev.hostName || 'Association'}</p>
                                                         </div>
                                                     </td>
                                                     <td className="px-8 py-6">
@@ -381,12 +441,12 @@ const AdminDashboard: React.FC<{
                         <div className="grid md:grid-cols-2 gap-6">
                             <div className="bg-spark-black p-8 rounded-[2.5rem] text-white">
                                 <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest mb-2">Platform Escrow</p>
-                                <h3 className="text-4xl font-black">₦{(stats?.totalEscrow || 0).toLocaleString()}</h3>
+                                <h3 className="text-4xl font-black">â‚¦{(stats?.totalEscrow || 0).toLocaleString()}</h3>
                                 <p className="text-xs text-spark-red font-black mt-4 uppercase tracking-widest">Secured in Smart Contracts</p>
                             </div>
                             <div className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)]">
                                 <p className="text-[var(--text-secondary)] font-bold text-[10px] uppercase tracking-widest mb-2">Platform Volume</p>
-                                <h3 className="text-4xl font-black text-[var(--text-primary)]">₦{(stats?.rewardPool || 0).toLocaleString()}</h3>
+                                <h3 className="text-4xl font-black text-[var(--text-primary)]">â‚¦{(stats?.rewardPool || 0).toLocaleString()}</h3>
                                 <p className="text-xs text-green-600 font-black mt-4 uppercase tracking-widest">Total Transaction History</p>
                             </div>
                         </div>
@@ -430,7 +490,7 @@ const AdminDashboard: React.FC<{
                                                 </td>
                                                 <td className="px-8 py-5">
                                                     <p className={`font-black ${t.type === 'credit' ? 'text-green-600' : 'text-spark-red'}`}>
-                                                        {t.type === 'credit' ? '+' : '-'} ₦{Number(t.amount || 0).toLocaleString()}
+                                                        {t.type === 'credit' ? '+' : '-'} â‚¦{Number(t.amount || 0).toLocaleString()}
                                                     </p>
                                                 </td>
                                                 <td className="px-8 py-5">
@@ -487,7 +547,7 @@ const AdminDashboard: React.FC<{
                                                     </div>
                                                 </td>
                                                 <td className="px-8 py-6">
-                                                    <p className="font-black text-[var(--text-primary)]">₦{(g.budget || g.reward || 0).toLocaleString()}</p>
+                                                    <p className="font-black text-[var(--text-primary)]">â‚¦{(g.budget || g.reward || 0).toLocaleString()}</p>
                                                 </td>
                                                 <td className="px-8 py-6">
                                                     <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
@@ -633,14 +693,14 @@ const AdminDashboard: React.FC<{
                                     <div key={t.id} className="p-8 bg-[var(--bg-secondary)] rounded-[2.5rem] border border-[var(--border-color)] flex flex-col md:flex-row md:items-center justify-between gap-6 group hover:bg-[var(--bg-primary)] hover:shadow-2xl transition-all duration-300">
                                         <div className="flex items-center gap-6">
                                             <div className="w-16 h-16 bg-spark-red/10 text-spark-red rounded-2xl flex items-center justify-center text-2xl font-black">
-                                                ₦
+                                                â‚¦
                                             </div>
                                             <div>
-                                                <h4 className="text-xl font-black text-[var(--text-primary)] mb-1">₦{Number(t.amount).toLocaleString()}</h4>
+                                                <h4 className="text-xl font-black text-[var(--text-primary)] mb-1">â‚¦{Number(t.amount).toLocaleString()}</h4>
                                                 <p className="text-sm font-bold text-[var(--text-secondary)]">{t.userName || 'Unknown User'} ({t.userEmail || 'No email'})</p>
                                                 <div className="flex flex-wrap gap-3 mt-2">
                                                     <div className="px-3 py-1 bg-blue-50 text-blue-600 text-[10px] font-black rounded-lg uppercase tracking-widest border border-blue-100">
-                                                        {t.bankName || 'No Bank'} • {t.accountNumber || 'No Account'}
+                                                        {t.bankName || 'No Bank'} â€¢ {t.accountNumber || 'No Account'}
                                                     </div>
                                                     <div className="px-3 py-1 bg-green-50 text-green-600 text-[10px] font-black rounded-lg uppercase tracking-widest border border-green-100">
                                                         {t.accountName || 'No Name'}
@@ -675,7 +735,7 @@ const AdminDashboard: React.FC<{
                             <div className="flex items-center justify-between mb-8">
                                 <h3 className="text-2xl font-black text-[var(--text-primary)]">Disbursal History</h3>
                                 <div className="px-4 py-2 bg-spark-black text-white text-[10px] font-black rounded-lg uppercase tracking-widest">
-                                    Total Disbursed: ₦{allTransactions.filter(t => t.type === 'debit' && t.status === 'completed').reduce((sum, t) => sum + (Number(t.amount) || 0), 0).toLocaleString()}
+                                    Total Disbursed: â‚¦{allTransactions.filter(t => t.type === 'debit' && t.status === 'completed').reduce((sum, t) => sum + (Number(t.amount) || 0), 0).toLocaleString()}
                                 </div>
                             </div>
                             
@@ -694,10 +754,10 @@ const AdminDashboard: React.FC<{
                                             <tr key={t.id} className="hover:bg-[var(--bg-primary)] transition-colors">
                                                 <td className="px-8 py-5">
                                                     <p className="font-black text-sm text-[var(--text-primary)]">{t.userName || 'Unknown'}</p>
-                                                    <p className="text-[10px] font-bold text-[var(--text-secondary)]">{t.bankName || '---'} • {t.accountNumber || '---'}</p>
+                                                    <p className="text-[10px] font-bold text-[var(--text-secondary)]">{t.bankName || '---'} â€¢ {t.accountNumber || '---'}</p>
                                                 </td>
                                                 <td className="px-8 py-5">
-                                                    <p className="font-black text-spark-red">₦{Number(t.amount).toLocaleString()}</p>
+                                                    <p className="font-black text-spark-red">â‚¦{Number(t.amount).toLocaleString()}</p>
                                                 </td>
                                                 <td className="px-8 py-5">
                                                     <p className="text-xs font-bold text-[var(--text-secondary)]">{t.createdAt?.seconds ? new Date(t.createdAt.seconds * 1000).toLocaleDateString() : 'Recent'}</p>
@@ -772,15 +832,165 @@ const AdminDashboard: React.FC<{
                     </div>
                 );
 
+            case 'blogs':
+                return (
+                    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                        <div className="bg-[var(--bg-primary)] rounded-[3rem] border border-[var(--border-color)] shadow-sm overflow-hidden">
+                            <div className="p-8 border-b border-[var(--border-color)] flex justify-between items-center">
+                                <div>
+                                    <h3 className="text-2xl font-black text-[var(--text-primary)]">Blog Manager</h3>
+                                    <p className="text-[var(--text-secondary)] font-bold text-sm">Create and manage content for the platform.</p>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        setBlogFormData({ title: '', excerpt: '', content: '', imageUrl: '', status: 'published', id: '' });
+                                        setShowBlogModal(true);
+                                    }}
+                                    className="px-6 py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all flex items-center gap-2"
+                                >
+                                    <Plus className="w-5 h-5" /> New Post
+                                </button>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full">
+                                    <thead className="bg-[var(--bg-secondary)]/50">
+                                        <tr>
+                                            <th className="px-8 py-5 text-left text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Title</th>
+                                            <th className="px-8 py-5 text-left text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Status</th>
+                                            <th className="px-8 py-5 text-left text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Date</th>
+                                            <th className="px-8 py-5 text-right text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-[var(--border-color)]">
+                                        {allBlogs.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={4} className="px-8 py-10 text-center text-[var(--text-secondary)] font-bold italic">No blog posts yet.</td>
+                                            </tr>
+                                        ) : (
+                                            allBlogs.map((b) => (
+                                                <tr key={b.id} className="hover:bg-[var(--bg-secondary)]/30 transition-colors">
+                                                    <td className="px-8 py-6">
+                                                        <p className="font-black text-[var(--text-primary)]">{b.title}</p>
+                                                        <p className="text-xs text-[var(--text-secondary)] truncate max-w-md mt-1">{b.excerpt}</p>
+                                                    </td>
+                                                    <td className="px-8 py-6">
+                                                        <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                                                            b.status === 'published' ? 'bg-green-500/10 text-green-600' : 'bg-gray-200 text-gray-600'
+                                                        }`}>
+                                                            {b.status}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-8 py-6 text-xs text-[var(--text-secondary)] font-bold">
+                                                        {b.createdAt?.seconds ? new Date(b.createdAt.seconds * 1000).toLocaleDateString() : 'Recent'}
+                                                    </td>
+                                                    <td className="px-8 py-6 text-right">
+                                                        <button 
+                                                            onClick={() => {
+                                                                setBlogFormData({ ...b });
+                                                                setShowBlogModal(true);
+                                                            }} 
+                                                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
+                                                        >
+                                                            <Edit className="w-5 h-5" />
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleDeleteBlog(b.id)} 
+                                                            className="p-2 text-gray-400 hover:text-spark-red hover:bg-red-50 rounded-xl transition-all ml-2"
+                                                        >
+                                                            <Trash2 className="w-5 h-5" />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {/* Blog Form Modal */}
+                        {showBlogModal && (
+                            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                                <div className="bg-[var(--bg-primary)] p-8 rounded-[2rem] border border-[var(--border-color)] max-w-2xl w-full max-h-[90vh] overflow-y-auto relative animate-in zoom-in-95 duration-300">
+                                    <button onClick={() => setShowBlogModal(false)} className="absolute top-6 right-6 p-2 text-[var(--text-secondary)] hover:text-spark-red hover:bg-red-50 rounded-full transition-all">
+                                        <XCircle className="w-6 h-6" />
+                                    </button>
+                                    <h3 className="text-2xl font-black text-[var(--text-primary)] mb-6">{blogFormData.id ? 'Edit' : 'Create'} Blog Post</h3>
+                                    
+                                    <form onSubmit={handleSaveBlog} className="space-y-6">
+                                        <div>
+                                            <label className="block text-sm font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Title</label>
+                                            <input 
+                                                required 
+                                                type="text" 
+                                                value={blogFormData.title} 
+                                                onChange={e => setBlogFormData({...blogFormData, title: e.target.value})}
+                                                className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-medium focus:ring-2 focus:ring-spark-red/20 outline-none"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Excerpt</label>
+                                            <input 
+                                                required 
+                                                type="text" 
+                                                value={blogFormData.excerpt} 
+                                                onChange={e => setBlogFormData({...blogFormData, excerpt: e.target.value})}
+                                                className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-medium focus:ring-2 focus:ring-spark-red/20 outline-none"
+                                                placeholder="Short summary for the blog list"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Image URL</label>
+                                            <input 
+                                                type="text" 
+                                                value={blogFormData.imageUrl} 
+                                                onChange={e => setBlogFormData({...blogFormData, imageUrl: e.target.value})}
+                                                className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-medium focus:ring-2 focus:ring-spark-red/20 outline-none"
+                                                placeholder="https://..."
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Status</label>
+                                            <select 
+                                                value={blogFormData.status} 
+                                                onChange={e => setBlogFormData({...blogFormData, status: e.target.value})}
+                                                className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-medium focus:ring-2 focus:ring-spark-red/20 outline-none"
+                                            >
+                                                <option value="draft">Draft</option>
+                                                <option value="published">Published</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Content (Markdown/Text)</label>
+                                            <textarea 
+                                                required 
+                                                rows={10}
+                                                value={blogFormData.content} 
+                                                onChange={e => setBlogFormData({...blogFormData, content: e.target.value})}
+                                                className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-medium focus:ring-2 focus:ring-spark-red/20 outline-none resize-none"
+                                                placeholder="Write your blog content here..."
+                                            />
+                                        </div>
+                                        
+                                        <button type="submit" className="w-full py-4 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-100 uppercase tracking-widest text-sm">
+                                            {blogFormData.id ? 'Update Post' : 'Publish Post'}
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+
             case 'overview':
             default:
                 return (
                     <div className="space-y-8 animate-in fade-in duration-500">
-                        {/* ── High-Level Vital Stats ── */}
+                        {/* â”€â”€ High-Level Vital Stats â”€â”€ */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                             {[
                                 { label: 'Active Network', value: stats?.users, sub: 'Total Participants', icon: <Users className="w-6 h-6" />, color: 'bg-spark-red text-white' },
-                                { label: 'Platform Escrow', value: `₦${(stats?.totalEscrow || 0).toLocaleString()}`, sub: 'Secured Funds', icon: <Shield className="w-6 h-6" />, color: 'bg-blue-600 text-white' },
+                                { label: 'Platform Escrow', value: `â‚¦${(stats?.totalEscrow || 0).toLocaleString()}`, sub: 'Secured Funds', icon: <Shield className="w-6 h-6" />, color: 'bg-blue-600 text-white' },
                                 { label: 'Campaign Hub', value: stats?.gigs, sub: `${stats?.activeGigs} Currently Active`, icon: <Megaphone className="w-6 h-6" />, color: 'bg-green-600 text-white' },
                                 { label: 'Campus Events', value: stats?.events, sub: 'Live Experiences', icon: <Calendar className="w-6 h-6" />, color: 'bg-spark-black text-white' },
                             ].map((stat, i) => (
@@ -852,37 +1062,7 @@ const AdminDashboard: React.FC<{
                             </div>
                         </div>
 
-                        {/* Recent Activity Log */}
-                        <div className="bg-[var(--bg-primary)] p-10 rounded-[3rem] border border-[var(--border-color)] shadow-sm">
-                            <div className="flex justify-between items-center mb-8">
-                                <h3 className="text-xl font-black text-[var(--text-primary)]">Platform Activity Log</h3>
-                                <button onClick={() => setCurrentView('transactions')} className="text-[10px] font-black text-spark-red uppercase tracking-widest hover:underline">View Ledger</button>
-                            </div>
-                            <div className="space-y-4">
-                                {allTransactions.length === 0 ? (
-                                    <p className="text-[var(--text-secondary)] text-sm italic py-4">No recent financial activity recorded.</p>
-                                ) : (
-                                    allTransactions.slice(0, 5).map((t, i) => (
-                                        <div key={i} className="flex items-center justify-between p-4 bg-[var(--bg-secondary)] rounded-2xl hover:bg-spark-red/5 transition-all">
-                                            <div className="flex items-center gap-4">
-                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${t.type === 'credit' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                                                    {t.type === 'credit' ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownLeft className="w-4 h-4" />}
-                                                </div>
-                                                <div>
-                                                    <p className="text-sm font-black text-[var(--text-primary)]">{t.description}</p>
-                                                    <p className="text-[10px] text-[var(--text-secondary)] font-bold">{t.createdAt?.seconds ? new Date(t.createdAt.seconds * 1000).toLocaleDateString() : 'Recent'}</p>
-                                                </div>
-                                            </div>
-                                            <div className="text-right">
-                                                <p className={`text-sm font-black ${t.type === 'credit' ? 'text-green-600' : 'text-spark-red'}`}>
-                                                    {t.type === 'credit' ? '+' : '-'} ₦{Number(t.amount || 0).toLocaleString()}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
-                        </div>
+
                     </div>
                 );
         }
@@ -890,7 +1070,7 @@ const AdminDashboard: React.FC<{
 
     return (
         <DashboardShell
-            role={UserRole.Admin}
+            role={'Admin'}
             activeView={currentView}
             onViewChange={setCurrentView}
             onLogout={onLogout}
@@ -982,7 +1162,7 @@ const AdminDashboard: React.FC<{
                                                     </p>
                                                 </div>
                                                 <p className="text-4xl font-black text-[var(--text-primary)]">
-                                                    ₦{userDetailData.transactions.reduce((acc, t) => {
+                                                    â‚¦{userDetailData.transactions.reduce((acc, t) => {
                                                         if (selectedUserDetail.role === 'Brand') {
                                                             return acc + (t.type === 'debit' ? (Number(t.amount) || 0) : 0);
                                                         } else {
@@ -1016,7 +1196,7 @@ const AdminDashboard: React.FC<{
                                                                     </div>
                                                                 </div>
                                                                 <p className={`font-black ${t.type === 'credit' ? 'text-green-600' : 'text-spark-red'}`}>
-                                                                    {t.type === 'credit' ? '+' : '-'} ₦{Number(t.amount || 0).toLocaleString()}
+                                                                    {t.type === 'credit' ? '+' : '-'} â‚¦{Number(t.amount || 0).toLocaleString()}
                                                                 </p>
                                                             </div>
                                                         ))
@@ -1060,7 +1240,7 @@ const AdminDashboard: React.FC<{
                             <div className="space-y-6">
                                 <div className="p-6 bg-spark-red/5 rounded-3xl border border-spark-red/10">
                                     <p className="text-[10px] font-black text-spark-red uppercase tracking-widest mb-1">Amount to Disburse</p>
-                                    <p className="text-3xl font-black text-[var(--text-primary)]">₦{Number(selectedWithdrawal.amount).toLocaleString()}</p>
+                                    <p className="text-3xl font-black text-[var(--text-primary)]">â‚¦{Number(selectedWithdrawal.amount).toLocaleString()}</p>
                                 </div>
 
                                 <div className="space-y-4">

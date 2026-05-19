@@ -1,4 +1,4 @@
-
+﻿
 import React from 'react';
 import { CheckCircleIcon, PARTNER_LOGOS } from '../constants';
 
@@ -22,10 +22,10 @@ const BrandsPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNaviga
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <button 
-                onClick={() => onNavigate('contact')}
-                className="bg-gradient-red text-white font-bold py-4 px-10 rounded-2xl text-base hover:shadow-xl hover:shadow-spark-red/20 transition-all shadow-lg active:scale-95"
+                onClick={() => onNavigate('schedule-call')}
+                className="bg-gradient-red text-white font-bold py-4 px-10 rounded-2xl text-base hover:shadow-xl hover:shadow-spark-red/20 transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
               >
-                Get Started
+                Schedule a Call
               </button>
               <button 
                  onClick={() => document.getElementById('solutions')?.scrollIntoView({ behavior: 'smooth' })}
@@ -78,12 +78,12 @@ const BrandsPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNaviga
 
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 text-left">
                 {[
-                    { title: "Campus Creator Programs", desc: "Recruit long-term reps to drive downloads, sign-ups, and awareness on specific campuses.", icon: "🎓" },
-                    { title: "Event Sponsorships", desc: "Find high-traffic campus events and secure sponsorship tiers that guarantee visibility.", icon: "🎉" },
-                    { title: "Creator Marketing", desc: "Collaborate with micro-creators who have high engagement within university bubbles.", icon: "📱" },
-                    { title: "Product Activations", desc: "Coordinate on-ground teams to distribute samples or manage pop-up stalls directly.", icon: "📦" },
-                    { title: "Market Research", desc: "Gain rapid feedback on products by deploying surveys to verified audiences.", icon: "📊" },
-                    { title: "Direct Recruitment", desc: "Spot top talent early. Connect with leaders of clubs for internships and grad roles.", icon: "🤝" }
+                    { title: "Campus Creator Programs", desc: "Recruit long-term reps to drive downloads, sign-ups, and awareness on specific campuses.", icon: "ðŸŽ“" },
+                    { title: "Event Sponsorships", desc: "Find high-traffic campus events and secure sponsorship tiers that guarantee visibility.", icon: "ðŸŽ‰" },
+                    { title: "Creator Marketing", desc: "Collaborate with micro-creators who have high engagement within university bubbles.", icon: "ðŸ“±" },
+                    { title: "Product Activations", desc: "Coordinate on-ground teams to distribute samples or manage pop-up stalls directly.", icon: "ðŸ“¦" },
+                    { title: "Market Research", desc: "Gain rapid feedback on products by deploying surveys to verified audiences.", icon: "ðŸ“Š" },
+                    { title: "Direct Recruitment", desc: "Spot top talent early. Connect with leaders of clubs for internships and grad roles.", icon: "ðŸ¤" }
                 ].map((card, i) => (
                     <div key={i} className="bg-[var(--bg-primary)] p-8 rounded-[2rem] border border-[var(--border-color)] group card-hover shadow-sm transition-all duration-500 hover:shadow-2xl hover:shadow-spark-red/5">
                         <div className="text-3xl mb-6 transition-transform duration-300 group-hover:scale-110">{card.icon}</div>

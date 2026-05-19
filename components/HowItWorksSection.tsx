@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { HOW_IT_WORKS_CONTENT } from '../constants';
 import { UserType } from '../types';
 
 const HowItWorksSection: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<UserType>(UserType.Brands);
+  const [activeTab, setActiveTab] = useState<UserType>('For Brands');
 
   return (
     <section id="how-it-works" className="py-24 bg-[var(--bg-primary)]">
@@ -15,7 +15,7 @@ const HowItWorksSection: React.FC = () => {
           
           <div className="flex items-center justify-center mt-10">
             <div className="inline-flex p-1 bg-spark-red/5 rounded-2xl border border-spark-red/10">
-              {[UserType.Brands, UserType.Creators, UserType.Clubs].map((type) => (
+              {['For Brands', 'For Creators', 'For Associations'].map((type) => (
                 <button
                   key={type}
                   onClick={() => setActiveTab(type)}
@@ -23,7 +23,7 @@ const HowItWorksSection: React.FC = () => {
                     activeTab === type ? 'bg-spark-red text-white shadow-lg' : 'text-[var(--text-secondary)] hover:text-spark-red'
                   }`}
                 >
-                  {type === UserType.Creators ? 'Creators' : type === UserType.Clubs ? 'Organizers' : 'Brands'}
+                  {type === 'For Creators' ? 'Creators' : type === 'For Associations' ? 'Organizers' : 'Brands'}
                 </button>
               ))}
             </div>

@@ -27,6 +27,7 @@ export const NAV_LINKS: NavLink[] = [
     { label: 'For Brands', href: 'for-brands' },
     { label: 'For Creators', href: 'for-creators' },
     { label: 'Opportunities', href: 'careers' },
+    { label: 'Blog', href: 'blog' },
     { label: 'Contact', href: 'contact' },
 ];
 
@@ -50,12 +51,12 @@ export const FEATURES: Feature[] = [
 export const HOW_IT_WORKS_CONTENT: HowItWorksContent = {
     [UserType.Brands]: [
         { title: "Set Your Objective", description: "Define your campaign goals—be it app downloads, brand awareness, or product sampling." },
-        { title: "Browse the Marketplace", description: "Search for creators and organizations by university, state, or interest group." },
+        { title: "Browse the Marketplace", description: "Search for creators and Associations by university, state, or interest group." },
         { title: "Initiate Collaboration", description: "Send automated offers or custom sponsorship proposals to your selected leads." },
         { title: "Track Performance", description: "Monitor real-time engagement and growth through our integrated dashboard." },
     ],
-    [UserType.Organizations]: [
-        { title: "Build Your Profile", description: "Create a verified digital home for your organization." },
+    [UserType.Associations]: [
+        { title: "Build Your Profile", description: "Create a verified digital home for your Association." },
         { title: "List Your Events", description: "Post upcoming concerts, seminars, or festivals to attract corporate sponsors." },
         { title: "Secure Funding", description: "Chat directly with brand managers and finalize sponsorship agreements." },
         { title: "Execute & Grow", description: "Grow your club's impact with professional resources and corporate backing." },
@@ -84,7 +85,7 @@ export const TESTIMONIALS: Testimonial[] = [
         title: "Growth Lead, FinTech X",
     },
     {
-        quote: "Our campus week used to be underfunded. Now, brands reach out to us directly via Spark. It's been a game changer for our organization.",
+        quote: "Our campus week used to be underfunded. Now, brands reach out to us directly via Spark. It's been a game changer for our Association.",
         name: "Ikenna Eze",
         title: "President, UNN Campus Union",
     },
@@ -96,7 +97,7 @@ export const TESTIMONIALS: Testimonial[] = [
 ];
 
 export const FAQ_ITEMS: FaqItem[] = [
-    { question: "How do I get verified?", answer: "Users are verified using university emails or valid ID cards. Organizations must provide proof of registration." },
+    { question: "How do I get verified?", answer: "Users are verified using university emails or valid ID cards. Associations must provide proof of registration." },
     { question: "Is it really free for creators?", answer: "Yes, 100%. We only charge brands a service fee when they hire creators or sponsor events." },
 ];
 

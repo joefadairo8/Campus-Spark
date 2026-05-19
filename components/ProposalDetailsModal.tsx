@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 
 /**
  * Returns the Cloudinary URL for downloading a raw document.
- * For raw resource types (PDF, DOCX), fl_attachment is not supported —
+ * For raw resource types (PDF, DOCX), fl_attachment is not supported â€”
  * the URL is returned as-is. The <a download> attribute handles the
  * browser download hint.
  */
@@ -79,7 +79,7 @@ export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOp
                     <div className="grid grid-cols-2 gap-4">
                         <div className="p-5 bg-[var(--bg-primary)] rounded-2xl border border-[var(--border-color)]">
                             <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Proposed Budget</p>
-                            <p className="text-xl font-black text-[var(--text-primary)]">{proposal.budget ? `₦${Number(proposal.budget).toLocaleString()}` : 'Not specificed'}</p>
+                            <p className="text-xl font-black text-[var(--text-primary)]">{proposal.budget ? `â‚¦${Number(proposal.budget).toLocaleString()}` : 'Not specificed'}</p>
                         </div>
                         <div className="p-5 bg-[var(--bg-primary)] rounded-2xl border border-[var(--border-color)]">
                             <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Timeline</p>
@@ -177,7 +177,7 @@ export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOp
                                 </button>
                             )}
 
-                            {proposal.status === 'accepted' && !isSender && proposal.sender?.role === 'Organization' && onReleaseSponsorship && (
+                            {proposal.status === 'accepted' && !isSender && proposal.sender?.role === 'Association' && onReleaseSponsorship && (
                                 <div className="w-full flex flex-col gap-3">
                                     <button
                                         onClick={() => onReleaseSponsorship(proposal)}

@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 
 interface EventDetailsModalProps {
     isOpen: boolean;
@@ -18,7 +18,7 @@ export const EventDetailsModal: React.FC<EventDetailsModalProps> = ({ isOpen, on
 
                 {/* Header Image Placeholder */}
                 <div className="h-40 bg-gradient-to-r from-spark-red/10 to-orange-100 flex items-center justify-center relative">
-                    <div className="text-4xl">✨</div>
+                    <div className="text-4xl">âœ¨</div>
                     <button onClick={onClose} className="absolute top-6 right-6 w-10 h-10 bg-spark-black text-white rounded-full flex items-center justify-center hover:bg-spark-red transition-all">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
@@ -36,7 +36,7 @@ export const EventDetailsModal: React.FC<EventDetailsModalProps> = ({ isOpen, on
                         <h2 className="text-2xl font-fancy font-black text-[var(--text-primary)] leading-tight mb-2 tracking-tighter">{event.name}</h2>
                         <div className="flex flex-wrap items-center gap-2 text-[var(--text-secondary)] font-bold text-xs uppercase tracking-widest">
                             <span>Hosted by <span className="text-spark-red">{event.hostName}</span></span>
-                            <span className="opacity-30">•</span>
+                            <span className="opacity-30">â€¢</span>
                             <span>{event.university}</span>
                         </div>
                     </div>
@@ -49,7 +49,7 @@ export const EventDetailsModal: React.FC<EventDetailsModalProps> = ({ isOpen, on
                         </div>
                         <div className="p-5 bg-spark-red/5 rounded-2xl border border-spark-red/10">
                             <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase tracking-[0.2em] mb-1 opacity-70">Sponsorship Goal</p>
-                            <p className="text-base font-black text-[var(--text-primary)]">₦{event.targetSponsorship?.toLocaleString()}</p>
+                            <p className="text-base font-black text-[var(--text-primary)]">â‚¦{event.targetSponsorship?.toLocaleString()}</p>
                         </div>
                     </div>
 

@@ -42,6 +42,13 @@ const BrandDashboard: React.FC<{
     const [selectedCampaign, setSelectedCampaign] = useState<any>(null);
     const [editingGig, setEditingGig] = useState<any>(null);
     const [topUpAmount, setTopUpAmount] = useState('5000');
+    const [myEvents, setMyEvents] = useState<any[]>([]);
+    const [eventFormData, setEventFormData] = useState({ name: '', date: '', description: '', targetSponsorship: '' });
+    const [showCreateEventModal, setShowCreateEventModal] = useState(false);
+    const [eventSubmitting, setEventSubmitting] = useState(false);
+    const [editingEvent, setEditingEvent] = useState<any>(null);
+    const [editEventFormData, setEditEventFormData] = useState({ name: '', date: '', description: '', targetSponsorship: '' });
+    const [editEventSubmitting, setEditEventSubmitting] = useState(false);
 
     useEffect(() => {
         const script = document.createElement("script");
@@ -59,7 +66,7 @@ const BrandDashboard: React.FC<{
     const [transactions, setTransactions] = useState<any[]>([]);
     const [walletLoading, setWalletLoading] = useState(false);
 
-    // ── Campaign & Allocation state ───────────────────────────────────────────
+    // â”€â”€ Campaign & Allocation state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const [walletData, setWalletData] = useState<{ available: number; locked: number }>({ available: 0, locked: 0 });
     const [allAllocations, setAllAllocations] = useState<CampaignAllocation[]>([]);
     const [campaignAllocations, setCampaignAllocations] = useState<Record<string, CampaignAllocation[]>>({});
@@ -134,7 +141,7 @@ const BrandDashboard: React.FC<{
 
         const stats = getCampaignBudgetStats(viewingApplicants);
         if (amount > stats.remaining) {
-            alert(`Amount ₦${amount.toLocaleString()} exceeds remaining campaign budget of ₦${stats.remaining.toLocaleString()}.`);
+            alert(`Amount â‚¦${amount.toLocaleString()} exceeds remaining campaign budget of â‚¦${stats.remaining.toLocaleString()}.`);
             return;
         }
 
@@ -218,7 +225,7 @@ const BrandDashboard: React.FC<{
         }
     };
 
-    // Sync wallet strip data (lightweight — always runs on mount & profile load)
+    // Sync wallet strip data (lightweight â€” always runs on mount & profile load)
     const syncWalletStrip = async (profileId: string) => {
         try {
             const w = await WalletService.getOrCreateWallet(profileId);
@@ -252,7 +259,7 @@ const BrandDashboard: React.FC<{
 
             // TERTIARY FALLBACK: full collection scan filtered client-side
             if (allCampaigns.length === 0) {
-                console.warn('[fetchCampaigns] Indexed queries returned 0 — doing full scan fallback.');
+                console.warn('[fetchCampaigns] Indexed queries returned 0 â€” doing full scan fallback.');
                 const allRes = await apiClient.get('gigs');
                 const allGigs: any[] = allRes.data || [];
                 allCampaigns = allGigs.filter((g: any) =>
@@ -318,7 +325,7 @@ const BrandDashboard: React.FC<{
         setShowAllocationModal(true);
     };
 
-    // Confirm allocation → persist to Firestore & lock funds
+    // Confirm allocation â†’ persist to Firestore & lock funds
     const handleAllocateCreator = async () => {
         if (!brandProfile?.id || !allocationTarget || !allocationForm.campaignId || !allocationForm.amount) return;
         const amount = Number(allocationForm.amount);
@@ -327,7 +334,7 @@ const BrandDashboard: React.FC<{
         if (!campaign) return;
         const stats = getCampaignBudgetStats(campaign);
         if (amount > stats.remaining) {
-            alert(`Amount ₦${amount.toLocaleString()} exceeds remaining campaign budget of ₦${stats.remaining.toLocaleString()}.`);
+            alert(`Amount â‚¦${amount.toLocaleString()} exceeds remaining campaign budget of â‚¦${stats.remaining.toLocaleString()}.`);
             return;
         }
         setAllocationSubmitting(true);
@@ -368,10 +375,10 @@ const BrandDashboard: React.FC<{
         }
     };
 
-    // Release payment → move escrow to influencer wallet, update allocation status
+    // Release payment â†’ move escrow to influencer wallet, update allocation status
     const handleReleasePayment = async (allocation: CampaignAllocation) => {
         if (!brandProfile?.id || !allocation.id) return;
-        if (!window.confirm(`Release ₦${allocation.amount.toLocaleString()} to ${allocation.creatorName}?`)) return;
+        if (!window.confirm(`Release â‚¦${allocation.amount.toLocaleString()} to ${allocation.creatorName}?`)) return;
         
         setReleaseSubmitting(allocation.id);
         try {
@@ -407,11 +414,11 @@ const BrandDashboard: React.FC<{
         }
         
         if (walletData.available < amount) {
-            alert(`Insufficient wallet balance. You need ₦${amount.toLocaleString()} in your available balance to release these funds.`);
+            alert(`Insufficient wallet balance. You need â‚¦${amount.toLocaleString()} in your available balance to release these funds.`);
             return;
         }
 
-        if (!window.confirm(`Release ₦${amount.toLocaleString()} sponsorship to ${proposal.sender?.name}?`)) return;
+        if (!window.confirm(`Release â‚¦${amount.toLocaleString()} sponsorship to ${proposal.sender?.name}?`)) return;
         
         try {
             // We need to move funds from brand to org with 10% fee
@@ -444,10 +451,10 @@ const BrandDashboard: React.FC<{
         }
     };
 
-    // Reject allocation → refund to available balance, mark rejected
+    // Reject allocation â†’ refund to available balance, mark rejected
     const handleRejectAllocation = async (allocation: CampaignAllocation) => {
         if (!brandProfile?.id || !allocation.id) return;
-        if (!window.confirm(`Reject and refund ₦${allocation.amount.toLocaleString()} for ${allocation.creatorName}?`)) return;
+        if (!window.confirm(`Reject and refund â‚¦${allocation.amount.toLocaleString()} for ${allocation.creatorName}?`)) return;
         try {
             await WalletService.refundAllocation(
                 brandProfile.id,
@@ -532,11 +539,11 @@ const BrandDashboard: React.FC<{
         const totalRequired = amount + 20000; // Listing fee
 
         if (walletData.available < totalRequired) {
-            alert(`Insufficient wallet balance. You need ₦${totalRequired.toLocaleString()} (₦${amount.toLocaleString()} budget + ₦20,000 listing fee) but only have ₦${walletData.available.toLocaleString()}.`);
+            alert(`Insufficient wallet balance. You need â‚¦${totalRequired.toLocaleString()} (â‚¦${amount.toLocaleString()} budget + â‚¦20,000 listing fee) but only have â‚¦${walletData.available.toLocaleString()}.`);
             return;
         }
 
-        if (!window.confirm(`Launch campaign? A flat listing fee of ₦20,000 will be charged.`)) return;
+        if (!window.confirm(`Launch campaign? A flat listing fee of â‚¦20,000 will be charged.`)) return;
 
         setInlineCreateSubmitting(true);
         try {
@@ -584,7 +591,8 @@ const BrandDashboard: React.FC<{
         { id: 'partnerships', label: 'Partner Hub', icon: <Handshake className="w-5 h-5" /> },
         { id: 'wallet', label: 'Wallet & Billing', icon: <Wallet className="w-5 h-5" /> },
         { id: 'proposals', label: 'Offers & Proposals', icon: <Inbox className="w-5 h-5" /> },
-        { id: 'events', label: 'Campus Events', icon: <Calendar className="w-5 h-5" /> },
+        { id: 'my-events', label: 'My Events', icon: <Calendar className="w-5 h-5" /> },
+        { id: 'explore-events', label: 'Campus Events', icon: <Search className="w-5 h-5" /> },
         { id: 'profile', label: 'Company Profile', icon: <Users className="w-5 h-5" /> },
     ];
 
@@ -596,6 +604,89 @@ const BrandDashboard: React.FC<{
                 const data = userDoc.data();
                 setBrandProfile({ ...data, id: user.uid || user.id, email: data.email || user.email });
             }
+        }
+    };
+
+    const fetchMyEvents = async () => {
+        if (!brandProfile?.id) return;
+        try {
+            const res = await apiClient.get(`events?hostId=${brandProfile.id}`);
+            setMyEvents(res.data || []);
+        } catch (e) {
+            console.error("fetchMyEvents error:", e);
+        }
+    };
+
+    const handleCreateEvent = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const user = auth.currentUser;
+        if (!user) return;
+        if (!eventFormData.name.trim() || !eventFormData.date || !eventFormData.description.trim() || !eventFormData.targetSponsorship) {
+            alert('Please fill in all fields.');
+            return;
+        }
+        setEventSubmitting(true);
+        try {
+            const hostName = brandProfile?.name || "Brand";
+            const payload = {
+                name: eventFormData.name.trim(),
+                date: eventFormData.date,
+                description: eventFormData.description.trim(),
+                targetSponsorship: Number(eventFormData.targetSponsorship),
+                hostName: hostName,
+                hostId: user.uid,
+                hostEmail: user.email,
+                status: 'published',
+                createdAt: new Date().toISOString()
+            };
+            const res = await apiClient.post('events', payload);
+            setShowCreateEventModal(false);
+            setEventFormData({ name: '', date: '', description: '', targetSponsorship: '' });
+            setMyEvents(prev => [{ id: res.data.id, ...payload }, ...prev]);
+        } catch (err: any) {
+            alert(err.response?.data?.error || "Failed to create event.");
+        } finally {
+            setEventSubmitting(false);
+        }
+    };
+
+    const handleEditEvent = (event: any) => {
+        setEditingEvent(event);
+        setEditEventFormData({
+            name: event.name,
+            date: event.date,
+            description: event.description,
+            targetSponsorship: String(event.targetSponsorship || 0)
+        });
+    };
+
+    const handleSaveEditEvent = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingEvent) return;
+        setEditEventSubmitting(true);
+        try {
+            await apiClient.patch(`events/${editingEvent.id}`, {
+                ...editEventFormData,
+                targetSponsorship: Number(editEventFormData.targetSponsorship)
+            });
+            setEditingEvent(null);
+            fetchMyEvents();
+            alert('Event updated successfully!');
+        } catch (err: any) {
+            alert(err.response?.data?.error || 'Failed to update event.');
+        } finally {
+            setEditEventSubmitting(false);
+        }
+    };
+
+    const handleDeleteEvent = async (eventId: string) => {
+        if (!window.confirm('Are you sure you want to permanently delete this event?')) return;
+        try {
+            await apiClient.delete(`events/${eventId}`);
+            alert('Event deleted successfully.');
+            fetchMyEvents();
+        } catch (err: any) {
+            alert(err.response?.data?.error || 'Failed to delete event.');
         }
     };
 
@@ -636,7 +727,12 @@ const BrandDashboard: React.FC<{
                 await fetchProposals();
                 setLoading(false);
                 return;
-            } else if (currentView === 'events') {
+            } else if (currentView === 'my-events') {
+                setLoading(true);
+                await fetchMyEvents();
+                setLoading(false);
+                return;
+            } else if (currentView === 'explore-events') {
                 setLoading(true);
                 try {
                     const res = await apiClient.get('events');
@@ -656,17 +752,28 @@ const BrandDashboard: React.FC<{
 
             setLoading(true);
             try {
-                // Search for all variants of the creator role to ensure the directory isn't empty
-                const creatorRoles = [
-                    UserRole.Creator,
-                    'Creator',
-                    'Ambassador',
-                    'Ambassador/Influencer',
-                    'Campus Creator'
-                ];
-                const q = query(collection(db, "users"), where("role", "in", creatorRoles), limit(50));
+                // Fetch users with a limit
+                const q = query(collection(db, "users"), limit(100));
                 const querySnapshot = await getDocs(q);
-                const creatorsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
+                
+                const creatorRoles = [
+                    'Creator', 'Ambassador', 'Ambassador/Influencer', 'Campus Creator',
+                    'Student', 'Student/Professional Influencer', 'Professional', 'Influencer',
+                    'Creator'
+                ];
+                const creatorRoleSet = new Set(creatorRoles);
+
+                const creatorsData = querySnapshot.docs
+                    .map(doc => ({ id: doc.id, ...(doc.data() as any) }))
+                    .filter((u: any) => {
+                        if (creatorRoleSet.has(u.role)) return true;
+                        const role = (u.role || '').toLowerCase();
+                        if (role.includes('influencer') || role.includes('creator')) {
+                            if (!role.includes('Association') && !role.includes('brand')) return true;
+                        }
+                        return false;
+                    });
+                    
                 setCreators(creatorsData);
             } catch (err) {
                 console.error("Error fetching talent:", err);
@@ -678,7 +785,7 @@ const BrandDashboard: React.FC<{
         const fetchPartners = async () => {
             setPartnersLoading(true);
             try {
-                const roles = [UserRole.Organization, 'Organization', 'Brand', UserRole.Brand];
+                const roles = ['Organization', 'Association', 'Brand', 'Brand'];
                 const q = query(collection(db, "users"), where("role", "in", roles), limit(500));
                 const querySnapshot = await getDocs(q);
                 const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
@@ -706,7 +813,7 @@ const BrandDashboard: React.FC<{
     const handleContactHost = (event: any) => {
         console.log('Contacting host for event:', event);
         const hostId = event.host?.id || event.hostId;
-        const hostName = event.host?.name || event.hostName || "Organization";
+        const hostName = event.host?.name || event.hostName || "Association";
 
         if (!hostId) {
             alert('Cannot contact host: Host information (ID) is missing for this event.');
@@ -723,18 +830,18 @@ const BrandDashboard: React.FC<{
         try {
             // If it's an event sponsorship with a budget, we deduct from brand wallet
             if (eventBeingSponsored && data.budget) {
-                // Extract numbers from budget string (e.g., "₦50,000" -> 50000)
+                // Extract numbers from budget string (e.g., "â‚¦50,000" -> 50000)
                 const amount = Number(data.budget.replace(/[^0-9.]/g, ''));
                 if (!isNaN(amount) && amount > 0) {
                     if (walletData.available < amount) {
-                        if (window.confirm(`Insufficient balance. You need ₦${amount.toLocaleString()} to sponsor this event. Would you like to top up your wallet now?`)) {
+                        if (window.confirm(`Insufficient balance. You need â‚¦${amount.toLocaleString()} to sponsor this event. Would you like to top up your wallet now?`)) {
                             setCurrentView('wallet');
                             setShowProposalModal(false);
                         }
                         return;
                     }
                     
-                    if (window.confirm(`Confirm sponsorship payment of ₦${amount.toLocaleString()} for "${eventBeingSponsored.name}"? This will be credited to the organization immediately (minus platform fees).`)) {
+                    if (window.confirm(`Confirm sponsorship payment of â‚¦${amount.toLocaleString()} for "${eventBeingSponsored.name}"? This will be credited to the Association immediately (minus platform fees).`)) {
                         await WalletService.paySponsorship(
                             brandProfile.id, 
                             data.recipientId, 
@@ -743,7 +850,7 @@ const BrandDashboard: React.FC<{
                         );
                         // Record the proposal with payment info
                         await apiClient.post('proposals', { ...data, status: 'paid', amount });
-                        alert(`Sponsorship of ₦${amount.toLocaleString()} sent and credited to the organization!`);
+                        alert(`Sponsorship of â‚¦${amount.toLocaleString()} sent and credited to the Association!`);
                         syncWalletStrip(brandProfile.id);
                     } else {
                         return; // user cancelled
@@ -813,13 +920,13 @@ const BrandDashboard: React.FC<{
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                             <div>
                                 <h2 className="text-4xl font-black text-[var(--text-primary)]">Partner Hub</h2>
-                                <p className="text-[var(--text-secondary)] mt-1">Connect directly with Organizations and other Brands for non-sponsorship collaborations.</p>
+                                <p className="text-[var(--text-secondary)] mt-1">Connect directly with Associations and other Brands for non-sponsorship collaborations.</p>
                             </div>
                             <div className="relative w-full md:w-96 group">
                                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-secondary)] group-focus-within:text-spark-red transition-colors" />
                                 <input 
                                     type="text" 
-                                    placeholder="Search brands or organizations..." 
+                                    placeholder="Search brands or Associations..." 
                                     value={partnerSearchTerm}
                                     onChange={(e) => setPartnerSearchTerm(e.target.value)}
                                     className="w-full pl-12 pr-4 py-4 bg-[var(--bg-primary)] border-2 border-[var(--border-color)] rounded-2xl font-bold outline-none focus:border-spark-red transition-all"
@@ -833,7 +940,7 @@ const BrandDashboard: React.FC<{
                             <DashboardPlaceholder 
                                 icon={<Handshake className="w-12 h-12" />}
                                 title={partnerSearchTerm ? "No matching partners" : "No Partners Available"}
-                                message={partnerSearchTerm ? `We couldn't find any partners matching "${partnerSearchTerm}".` : "We couldn't find any organizations or brands at the moment."}
+                                message={partnerSearchTerm ? `We couldn't find any partners matching "${partnerSearchTerm}".` : "We couldn't find any Associations or brands at the moment."}
                             />
                         ) : (
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -869,39 +976,11 @@ const BrandDashboard: React.FC<{
             case 'directory':
                 return (
                     <div className="space-y-6">
-                        {/* ── Active Campaign Overview Panel ── */}
+                        {/* â”€â”€ Active Campaign Overview Panel â”€â”€ */}
 
-                        {/* ── Recent Activity Quick View ── */}
-                        <div className="bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-[2.5rem] p-8 shadow-sm">
-                            <div className="flex items-center justify-between mb-6">
-                                <h3 className="text-xl font-black text-[var(--text-primary)]">Recent Activity</h3>
-                                <button onClick={() => setCurrentView('wallet')} className="text-[10px] font-black text-spark-red uppercase tracking-widest hover:underline">View All Transactions</button>
-                            </div>
-                            <div className="space-y-4">
-                                {transactions.length === 0 ? (
-                                    <p className="text-[var(--text-secondary)] text-sm italic py-4">No recent activity found.</p>
-                                ) : (
-                                    transactions.slice(0, 3).map((trans: any, i) => (
-                                        <div key={i} className="flex items-center justify-between p-4 bg-[var(--bg-secondary)] rounded-2xl hover:bg-[var(--bg-tertiary)] transition-all">
-                                            <div className="flex items-center gap-4">
-                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${trans.type === 'credit' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                                                    {trans.type === 'credit' ? <Plus className="w-4 h-4" /> : <Minus className="w-4 h-4" />}
-                                                </div>
-                                                <div>
-                                                    <p className="text-sm font-black text-[var(--text-primary)]">{trans.description}</p>
-                                                    <p className="text-[10px] text-[var(--text-secondary)] font-bold">{trans.createdAt?.seconds ? new Date(trans.createdAt.seconds * 1000).toLocaleDateString() : 'Just now'}</p>
-                                                </div>
-                                            </div>
-                                            <p className={`text-sm font-black ${trans.type === 'credit' ? 'text-green-600' : 'text-spark-red'}`}>
-                                                {trans.type === 'credit' ? '+' : '-'} ₦{Number(trans.amount).toLocaleString()}
-                                            </p>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
-                        </div>
 
-                        {/* ── Search Bar ── */}
+
+                        {/* â”€â”€ Search Bar â”€â”€ */}
                         <div className="bg-[var(--bg-primary)] p-6 rounded-[2rem] shadow-sm border border-[var(--border-color)] flex flex-col xl:flex-row gap-6 items-center">
                             <div className="relative flex-1 w-full">
                                 <input
@@ -915,7 +994,7 @@ const BrandDashboard: React.FC<{
                             </div>
                         </div>
 
-                        {/* ── Talent Grid ── */}
+                        {/* â”€â”€ Talent Grid â”€â”€ */}
                         {loading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
                         ) : (
@@ -965,13 +1044,79 @@ const BrandDashboard: React.FC<{
                         )}
                     </div>
                 );
-            case 'events':
+            case 'my-events':
+                return (
+                    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-xl font-black">My Campus Events</h3>
+                            <button
+                                onClick={() => setShowCreateEventModal(true)}
+                                className="bg-spark-red text-white px-6 py-3 rounded-xl font-black shadow-lg shadow-red-100 hover:bg-red-700 transition-all active:scale-95"
+                            >
+                                + List New Event
+                            </button>
+                        </div>
+                        {loading ? (
+                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
+                        ) : myEvents.length === 0 ? (
+                            <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)] animate-in fade-in duration-500">
+                                <div className="w-20 h-20 bg-spark-red/5 rounded-3xl flex items-center justify-center mx-auto mb-6 text-spark-red">
+                                    <Calendar className="w-10 h-10" />
+                                </div>
+                                <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">No events listed yet.</h3>
+                                <p className="text-[var(--text-secondary)] font-medium">Create your first event to start attracting campus talent and partnerships.</p>
+                                <button
+                                    onClick={() => setShowCreateEventModal(true)}
+                                    className="mt-8 px-8 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all"
+                                >
+                                    Get Started
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="grid md:grid-cols-2 gap-8 animate-in slide-in-from-bottom-4 duration-500">
+                                {myEvents.map(event => (
+                                    <div key={event.id} className="bg-[var(--bg-primary)] p-10 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm group hover:shadow-xl transition-all">
+                                        <div className="flex justify-between items-start mb-8">
+                                            <div>
+                                                <h4 className="text-2xl font-black mb-1 group-hover:text-spark-red transition-colors text-[var(--text-primary)]">{event.name}</h4>
+                                                <p className="text-sm font-bold text-spark-red uppercase tracking-widest">{event.date}</p>
+                                            </div>
+                                            <span className="px-4 py-1.5 bg-green-50 text-green-600 rounded-full text-[10px] font-black uppercase tracking-widest">Published</span>
+                                        </div>
+                                        <p className="text-[var(--text-secondary)] text-sm mb-8 line-clamp-2 leading-relaxed">{event.description}</p>
+                                        <div className="flex items-center justify-between mb-8 pb-8 border-b border-[var(--border-color)]">
+                                            <div>
+                                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Target Funding</p>
+                                                <p className="text-xl font-black text-[var(--text-primary)]">₦{Number(event.targetSponsorship).toLocaleString()}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-4">
+                                            <button
+                                                onClick={() => handleEditEvent(event)}
+                                                className="flex-1 py-4 bg-gray-100 text-gray-700 font-black rounded-2xl hover:bg-gray-200 transition-all flex items-center justify-center gap-2"
+                                            >
+                                                <Edit className="w-4 h-4" /> Edit
+                                            </button>
+                                            <button
+                                                onClick={() => handleDeleteEvent(event.id)}
+                                                className="flex-1 py-4 bg-red-50 text-red-600 font-black rounded-2xl hover:bg-red-100 transition-all flex items-center justify-center gap-2"
+                                            >
+                                                <Trash2 className="w-4 h-4" /> Delete
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                );
+            case 'explore-events':
                 return (
                     <div className="animate-in slide-in-from-bottom-4 duration-500">
                         {loading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
                         ) : events.length === 0 ? (
-                            <DashboardPlaceholder title="No Events" icon="📅" description="There are no upcoming campus events at the moment." />
+                            <DashboardPlaceholder title="No Events" icon="ðŸ“…" description="There are no upcoming campus events at the moment." />
                         ) : (
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
                                 {events.map(event => (
@@ -1006,9 +1151,9 @@ const BrandDashboard: React.FC<{
                                 {/* Summary Cards */}
                                 <div className="grid md:grid-cols-3 gap-8">
                                     {[
-                                        { label: 'Available Balance', value: `₦${(wallet?.balance || 0).toLocaleString()}`, icon: <Wallet className="w-6 h-6" />, color: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' },
-                                        { label: 'Total Spent', value: `₦${transactions.reduce((acc, t) => acc + (t.type === 'debit' ? (Number(t.amount) || 0) : 0), 0).toLocaleString()}`, icon: <TrendingUp className="w-6 h-6" />, color: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/20' },
-                                        { label: 'Locked in Escrow', value: `₦${(wallet?.escrow || 0).toLocaleString()}`, icon: <Lock className="w-6 h-6" />, color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' },
+                                        { label: 'Available Balance', value: `â‚¦${(wallet?.balance || 0).toLocaleString()}`, icon: <Wallet className="w-6 h-6" />, color: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' },
+                                        { label: 'Total Spent', value: `â‚¦${transactions.reduce((acc, t) => acc + (t.type === 'debit' && t.status === 'completed' ? (Number(t.amount) || 0) : 0), 0).toLocaleString()}`, icon: <TrendingUp className="w-6 h-6" />, color: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/20' },
+                                        { label: 'Locked in Escrow', value: `â‚¦${(wallet?.escrow || 0).toLocaleString()}`, icon: <Lock className="w-6 h-6" />, color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' },
                                     ].map((stat, i) => (
                                         <div key={i} className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm">
                                             <div className={`w-12 h-12 ${stat.color} rounded-2xl flex items-center justify-center text-xl mb-4`}>{stat.icon}</div>
@@ -1025,7 +1170,7 @@ const BrandDashboard: React.FC<{
                                     </div>
                                     <div className="flex flex-col sm:flex-row items-center gap-4">
                                         <div className="relative w-full sm:w-48">
-                                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">₦</span>
+                                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">â‚¦</span>
                                             <input 
                                                 type="number" 
                                                 value={topUpAmount}
@@ -1082,7 +1227,7 @@ const BrandDashboard: React.FC<{
                                                                 const name = brandProfile.name || user?.name || 'Brand User';
                                                                 if (email) notifyTopUp(email, name, amount, response.reference);
 
-                                                                alert(`Wallet updated: ₦${amount.toLocaleString()} added.`);
+                                                                alert(`Wallet updated: â‚¦${amount.toLocaleString()} added.`);
                                                                 await fetchWallet();
                                                                 await syncWalletStrip(brandProfile.id);
                                                             } catch (err: any) {
@@ -1136,7 +1281,7 @@ const BrandDashboard: React.FC<{
                                                     </div>
                                                     <div className="text-right">
                                                         <p className={`font-black ${trans.type === 'credit' ? 'text-green-600' : 'text-spark-red'}`}>
-                                                            {trans.type === 'credit' ? '+' : '-'} ₦{Number(trans.amount).toLocaleString()}
+                                                            {trans.type === 'credit' ? '+' : '-'} â‚¦{Number(trans.amount).toLocaleString()}
                                                         </p>
                                                         <p className="text-[10px] font-black uppercase text-[var(--text-secondary)]">{trans.status}</p>
                                                     </div>
@@ -1253,7 +1398,7 @@ const BrandDashboard: React.FC<{
                     'rejected': 'bg-red-50 text-red-500',
                 };
 
-                // ── Campaign Detail View ──────────────────────────────────────
+                // â”€â”€ Campaign Detail View â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 if (selectedCampaignDetail) {
                     const detailStats = getCampaignBudgetStats(selectedCampaignDetail);
                     const detailPct = detailStats.budget > 0 ? Math.min(100, (detailStats.allocated / detailStats.budget) * 100) : 0;
@@ -1266,16 +1411,16 @@ const BrandDashboard: React.FC<{
                                 </button>
                                 <div>
                                     <h3 className="text-2xl font-black text-[var(--text-primary)]">{selectedCampaignDetail.title}</h3>
-                                    <p className="text-xs text-[var(--text-secondary)] uppercase tracking-widest font-bold mt-0.5">{selectedCampaignDetail.category} · Campaign Detail</p>
+                                    <p className="text-xs text-[var(--text-secondary)] uppercase tracking-widest font-bold mt-0.5">{selectedCampaignDetail.category} Â· Campaign Detail</p>
                                 </div>
                             </div>
 
                             {/* Budget Summary */}
                             <div className="grid grid-cols-3 gap-5">
                                 {[
-                                    { label: 'Total Budget', value: `₦${detailStats.budget.toLocaleString()}`, color: 'text-[var(--text-primary)]' },
-                                    { label: 'Allocated', value: `₦${detailStats.allocated.toLocaleString()}`, color: 'text-spark-red' },
-                                    { label: 'Remaining', value: detailStats.isLegacy ? 'Balance-based' : `₦${detailStats.remaining.toLocaleString()}`, color: 'text-green-600' },
+                                    { label: 'Total Budget', value: `â‚¦${detailStats.budget.toLocaleString()}`, color: 'text-[var(--text-primary)]' },
+                                    { label: 'Allocated', value: `â‚¦${detailStats.allocated.toLocaleString()}`, color: 'text-spark-red' },
+                                    { label: 'Remaining', value: detailStats.isLegacy ? 'Balance-based' : `â‚¦${detailStats.remaining.toLocaleString()}`, color: 'text-green-600' },
                                 ].map((s, i) => (
                                     <div key={i} className="bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-[1.5rem] p-5">
                                         <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">{s.label}</p>
@@ -1297,7 +1442,7 @@ const BrandDashboard: React.FC<{
                                     <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-spark-red"/></div>
                                 ) : detailAllocations.length === 0 ? (
                                     <div className="text-center py-16">
-                                        <p className="text-4xl mb-3">👥</p>
+                                        <p className="text-4xl mb-3">ðŸ‘¥</p>
                                         <p className="font-black text-[var(--text-primary)] mb-1">No creators allocated yet</p>
                                         <p className="text-sm text-[var(--text-secondary)]">Go to the Talent Directory and click "Add to Campaign".</p>
                                     </div>
@@ -1320,8 +1465,8 @@ const BrandDashboard: React.FC<{
                                                                 <span className="font-black text-[var(--text-primary)]">{alloc.creatorName}</span>
                                                             </div>
                                                         </td>
-                                                        <td className="px-6 py-4 text-[var(--text-secondary)] text-xs">{alloc.creatorUniversity || '—'}</td>
-                                                        <td className="px-6 py-4 font-black text-[var(--text-primary)]">₦{alloc.amount.toLocaleString()}</td>
+                                                        <td className="px-6 py-4 text-[var(--text-secondary)] text-xs">{alloc.creatorUniversity || 'â€”'}</td>
+                                                        <td className="px-6 py-4 font-black text-[var(--text-primary)]">â‚¦{alloc.amount.toLocaleString()}</td>
                                                         <td className="px-6 py-4">
                                                             <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${allocStatusColors[alloc.status] || 'bg-[var(--bg-tertiary)] text-gray-500'}`}>{alloc.status.replace('_', ' ')}</span>
                                                         </td>
@@ -1345,16 +1490,28 @@ const BrandDashboard: React.FC<{
                                                                     <div className="flex gap-2">
                                                                         {alloc.status === 'submitted' && (
                                                                             <>
-                                                                                <button onClick={() => handleApproveAllocation(alloc)} className="px-3 py-1.5 bg-spark-black text-white rounded-lg text-[10px] font-black uppercase hover:bg-gray-800 transition-colors">
-                                                                                    Approve Report
+                                                                                <button 
+                                                                                    disabled={releaseSubmitting === alloc.id}
+                                                                                    onClick={() => handleReleasePayment(alloc)} 
+                                                                                    className="px-3 py-1.5 bg-spark-black text-white rounded-lg text-[10px] font-black uppercase hover:bg-gray-800 transition-colors flex items-center gap-1"
+                                                                                >
+                                                                                    {releaseSubmitting === alloc.id ? <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin"/> : null}
+                                                                                    Accept Report
                                                                                 </button>
-                                                                                <button onClick={() => handleRejectReport(alloc)} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-red-700 transition-colors">
+                                                                                <button 
+                                                                                    onClick={() => handleRejectReport(alloc)} 
+                                                                                    className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-red-700 transition-colors"
+                                                                                >
                                                                                     Reject Report
                                                                                 </button>
                                                                             </>
                                                                         )}
                                                                         {alloc.status === 'approved' && (
-                                                                            <button disabled={releaseSubmitting === alloc.id} onClick={() => handleReleasePayment(alloc)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center gap-1">
+                                                                            <button 
+                                                                                disabled={releaseSubmitting === alloc.id} 
+                                                                                onClick={() => handleReleasePayment(alloc)} 
+                                                                                className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-green-700 transition-colors flex items-center gap-1"
+                                                                            >
                                                                                 {releaseSubmitting === alloc.id ? <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin"/> : null}
                                                                                 Release Pay
                                                                             </button>
@@ -1364,11 +1521,7 @@ const BrandDashboard: React.FC<{
                                                                                 {alloc.status === 'revision' ? 'Revision Requested' : 'Work Pending'}
                                                                             </span>
                                                                         )}
-                                                                        {alloc.status !== 'paid' && alloc.status !== 'rejected' && (
-                                                                            <button onClick={() => handleRejectAllocation(alloc)} className="px-3 py-1.5 bg-spark-red text-white rounded-lg text-[10px] font-black uppercase hover:bg-red-700 transition-colors">
-                                                                                {alloc.status === 'submitted' ? 'Cancel & Refund' : 'Reject Influencer'}
-                                                                            </button>
-                                                                        )}
+                                                                        <span className="text-[10px] text-[var(--text-secondary)] italic">Contact Admin for Refunds</span>
                                                                     </div>
                                                                 </div>
                                                             )}
@@ -1384,13 +1537,13 @@ const BrandDashboard: React.FC<{
                     );
                 }
 
-                // ── Campaign List View ────────────────────────────────────────
+                // â”€â”€ Campaign List View â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                         <div className="flex justify-between items-center">
                             <div>
                                 <h3 className="text-2xl font-black text-[var(--text-primary)]">My Campaigns</h3>
-                                <p className="text-[var(--text-secondary)] mt-1">Create and manage your influencer marketing campaigns. <span className="text-spark-red font-bold">₦20,000 listing fee applies.</span></p>
+                                <p className="text-[var(--text-secondary)] mt-1">Create and manage your influencer marketing campaigns. <span className="text-spark-red font-bold">â‚¦20,000 listing fee applies.</span></p>
                             </div>
                             <button onClick={() => setShowCampaignModal(true)} className="bg-spark-red text-white px-6 py-3 rounded-xl font-black shadow-lg shadow-red-100 hover:bg-red-700 transition-all active:scale-95">
                                 + New Campaign
@@ -1399,7 +1552,7 @@ const BrandDashboard: React.FC<{
 
                         {campaigns.length === 0 ? (
                             <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)]">
-                                <div className="text-6xl mb-6">📢</div>
+                                <div className="text-6xl mb-6">ðŸ“¢</div>
                                 <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">No Campaigns Yet</h3>
                                 <p className="text-[var(--text-secondary)] mb-8">Launch your first influencer campaign to connect with creators at scale.</p>
                                 <button onClick={() => setShowCampaignModal(true)} className="px-8 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all">Create First Campaign</button>
@@ -1423,13 +1576,13 @@ const BrandDashboard: React.FC<{
                                             {/* Budget Progress */}
                                             <div className="mb-5 space-y-2">
                                                 <div className="flex justify-between text-xs font-black">
-                                                    <span className="text-[var(--text-secondary)]">Allocated <span className="text-spark-red">₦{bStats.allocated.toLocaleString()}</span></span>
-                                                    <span className="text-[var(--text-secondary)]">Remaining <span className="text-green-600">{bStats.isLegacy ? 'Balance-based' : `₦${bStats.remaining.toLocaleString()}`}</span></span>
+                                                    <span className="text-[var(--text-secondary)]">Allocated <span className="text-spark-red">â‚¦{bStats.allocated.toLocaleString()}</span></span>
+                                                    <span className="text-[var(--text-secondary)]">Remaining <span className="text-green-600">{bStats.isLegacy ? 'Balance-based' : `â‚¦${bStats.remaining.toLocaleString()}`}</span></span>
                                                 </div>
                                                 <div className="h-1.5 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
                                                     <div className="h-full bg-spark-red rounded-full transition-all" style={{ width: `${bPct}%` }}></div>
                                                 </div>
-                                                <p className="text-[10px] text-[var(--text-secondary)] font-bold">Total Budget: ₦{bStats.budget.toLocaleString()} · Deadline: {c.deadline}</p>
+                                                <p className="text-[10px] text-[var(--text-secondary)] font-bold">Total Budget: â‚¦{bStats.budget.toLocaleString()} Â· Deadline: {c.deadline}</p>
                                             </div>
 
                                             <div className="flex gap-3">
@@ -1471,7 +1624,7 @@ const BrandDashboard: React.FC<{
                                             <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-spark-red" /></div>
                                         ) : applicants.length === 0 ? (
                                             <div className="text-center py-16">
-                                                <p className="text-5xl mb-4">📭</p>
+                                                <p className="text-5xl mb-4">ðŸ“­</p>
                                                 <p className="font-black text-[var(--text-primary)] text-lg">No applications yet</p>
                                                 <p className="text-[var(--text-secondary)] text-sm">Creators who apply will appear here with their pitch.</p>
                                             </div>
@@ -1499,7 +1652,7 @@ const BrandDashboard: React.FC<{
                                                     {app.report && (
                                                         <div className="bg-[var(--bg-primary)] rounded-xl p-5 mb-4 border-2 border-green-100 shadow-sm">
                                                             <div className="flex justify-between items-center mb-3">
-                                                                <p className="text-[10px] font-black text-green-700 uppercase tracking-wider">📋 Campaign Report</p>
+                                                                <p className="text-[10px] font-black text-green-700 uppercase tracking-wider">ðŸ“‹ Campaign Report</p>
                                                                 {app.reportSubmittedAt && <p className="text-[9px] text-[var(--text-secondary)]">{new Date(app.reportSubmittedAt).toLocaleString()}</p>}
                                                             </div>
                                                             <p className="text-sm text-[var(--text-primary)] leading-relaxed mb-4">{app.report}</p>
@@ -1545,8 +1698,8 @@ const BrandDashboard: React.FC<{
                                                     )}
                                                     {app.status === 'pending' && (
                                                         <div className="flex gap-3">
-                                                            <button onClick={() => handleApplicationDecision(app.id, 'accepted')} className="flex-1 py-3 bg-spark-black text-white font-black rounded-xl hover:bg-gray-800 transition-all text-sm">✓ Accept</button>
-                                                            <button onClick={() => handleApplicationDecision(app.id, 'rejected')} className="flex-1 py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all text-sm">✗ Reject</button>
+                                                            <button onClick={() => handleApplicationDecision(app.id, 'accepted')} className="flex-1 py-3 bg-spark-black text-white font-black rounded-xl hover:bg-gray-800 transition-all text-sm">âœ“ Accept</button>
+                                                            <button onClick={() => handleApplicationDecision(app.id, 'rejected')} className="flex-1 py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all text-sm">âœ— Reject</button>
                                                         </div>
                                                     )}
                                                 </div>
@@ -1597,12 +1750,12 @@ const BrandDashboard: React.FC<{
                                                     const totalRequired = amount + 20000;
 
                                                     if (walletData.available < totalRequired) {
-                                                        alert(`Insufficient balance. You need ₦${totalRequired.toLocaleString()} (₦${amount.toLocaleString()} budget + ₦20,000 listing fee).`);
+                                                        alert(`Insufficient balance. You need â‚¦${totalRequired.toLocaleString()} (â‚¦${amount.toLocaleString()} budget + â‚¦20,000 listing fee).`);
                                                         setCampaignSubmitting(false);
                                                         return;
                                                     }
 
-                                                    if (!window.confirm("Launch campaign? A flat listing fee of ₦20,000 will be charged.")) {
+                                                    if (!window.confirm("Launch campaign? A flat listing fee of â‚¦20,000 will be charged.")) {
                                                         setCampaignSubmitting(false);
                                                         return;
                                                     }
@@ -1666,7 +1819,7 @@ const BrandDashboard: React.FC<{
                                             </div>
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div>
-                                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Budget (₦)</label>
+                                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Budget (â‚¦)</label>
                                                     <input required type="number" min="0" value={campaignForm.budget} onChange={e => setCampaignForm(p => ({ ...p, budget: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] rounded-2xl font-bold outline-none border-2 border-transparent focus:border-spark-red" />
                                                 </div>
                                                 <div>
@@ -1680,7 +1833,7 @@ const BrandDashboard: React.FC<{
                                                         <div className="w-10 h-10 bg-spark-red text-white rounded-xl flex items-center justify-center flex-shrink-0">
                                                             <Activity className="w-5 h-5" />
                                                         </div>
-                                                        <p className="text-[10px] font-black text-spark-red uppercase tracking-widest leading-relaxed">A flat listing fee of ₦20,000 will be charged upon launching this campaign.</p>
+                                                        <p className="text-[10px] font-black text-spark-red uppercase tracking-widest leading-relaxed">A flat listing fee of â‚¦20,000 will be charged upon launching this campaign.</p>
                                                     </div>
                                                 )}
                                                 <div className="flex gap-4">
@@ -1706,7 +1859,7 @@ const BrandDashboard: React.FC<{
 
     return (
         <DashboardShell
-            role={UserRole.Brand}
+            role={'Brand'}
             activeView={currentView}
             onViewChange={setCurrentView}
             onLogout={onLogout}
@@ -1720,12 +1873,12 @@ const BrandDashboard: React.FC<{
                 <div className="flex items-center gap-4 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-2xl p-1.5 shadow-sm">
                     <div className="px-3">
                         <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase tracking-widest leading-none">Available</p>
-                        <p className="text-sm font-black text-green-600">₦{walletData.available.toLocaleString()}</p>
+                        <p className="text-sm font-black text-green-600">â‚¦{walletData.available.toLocaleString()}</p>
                     </div>
                     <div className="w-px h-6 bg-[var(--border-color)]"></div>
                     <div className="px-3">
                         <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase tracking-widest leading-none">Locked (Escrow)</p>
-                        <p className="text-sm font-black text-[var(--text-primary)]">₦{walletData.locked.toLocaleString()}</p>
+                        <p className="text-sm font-black text-[var(--text-primary)]">â‚¦{walletData.locked.toLocaleString()}</p>
                     </div>
                     <button onClick={() => setCurrentView('wallet')} className="bg-spark-red text-white text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl hover:bg-red-700 transition-all">
                         Fund Wallet
@@ -1879,7 +2032,7 @@ const BrandDashboard: React.FC<{
                                     </div>
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
-                                            <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Total Budget (₦)</label>
+                                            <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Total Budget (â‚¦)</label>
                                             <input required type="number" min="0" value={inlineCreateForm.budget} onChange={e => setInlineCreateForm(p => ({ ...p, budget: e.target.value }))} className="w-full px-4 py-3 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl font-bold outline-none focus:border-spark-red text-sm" />
                                         </div>
                                         <div>
@@ -1914,12 +2067,12 @@ const BrandDashboard: React.FC<{
                                             if (!c) return null;
                                             const stats = getCampaignBudgetStats(c);
                                             return (
-                                                <p className="text-[10px] text-[var(--text-secondary)] font-bold mt-2">Remaining Budget: <span className="text-green-600">₦{stats.remaining.toLocaleString()}</span></p>
+                                                <p className="text-[10px] text-[var(--text-secondary)] font-bold mt-2">Remaining Budget: <span className="text-green-600">â‚¦{stats.remaining.toLocaleString()}</span></p>
                                             );
                                         })()}
                                     </div>
                                     <div>
-                                        <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Allocation Amount (₦)</label>
+                                        <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Allocation Amount (â‚¦)</label>
                                         <input 
                                             type="number" 
                                             min="0"
@@ -1931,7 +2084,7 @@ const BrandDashboard: React.FC<{
                                         <p className="text-[10px] text-[var(--text-secondary)] mt-2">This amount will be deducted from the campaign budget and locked for {allocationTarget.name}.</p>
                                     </div>
                                     <button 
-                                        onClick={handleAllocateInfluencer}
+                                        onClick={handleAllocateCreator}
                                         disabled={allocationSubmitting || !allocationForm.campaignId || !allocationForm.amount}
                                         className="w-full py-4 mt-2 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-red-100 flex items-center justify-center gap-2"
                                     >
@@ -1960,7 +2113,7 @@ const BrandDashboard: React.FC<{
                         
                         <div className="p-6 space-y-6">
                             <div>
-                                <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Allocation Amount (₦)</label>
+                                <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Allocation Amount (â‚¦)</label>
                                 <input 
                                     type="number" 
                                     min="0"
@@ -1973,7 +2126,7 @@ const BrandDashboard: React.FC<{
                                     const stats = getCampaignBudgetStats(viewingApplicants);
                                     return (
                                         <p className="text-[10px] text-[var(--text-secondary)] font-bold mt-2">
-                                            Remaining Campaign Budget: <span className="text-green-600">₦{stats.remaining.toLocaleString()}</span>
+                                            Remaining Campaign Budget: <span className="text-green-600">â‚¦{stats.remaining.toLocaleString()}</span>
                                         </p>
                                     );
                                 })()}
@@ -1981,7 +2134,7 @@ const BrandDashboard: React.FC<{
                             
                             <div className="p-4 bg-spark-red/5 rounded-2xl border border-spark-red/10">
                                 <p className="text-[10px] text-spark-red font-bold leading-relaxed">
-                                    By approving, ₦{Number(approvalAmount || 0).toLocaleString()} will be moved from your campaign budget and locked for this creator. You can release it once they submit their report.
+                                    By approving, â‚¦{Number(approvalAmount || 0).toLocaleString()} will be moved from your campaign budget and locked for this creator. You can release it once they submit their report.
                                 </p>
                             </div>
 
@@ -2088,7 +2241,7 @@ const BrandDashboard: React.FC<{
                                             <h3 className="text-3xl font-black text-[var(--text-primary)]">{viewingProfile.name}</h3>
                                             <div className="flex items-center gap-3 mt-1">
                                                 <span className="px-3 py-1 bg-spark-red/10 text-spark-red text-[10px] font-black uppercase tracking-widest rounded-lg">{viewingProfile.university || 'Campus Influencer'}</span>
-                                                {viewingProfile.location && <span className="text-[var(--text-secondary)] font-bold text-xs">📍 {viewingProfile.location}</span>}
+                                                {viewingProfile.location && <span className="text-[var(--text-secondary)] font-bold text-xs">ðŸ“ {viewingProfile.location}</span>}
                                             </div>
                                         </div>
                                     </div>

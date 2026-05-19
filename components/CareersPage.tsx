@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useEffect } from 'react';
 import { CheckCircleIcon } from '../constants';
 import { apiClient } from '../firebase';
@@ -67,10 +67,10 @@ const CareersPage: React.FC<{ onNavigate: (page: string) => void, user?: any }> 
   }, []);
 
   const mockBrands = [
-    { name: 'MTN Nigeria', logo: '🟡', desc: 'Telecommunications giant looking for campus ambassadors.', color: 'bg-yellow-100 text-yellow-700' },
-    { name: 'PiggyVest', logo: '🔵', desc: 'Fintech leader driving financial literacy among students.', color: 'bg-blue-100 text-blue-700' },
-    { name: 'Kuda Bank', logo: '🟣', desc: 'The bank of the free is scouting for creative content creators.', color: 'bg-purple-100 text-purple-700' },
-    { name: 'Bolt Nigeria', logo: '🟢', desc: 'Ride-sharing partner seeking campus mobility leads.', color: 'bg-green-100 text-green-700' },
+    { name: 'MTN Nigeria', logo: 'ðŸŸ¡', desc: 'Telecommunications giant looking for campus ambassadors.', color: 'bg-yellow-100 text-yellow-700' },
+    { name: 'PiggyVest', logo: 'ðŸ”µ', desc: 'Fintech leader driving financial literacy among students.', color: 'bg-blue-100 text-blue-700' },
+    { name: 'Kuda Bank', logo: 'ðŸŸ£', desc: 'The bank of the free is scouting for creative content creators.', color: 'bg-purple-100 text-purple-700' },
+    { name: 'Bolt Nigeria', logo: 'ðŸŸ¢', desc: 'Ride-sharing partner seeking campus mobility leads.', color: 'bg-green-100 text-green-700' },
   ];
 
   return (
@@ -140,7 +140,7 @@ const CareersPage: React.FC<{ onNavigate: (page: string) => void, user?: any }> 
               <h2 className="text-2xl md:text-4xl font-fancy font-black text-[var(--text-primary)] mb-4">
                 Current <span className="text-gradient-red italic">Opportunities</span>
               </h2>
-              <p className="text-base text-[var(--text-secondary)] font-medium">Top brands and organizations are scouting for talent. Pick a path and contact us to apply.</p>
+              <p className="text-base text-[var(--text-secondary)] font-medium">Top brands and Associations are scouting for talent. Pick a path and contact us to apply.</p>
             </div>
           </div>
 
@@ -151,7 +151,7 @@ const CareersPage: React.FC<{ onNavigate: (page: string) => void, user?: any }> 
                     <div 
                       key={opp.id} 
                       className="group p-8 border border-[var(--border-color)] rounded-[2.5rem] bg-[var(--bg-primary)] hover:border-spark-red/30 transition-all flex flex-col lg:flex-row items-center gap-10 cursor-pointer card-hover shadow-sm shadow-black/5" 
-                      onClick={() => onNavigate(user ? (opp.type === 'Campaign' ? 'creator-dashboard' : 'org-dashboard') : 'login')}
+                      onClick={() => onNavigate(user ? (opp.type === 'Campaign' ? 'creator-dashboard' : 'association-dashboard') : 'login')}
                     >
                       <div className="w-20 h-20 bg-spark-red/5 rounded-[1.5rem] flex items-center justify-center p-4 border border-spark-red/10 flex-shrink-0 group-hover:scale-110 transition-transform text-xl font-black text-spark-red">
                         {(opp.displayBrand || 'S').charAt(0)}
@@ -181,7 +181,7 @@ const CareersPage: React.FC<{ onNavigate: (page: string) => void, user?: any }> 
                             {opp.type === 'Campaign' ? 'Benefit/Stipend' : 'Target Sponsorship'}
                           </p>
                           <p className="text-xl font-black text-[var(--text-primary)]">
-                            ₦{(opp.displayReward || 0).toLocaleString()}
+                            â‚¦{(opp.displayReward || 0).toLocaleString()}
                           </p>
                         </div>
                         <div className="flex gap-2 w-full lg:w-auto">
