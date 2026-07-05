@@ -1,4 +1,4 @@
-import { APP_NAME } from '../../constants';
+const APP_NAME = 'Campus Spark';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 dotenv.config();
