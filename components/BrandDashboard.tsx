@@ -308,6 +308,7 @@ const BrandDashboard: React.FC<{
                 }
             } catch (escrowErr: any) {
                 console.warn('[Escrow] Init failed (non-blocking):', escrowErr.message);
+                escrowData = null;
             }
 
             // 3. Save escrow info to the allocation record in Firestore
@@ -339,7 +340,9 @@ const BrandDashboard: React.FC<{
                     window.open(escrowData.payment_url, '_blank');
                 }
             } else {
-                alert(`Creator hired! Escrow setup is pending — you can fund it later from the campaign detail view.`);
+                // Show what the API returned so we can debug
+                const escrowErrDetail = (escrowData as any)?._err || 'Check browser console → Network tab for details.';
+                alert(`Creator hired! ⚠️ Escrow funding could not be set up automatically.\n\nReason: ${escrowErrDetail}\n\nYou can fund it manually from the campaign detail view.`);
             }
         } catch (err: any) {
             alert(err.message || 'Failed to approve application.');
@@ -543,6 +546,7 @@ const BrandDashboard: React.FC<{
                 }
             } catch (escrowErr: any) {
                 console.warn('[Escrow] Init failed (non-blocking):', escrowErr.message);
+                escrowData = { _err: escrowErr.message };
             }
 
             // 2. Create campaign allocation with escrow details in Firestore
@@ -557,7 +561,7 @@ const BrandDashboard: React.FC<{
                 creatorEmail: allocationTarget.email || '',
                 amount,
                 status: 'selected',
-                ...(escrowData ? { escrowId: escrowData.escrow_id, escrowPaymentUrl: escrowData.payment_url, escrowRef: escrowData.transaction_ref } : {}),
+                ...(escrowData?.escrow_id ? { escrowId: escrowData.escrow_id, escrowPaymentUrl: escrowData.payment_url, escrowRef: escrowData.transaction_ref } : {}),
             });
 
             await fetchAllAllocations(brandProfile.id);
@@ -569,7 +573,8 @@ const BrandDashboard: React.FC<{
                     window.open(escrowData.payment_url, '_blank');
                 }
             } else {
-                alert(`Creator allocated! Escrow setup is pending — you can fund it later from the campaign detail view.`);
+                const escrowErrDetail = escrowData?._err || 'Check browser console → Network tab for details.';
+                alert(`Creator allocated! ⚠️ Escrow funding could not be set up automatically.\n\nReason: ${escrowErrDetail}\n\nYou can fund it manually from the campaign detail view.`);
             }
         } catch (e: any) {
             alert(e.message || 'Failed to allocate creator.');
