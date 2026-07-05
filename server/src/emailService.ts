@@ -18,7 +18,7 @@ const transporter = nodemailer.createTransport({
 const FROM_NAME = APP_NAME;
 const FROM_EMAIL = process.env.SMTP_USER || 'hello@abc-rally.com';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'hello@abc-rally.com';
-const APP_URL = process.env.APP_URL || 'https://campus-spark-3a55d.web.app';
+const APP_URL = process.env.APP_URL || 'https://abc-rally.com';
 
 // ─── Core Send Helper ────────────────────────────────────────────────────────
 export async function sendEmail(to: string, subject: string, html: string): Promise<void> {

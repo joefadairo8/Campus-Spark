@@ -846,7 +846,7 @@ app.post('/api/escrow/initialize', async (req: any, res: any) => {
             who_pay_fees: 'seller',
             amount: Number(amount), // Amount in NGN (Naira) — Pandascrow expects Naira, NOT Kobo
             dispute_window: '5',
-            callback_url: `${process.env.APP_URL || 'https://campus-spark-3a55d.web.app'}/api/escrow/webhook`,
+            callback_url: `${process.env.APP_URL || 'https://abc-rally.com'}/api/escrow/webhook`,
             partner_escrow_fee: '5', // Platform earns 5% partner commission; Pandascrow takes ~5% standard fee = 10% total
             buyer_details: {
                 name: brandName || 'Brand Partner',
