@@ -117,7 +117,7 @@ const BlogPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigate
                                     <div className="p-8 flex-1 flex flex-col">
                                         <div className="flex items-center text-[10px] font-black text-[var(--text-secondary)] mb-4 uppercase tracking-[0.2em]">
                                             <span>{blog.createdAt?.seconds ? new Date(blog.createdAt.seconds * 1000).toLocaleDateString() : 'Recent'}</span>
-                                            <span className="mx-2 text-spark-red">â€¢</span>
+                                            <span className="mx-2 text-spark-red">•</span>
                                             <span>Platform Admin</span>
                                         </div>
                                         <h2 className="text-xl font-bold text-[var(--text-primary)] mb-4 group-hover:text-spark-red transition-colors leading-tight">{blog.title}</h2>

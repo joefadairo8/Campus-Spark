@@ -1,3 +1,4 @@
+import { APP_NAME } from '../../constants';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 dotenv.config();
@@ -14,9 +15,9 @@ const transporter = nodemailer.createTransport({
     tls: { rejectUnauthorized: false },
 });
 
-const FROM_NAME = 'Campus Spark';
-const FROM_EMAIL = process.env.SMTP_USER || 'hello@campusspark.com.ng';
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'hello@campusspark.com.ng';
+const FROM_NAME = APP_NAME;
+const FROM_EMAIL = process.env.SMTP_USER || 'hello@abc-rally.com';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'hello@abc-rally.com';
 const APP_URL = process.env.APP_URL || 'https://campus-spark-3a55d.web.app';
 
 // ─── Core Send Helper ────────────────────────────────────────────────────────
@@ -46,7 +47,7 @@ function layout(content: string): string {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Campus Spark</title>
+  <title>ABC-Rally</title>
 </head>
 <body style="margin:0;padding:0;background:#f4f4f4;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:40px 16px;">
@@ -70,11 +71,11 @@ function layout(content: string): string {
         <tr>
           <td style="background:#f9f9f9;padding:24px 40px;border-top:1px solid #eeeeee;text-align:center;">
             <p style="margin:0;font-size:12px;color:#999999;">
-              © ${new Date().getFullYear()} Campus Spark · 42, Olowu Street, Ikeja, Lagos, Nigeria<br/>
-              <a href="mailto:hello@campusspark.com.ng" style="color:#e53e3e;">hello@campusspark.com.ng</a> · +234 (0) 906 032 0863
+              © ${new Date().getFullYear()} ABC-Rally · 42, Olowu Street, Ikeja, Lagos, Nigeria<br/>
+              <a href="mailto:hello@abc-rally.com" style="color:#e53e3e;">hello@abc-rally.com</a> · +234 (0) 906 032 0863
             </p>
             <p style="margin:8px 0 0;font-size:11px;color:#bbbbbb;">
-              You are receiving this because you have an account on Campus Spark.
+              You are receiving this because you have an account on ABC-Rally.
             </p>
           </td>
         </tr>
@@ -121,7 +122,7 @@ export function sendWelcomeEmail(to: string, name: string, role: string): Promis
         ${tag('Welcome to Spark!')}
         <div style="margin-top:16px;">
             ${heading(`Hey ${name}, you're in! 🎉`)}
-            ${para(`Welcome to <strong>Campus Spark</strong> — Nigeria's leading campus marketing platform. Your account has been created successfully as a <strong>${roleLabel}</strong>.`)}
+            ${para(`Welcome to <strong>ABC-Rally</strong> — Nigeria's leading campus marketing platform. Your account has been created successfully as a <strong>${roleLabel}</strong>.`)}
             ${divider()}
             ${para(`Here's what you can do next:`)}
             <ul style="font-size:14px;color:#444;line-height:2;">
@@ -132,7 +133,7 @@ export function sendWelcomeEmail(to: string, name: string, role: string): Promis
             ${btn('Go to Dashboard', APP_URL)}
         </div>
     `);
-    return sendEmail(to, '🎉 Welcome to Campus Spark!', html);
+    return sendEmail(to, '🎉 Welcome to ABC-Rally!', html);
 }
 
 /** Admin alert when a new user registers */
@@ -141,7 +142,7 @@ export function sendAdminNewUserAlert(userName: string, userEmail: string, role:
         ${tag('Admin Alert', '#6366f1')}
         <div style="margin-top:16px;">
             ${heading('New User Registered')}
-            ${para('A new user has just created an account on Campus Spark.')}
+            ${para('A new user has just created an account on ABC-Rally.')}
             ${divider()}
             <table cellpadding="0" cellspacing="0" style="width:100%;">
                 ${infoRow('Name', userName)}
@@ -162,7 +163,7 @@ export function sendProposalReceivedEmail(to: string, recipientName: string, sen
         ${tag('New Proposal')}
         <div style="margin-top:16px;">
             ${heading(`You have a new proposal from ${senderName}`)}
-            ${para(`<strong>${senderName}</strong> has sent you a partnership proposal on Campus Spark.`)}
+            ${para(`<strong>${senderName}</strong> has sent you a partnership proposal on ABC-Rally.`)}
             ${divider()}
             <div style="background:#f9f9f9;border-left:4px solid #e53e3e;padding:16px 20px;border-radius:0 8px 8px 0;">
                 <p style="margin:0;font-size:14px;color:#555555;font-style:italic;line-height:1.7;">"${preview}"</p>
@@ -178,7 +179,7 @@ export function sendProposalReceivedEmail(to: string, recipientName: string, sen
 export function sendProposalStatusEmail(to: string, senderName: string, recipientName: string, status: string): Promise<void> {
     const statusMap: Record<string, { label: string; color: string; message: string }> = {
         accepted: { label: 'Accepted ✅', color: '#22c55e', message: 'Great news! Your proposal has been accepted. Log in to proceed with the partnership.' },
-        rejected: { label: 'Declined ❌', color: '#ef4444', message: 'Your proposal was not accepted this time. Don\'t be discouraged — keep exploring other opportunities on Campus Spark.' },
+        rejected: { label: 'Declined ❌', color: '#ef4444', message: 'Your proposal was not accepted this time. Don\'t be discouraged — keep exploring other opportunities on ABC-Rally.' },
         reviewing: { label: 'Under Review 👀', color: '#f59e0b', message: 'Your proposal is currently under review. We\'ll notify you when there\'s an update.' },
     };
     const s = statusMap[status] || { label: status, color: '#6366f1', message: 'Your proposal status has been updated.' };
@@ -321,7 +322,7 @@ export function sendTopUpConfirmationEmail(to: string, userName: string, amount:
             ${btn('Go to Dashboard', APP_URL)}
         </div>
     `);
-    return sendEmail(to, `✅ ₦${amount.toLocaleString()} Added to Your Campus Spark Wallet`, html);
+    return sendEmail(to, `✅ ₦${amount.toLocaleString()} Added to Your ABC-Rally Wallet`, html);
 }
 
 /** Generic notification email (for custom messages) */

@@ -1,6 +1,6 @@
-# Campus Spark Nigeria ⚡
+# ABC-Rally Nigeria ⚡
 
-**Campus Spark** is a premium digital ecosystem designed to bridge the gap between **Creators**, **Organizations**, and **Brands** in the Nigerian campus landscape. It provides a centralized hub for campus gigs, sponsorships, and event management.
+**ABC-Rally** is a premium digital ecosystem designed to bridge the gap between **Creators**, **Organizations**, and **Brands** in the Nigerian campus landscape. It provides a centralized hub for campus gigs, sponsorships, and event management.
 
 ---
 

@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { updateDoc, doc, db } from '../firebase';
 import { User, UserRole } from '../types';
 
@@ -9,6 +9,7 @@ interface ProfileViewProps {
 
 const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const coverFileInputRef = useRef<HTMLInputElement>(null);
     const [activeTab, setActiveTab] = useState<'personal' | 'specialized' | 'social'>('personal');
 
     if (!user) {
@@ -22,6 +23,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
     const [formData, setFormData] = useState<Partial<User>>({
         name: user?.name || '',
         imageUrl: user?.imageUrl || '',
+        coverPhotoUrl: user?.coverPhotoUrl || '',
         bio: user?.bio || '',
         location: user?.location || '',
         phoneNumber: user?.phoneNumber || '',
@@ -34,9 +36,11 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
         handle: user?.handle || '',
         industry: user?.industry || '',
         clubType: user?.clubType || '',
-        companySize: user?.companySize || ''
+        companySize: user?.companySize || '',
+        influencerType: user?.influencerType || (user?.role === 'Creator' ? (user?.university ? 'Campus Creator' : 'Professional Creator') : '')
     });
     const [uploading, setUploading] = useState(false);
+    const [uploadingCover, setUploadingCover] = useState(false);
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
 
@@ -64,8 +68,54 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
         }
     };
 
+    const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setUploadingCover(true);
+        try {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setFormData(prev => ({ ...prev, coverPhotoUrl: reader.result as string }));
+                setUploadingCover(false);
+            };
+            reader.readAsDataURL(file);
+            return;
+        } catch (err) {
+            console.error("Cover upload error:", err);
+            alert("Failed to upload cover photo");
+        } finally {
+            setUploadingCover(false);
+        }
+    };
+
+    const isValidUrl = (string: string) => {
+        if (!string) return true;
+        try {
+            new URL(string);
+            return true;
+        } catch (_) {
+            return false;
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        const socialFields = ['tiktok', 'instagram', 'twitter', 'linkedin', 'website'];
+        const invalidFields = [];
+        for (const field of socialFields) {
+            const val = (formData as any)[field];
+            if (val && !isValidUrl(val)) {
+                invalidFields.push(field);
+            }
+        }
+
+        if (invalidFields.length > 0) {
+            alert(`Please enter a valid link (starting with http:// or https://) for: ${invalidFields.join(', ')}`);
+            return;
+        }
+
         setLoading(true);
         setSuccess(false);
         try {
@@ -96,8 +146,34 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
         <div className="max-w-4xl mx-auto space-y-10 animate-in slide-in-from-bottom-4 duration-500 pb-20">
             <div className="bg-[var(--bg-primary)] rounded-[3rem] border border-[var(--border-color)] shadow-xl overflow-hidden text-left">
                 {/* Header/Cover */}
-                <div className="h-48 bg-gradient-to-br from-spark-black via-[var(--bg-secondary)] to-spark-red relative">
-                    <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10"></div>
+                <div 
+                    className="h-48 bg-spark-black relative overflow-hidden group/cover"
+                    style={{
+                        backgroundImage: formData.coverPhotoUrl ? `url(${formData.coverPhotoUrl})` : undefined,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center'
+                    }}
+                >
+                    {!formData.coverPhotoUrl && (
+                        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10"></div>
+                    )}
+                    <button
+                        type="button"
+                        onClick={() => coverFileInputRef.current?.click()}
+                        disabled={uploadingCover}
+                        className="absolute inset-0 bg-spark-black/40 opacity-0 group-hover/cover:opacity-100 transition-all duration-300 flex flex-col items-center justify-center cursor-pointer text-white backdrop-blur-[2px]"
+                    >
+                        {uploadingCover ? (
+                            <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                            <>
+                                <svg className="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                <span className="text-[10px] font-black uppercase tracking-widest">Update Cover Photo</span>
+                            </>
+                        )}
+                    </button>
+                    <input type="file" ref={coverFileInputRef} onChange={handleCoverUpload} accept="image/*" className="hidden" />
+
                     <div className="absolute -bottom-16 left-10 group">
                         <div className="w-32 h-32 rounded-3xl bg-[var(--bg-primary)] p-2 shadow-2xl ring-4 ring-[var(--bg-primary)] relative overflow-hidden transition-transform duration-500 group-hover:scale-105">
                             {formData.imageUrl ? (
@@ -132,8 +208,10 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
                         <div>
                             <h3 className="text-3xl font-fancy font-black text-[var(--text-primary)] mb-2 tracking-tighter">{formData.name || 'Set Your Name'}</h3>
                             <div className="flex items-center gap-3">
-                                <span className="px-3 py-1 bg-spark-red/10 text-spark-red text-[10px] font-black uppercase tracking-widest rounded-lg">{user.role}</span>
-                                {formData.location && <span className="text-[var(--text-secondary)] font-bold text-xs">ðŸ“ {formData.location}</span>}
+                                <span className="px-3 py-1 bg-spark-red/10 text-spark-red text-[10px] font-black uppercase tracking-widest rounded-lg">
+                                    {formData.influencerType || user.role}
+                                </span>
+                                {formData.location && <span className="text-[var(--text-secondary)] font-bold text-xs flex items-center gap-1"><svg className="w-3 h-3 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg> {formData.location}</span>}
                             </div>
                         </div>
                     </div>
@@ -175,11 +253,45 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
                         {activeTab === 'specialized' && (
                             <div className="grid md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-left-4 duration-500">
                                 {user.role?.includes('Creator') && (
-                                    <>
-                                        {renderInput('University', 'university', 'Your school name')}
-                                        {renderInput('Spark Handle', 'handle', '@yourusername')}
-                                        {renderInput('Portfolio URL', 'portfolioUrl', 'https://yourportfolio.com')}
-                                    </>
+                                    <div className="md:col-span-2 space-y-6">
+                                        <div className="space-y-3">
+                                            <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-[0.2em] ml-2">Creator Type</label>
+                                            <div className="flex gap-4">
+                                                <label className="flex-1 cursor-pointer">
+                                                    <input
+                                                        type="radio"
+                                                        name="influencerType"
+                                                        value="Campus Creator"
+                                                        checked={formData.influencerType === 'Campus Creator'}
+                                                        onChange={(e) => setFormData(prev => ({ ...prev, influencerType: 'Campus Creator' }))}
+                                                        className="hidden peer"
+                                                    />
+                                                    <div className="p-4 border border-[var(--border-color)] bg-spark-red/5 rounded-2xl peer-checked:border-spark-red peer-checked:bg-spark-red/10 text-center font-bold text-[var(--text-secondary)] peer-checked:text-spark-red transition-all uppercase tracking-widest text-xs">
+                                                        Campus Creator
+                                                    </div>
+                                                </label>
+                                                <label className="flex-1 cursor-pointer">
+                                                    <input
+                                                        type="radio"
+                                                        name="influencerType"
+                                                        value="Professional Creator"
+                                                        checked={formData.influencerType === 'Professional Creator'}
+                                                        onChange={(e) => setFormData(prev => ({ ...prev, influencerType: 'Professional Creator', university: '' }))}
+                                                        className="hidden peer"
+                                                    />
+                                                    <div className="p-4 border border-[var(--border-color)] bg-spark-red/5 rounded-2xl peer-checked:border-spark-red peer-checked:bg-spark-red/10 text-center font-bold text-[var(--text-secondary)] peer-checked:text-spark-red transition-all uppercase tracking-widest text-xs">
+                                                        Professional Creator
+                                                    </div>
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        {formData.influencerType === 'Campus Creator' && (
+                                            <div className="grid md:grid-cols-2 gap-6">
+                                                {renderInput('University', 'university', 'Your school name')}
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
 
                                 {user.role === 'Brand' && (
@@ -213,13 +325,13 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
                         {activeTab === 'social' && (
                             <div className="grid md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-left-4 duration-500">
                                 {user.role?.includes('Creator') ? (
-                                    renderInput('TikTok Handle', 'tiktok', '@handle')
+                                    renderInput('TikTok Link', 'tiktok', 'https://tiktok.com/@handle')
                                 ) : (
                                     renderInput('Website URL', 'website', 'https://...')
                                 )}
-                                {renderInput('Instagram', 'instagram', '@handle')}
-                                {renderInput('X / Twitter', 'twitter', '@handle')}
-                                {renderInput('LinkedIn', 'linkedin', 'linkedin.com/in/...')}
+                                {renderInput('Instagram Link', 'instagram', 'https://instagram.com/handle')}
+                                {renderInput('X / Twitter Link', 'twitter', 'https://x.com/handle')}
+                                {renderInput('LinkedIn Link', 'linkedin', 'https://linkedin.com/in/handle')}
                             </div>
                         )}
 

@@ -8,6 +8,11 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
+        // Serve index.html for any path that isn't a real file.
+        // This mirrors the Firebase hosting "**" → "/index.html" rewrite,
+        // so direct URL access, paste, refresh, and external links all work
+        // in dev just as they do in production.
+        historyApiFallback: true,
       },
       plugins: [react()],
       define: {

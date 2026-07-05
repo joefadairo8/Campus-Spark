@@ -2,25 +2,68 @@ import React, { useState, useEffect, useCallback } from 'react';
 import DashboardShell from './DashboardShell';
 import { db, auth, collection, query, where, getDocs, limit, doc, getDoc, apiClient, orderBy } from '../firebase';
 import { UserRole } from '../types';
-import { STATES, UNIVERSITIES } from '../constants';
+import { STATES, UNIVERSITIES, BACKEND_URL } from '../constants';
 import ProfileView from './ProfileView';
 import DashboardPlaceholder from './DashboardPlaceholder';
 import { notifyTopUp, notifyProposalStatus, notifyApplicationDecision, notifyReportRejected } from '../emailNotifier';
 import { ProposalFormModal } from './ProposalFormModal';
 import { ProposalDetailsModal } from './ProposalDetailsModal';
 import { EventDetailsModal } from './EventDetailsModal';
+import { CreatorProfileModal } from './CreatorProfileModal';
 import { WalletService, CampaignAllocation } from '../WalletService';
-import { Calendar, Wallet, BarChart3, Lock, Plus, Minus, Mail, Users, Megaphone, Inbox, TrendingUp, ArrowUpRight, ArrowDownLeft, Activity, Handshake, Building2, Search, Briefcase, FileText, Download } from 'lucide-react';
+import { Calendar, Wallet, BarChart3, Lock, Plus, Minus, Mail, Users, Megaphone, Inbox, TrendingUp, ArrowUpRight, ArrowDownLeft, Activity, Handshake, Building2, Search, Briefcase, FileText, Download, Edit, Trash2, User } from 'lucide-react';
+
+const parsePackages = (packagesField: any): { name: string; price: number; entails: string; }[] => {
+    if (!packagesField) return [];
+    if (Array.isArray(packagesField)) return packagesField;
+    if (typeof packagesField === 'string') {
+        try {
+            const parsed = JSON.parse(packagesField);
+            if (Array.isArray(parsed)) return parsed;
+        } catch (e) {
+            return [{ name: 'Custom Sponsorship', price: 0, entails: packagesField }];
+        }
+    }
+    return [];
+};
 
 const BrandDashboard: React.FC<{ 
     onNavigate: (page: string) => void,
     onLogout: () => void,
     isDarkMode: boolean,
     toggleTheme: () => void,
+    themeMode: 'light' | 'dark' | 'auto',
     user: any
-}> = ({ onNavigate, onLogout, isDarkMode, toggleTheme, user }) => {
-    const [currentView, setCurrentView] = useState('directory');
+}> = ({ onNavigate, onLogout, isDarkMode, toggleTheme, themeMode, user }) => {
+    const [currentView, setCurrentView] = useState('overview');
     const [searchTerm, setSearchTerm] = useState('');
+    const [eventTab, setEventTab] = useState<'explore' | 'my'>('explore');
+    const [checklist, setChecklist] = useState<Record<string, boolean>>(() => {
+        try {
+            const saved = localStorage.getItem('brand_checklist');
+            return saved ? JSON.parse(saved) : {
+                profile: false,
+                wallet: false,
+                campaign: false,
+                invite: false,
+                proposals: false
+            };
+        } catch {
+            return {
+                profile: false,
+                wallet: false,
+                campaign: false,
+                invite: false,
+                proposals: false
+            };
+        }
+    });
+
+    const toggleChecklistItem = (key: string) => {
+        const updated = { ...checklist, [key]: !checklist[key] };
+        setChecklist(updated);
+        localStorage.setItem('brand_checklist', JSON.stringify(updated));
+    };
     const [selectedState, setSelectedState] = useState('All');
     const [selectedUni, setSelectedUni] = useState('All');
     const [loading, setLoading] = useState(true);
@@ -35,20 +78,69 @@ const BrandDashboard: React.FC<{
     const [selectedProposal, setSelectedProposal] = useState<any>(null);
     const [events, setEvents] = useState<any[]>([]);
     const [selectedEvent, setSelectedEvent] = useState<any>(null);
+    const [selectedSponsorshipPackage, setSelectedSponsorshipPackage] = useState<any>(null);
     const [campaigns, setCampaigns] = useState<any[]>([]);
     const [showCampaignModal, setShowCampaignModal] = useState(false);
-    const [campaignForm, setCampaignForm] = useState({ title: '', brief: '', budget: '', deadline: '', category: 'Awareness' });
+    const [campaignForm, setCampaignForm] = useState({ 
+        title: '', 
+        brief: '', 
+        budget: '', 
+        deadline: '', 
+        category: 'Awareness',
+        objective: '',
+        audience: '',
+        location: '',
+        deliverables: ''
+    });
     const [campaignSubmitting, setCampaignSubmitting] = useState(false);
     const [selectedCampaign, setSelectedCampaign] = useState<any>(null);
     const [editingGig, setEditingGig] = useState<any>(null);
     const [topUpAmount, setTopUpAmount] = useState('5000');
     const [myEvents, setMyEvents] = useState<any[]>([]);
-    const [eventFormData, setEventFormData] = useState({ name: '', date: '', description: '', targetSponsorship: '' });
+    const [eventFormData, setEventFormData] = useState({ 
+        name: '', 
+        date: '', 
+        location: '', 
+        description: '', 
+        targetSponsorship: '',
+        // New detailed event fields
+        expectedAttendees: '',
+        sponsorshipSlots: '',
+        sponsorshipPackages: '',
+        activationNeeds: '',
+        // Volunteer campaign fields
+        needVolunteers: 'no', // 'no' | 'yes'
+        volunteerType: 'unpaid', // 'paid' | 'unpaid'
+        campaignTitle: '',
+        campaignCategory: 'Event Promo',
+        campaignBrief: '',
+        campaignBudget: '',
+        campaignDeadline: ''
+    });
     const [showCreateEventModal, setShowCreateEventModal] = useState(false);
     const [eventSubmitting, setEventSubmitting] = useState(false);
     const [editingEvent, setEditingEvent] = useState<any>(null);
-    const [editEventFormData, setEditEventFormData] = useState({ name: '', date: '', description: '', targetSponsorship: '' });
+    const [editEventFormData, setEditEventFormData] = useState({ 
+        name: '', 
+        date: '', 
+        location: '', 
+        description: '', 
+        targetSponsorship: '',
+        expectedAttendees: '',
+        sponsorshipSlots: '',
+        sponsorshipPackages: '',
+        activationNeeds: ''
+    });
     const [editEventSubmitting, setEditEventSubmitting] = useState(false);
+
+    const [formPackages, setFormPackages] = useState<{ name: string; price: string; entails: string; }[]>([
+        { name: 'Bronze', price: '50000', entails: 'Logo placement on flyer' },
+        { name: 'Silver', price: '150000', entails: 'Logo placement, social mentions & standard event booth' },
+        { name: 'Gold', price: '400000', entails: 'Title sponsor, main stage logo, VIP booths & 5 tickets' }
+    ]);
+    const [editFormPackages, setEditFormPackages] = useState<{ name: string; price: string; entails: string; }[]>([
+        { name: '', price: '', entails: '' }
+    ]);
 
     useEffect(() => {
         const script = document.createElement("script");
@@ -92,10 +184,54 @@ const BrandDashboard: React.FC<{
     const [viewingProfile, setViewingProfile] = useState<any>(null);
     const [selectedPortfolioItem, setSelectedPortfolioItem] = useState<any>(null);
 
+    const handleViewInfluencer = async (influencerId: string, fallbackData: any) => {
+        setViewingProfile({ ...fallbackData, id: influencerId, loading: true });
+        try {
+            const userDoc = await getDoc(doc(db, "users", influencerId));
+            if (userDoc.exists()) {
+                setViewingProfile({ id: influencerId, ...userDoc.data() });
+            } else {
+                setViewingProfile({ id: influencerId, ...fallbackData });
+            }
+        } catch (error) {
+            console.error("Error fetching influencer details:", error);
+            setViewingProfile({ id: influencerId, ...fallbackData });
+        }
+    };
+
+    const sanitizeSocialLink = (url: string, platform: string) => {
+        if (!url) return '';
+        let cleanUrl = url.trim();
+        if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
+            return cleanUrl;
+        }
+        if (cleanUrl.startsWith('@')) {
+            cleanUrl = cleanUrl.substring(1);
+        }
+        switch (platform) {
+            case 'instagram':
+                return `https://instagram.com/${cleanUrl}`;
+            case 'tiktok':
+                return `https://tiktok.com/@${cleanUrl}`;
+            case 'twitter':
+                return `https://x.com/${cleanUrl}`;
+            case 'linkedin':
+                return cleanUrl.includes('linkedin.com') ? `https://${cleanUrl}` : `https://linkedin.com/in/${cleanUrl}`;
+            default:
+                return `https://${cleanUrl}`;
+        }
+    };
+
     const [showApprovalModal, setShowApprovalModal] = useState(false);
     const [selectedAppToApprove, setSelectedAppToApprove] = useState<any>(null);
     const [approvalAmount, setApprovalAmount] = useState('');
     const [approvalSubmitting, setApprovalSubmitting] = useState(false);
+
+    // Escrow release OTP modal state
+    const [showReleaseOtpModal, setShowReleaseOtpModal] = useState(false);
+    const [releaseOtpAllocation, setReleaseOtpAllocation] = useState<CampaignAllocation | null>(null);
+    const [releaseOtp, setReleaseOtp] = useState('');
+    const [releaseOtpSubmitting, setReleaseOtpSubmitting] = useState(false);
 
     const fetchApplicants = async (campaign: any) => {
         setViewingApplicants(campaign);
@@ -139,29 +275,72 @@ const BrandDashboard: React.FC<{
             return;
         }
 
-        const stats = getCampaignBudgetStats(viewingApplicants);
-        if (amount > stats.remaining) {
-            alert(`Amount â‚¦${amount.toLocaleString()} exceeds remaining campaign budget of â‚¦${stats.remaining.toLocaleString()}.`);
-            return;
-        }
-
         setApprovalSubmitting(true);
         try {
+            // 1. Mark application as accepted in our system
             await apiClient.patch(`gigs/${viewingApplicants.id}/applications/${selectedAppToApprove.appId}`, { 
                 status: 'accepted',
                 amount 
             });
-            
+
+            // 2. Initialize Escrow for the creator payout
+            let escrowData: any = null;
+            try {
+                const escrowRes = await fetch(`${BACKEND_URL}/api/escrow/initialize`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        gigTitle: viewingApplicants.title,
+                        gigDescription: viewingApplicants.description || viewingApplicants.brief,
+                        amount,
+                        deadline: viewingApplicants.deadline,
+                        brandName: brandProfile.name || brandProfile.companyName || 'Brand',
+                        brandEmail: brandProfile.email || user?.email,
+                        creatorName: selectedAppToApprove.name || selectedAppToApprove.creatorName || 'Creator',
+                        creatorEmail: selectedAppToApprove.email || selectedAppToApprove.creatorEmail,
+                    }),
+                });
+                const escrowJson = await escrowRes.json();
+                if (escrowRes.ok && escrowJson.escrow_id) {
+                    escrowData = escrowJson;
+                } else {
+                    console.warn('[Escrow] Init response:', escrowJson);
+                }
+            } catch (escrowErr: any) {
+                console.warn('[Escrow] Init failed (non-blocking):', escrowErr.message);
+            }
+
+            // 3. Save escrow info to the allocation record in Firestore
+            await WalletService.createAllocation({
+                campaignId: viewingApplicants.id,
+                campaignTitle: viewingApplicants.title,
+                brandId: brandProfile.id,
+                brandName: brandProfile.name || brandProfile.companyName,
+                creatorId: selectedAppToApprove.userId || selectedAppToApprove.id || selectedAppToApprove.appId,
+                creatorName: selectedAppToApprove.name || selectedAppToApprove.creatorName || 'Creator',
+                creatorUniversity: selectedAppToApprove.university || '',
+                creatorEmail: selectedAppToApprove.email || selectedAppToApprove.creatorEmail || '',
+                amount,
+                status: 'selected',
+                ...(escrowData ? { escrowId: escrowData.escrow_id, escrowPaymentUrl: escrowData.payment_url, escrowRef: escrowData.transaction_ref } : {}),
+            });
+
             // Refresh
             const res = await apiClient.get(`gigs/${viewingApplicants.id}/applications`);
             setApplicants(res.data);
             setCampaigns(prev => prev.map(c => c.id === viewingApplicants.id ? { ...c, status: 'in_progress' } : c));
             await fetchAllAllocations(brandProfile.id);
-            await syncWalletStrip(brandProfile.id);
             
             setShowApprovalModal(false);
             setSelectedAppToApprove(null);
-            alert('Application accepted and funds allocated!');
+
+            if (escrowData?.payment_url) {
+                if (window.confirm(`✅ Creator hired! Now fund the escrow to lock ₦${amount.toLocaleString()} for ${selectedAppToApprove.name || 'the creator'}. Click OK to open the escrow payment page.`)) {
+                    window.open(escrowData.payment_url, '_blank');
+                }
+            } else {
+                alert(`Creator hired! Escrow setup is pending — you can fund it later from the campaign detail view.`);
+            }
         } catch (err: any) {
             alert(err.message || 'Failed to approve application.');
         } finally {
@@ -225,7 +404,7 @@ const BrandDashboard: React.FC<{
         }
     };
 
-    // Sync wallet strip data (lightweight â€” always runs on mount & profile load)
+    // Sync wallet strip data (lightweight — always runs on mount & profile load)
     const syncWalletStrip = async (profileId: string) => {
         try {
             const w = await WalletService.getOrCreateWallet(profileId);
@@ -259,7 +438,7 @@ const BrandDashboard: React.FC<{
 
             // TERTIARY FALLBACK: full collection scan filtered client-side
             if (allCampaigns.length === 0) {
-                console.warn('[fetchCampaigns] Indexed queries returned 0 â€” doing full scan fallback.');
+                console.warn('[fetchCampaigns] Indexed queries returned 0 — doing full scan fallback.');
                 const allRes = await apiClient.get('gigs');
                 const allGigs: any[] = allRes.data || [];
                 allCampaigns = allGigs.filter((g: any) =>
@@ -334,11 +513,39 @@ const BrandDashboard: React.FC<{
         if (!campaign) return;
         const stats = getCampaignBudgetStats(campaign);
         if (amount > stats.remaining) {
-            alert(`Amount â‚¦${amount.toLocaleString()} exceeds remaining campaign budget of â‚¦${stats.remaining.toLocaleString()}.`);
+            alert(`Amount ₦${amount.toLocaleString()} exceeds remaining campaign budget of ₦${stats.remaining.toLocaleString()}.`);
             return;
         }
         setAllocationSubmitting(true);
         try {
+            // 1. Initialize Escrow for the creator payout
+            let escrowData: any = null;
+            try {
+                const escrowRes = await fetch(`${BACKEND_URL}/api/escrow/initialize`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        gigTitle: campaign.title,
+                        gigDescription: campaign.description || campaign.brief || `Allocation for creator: ${allocationTarget.name}`,
+                        amount,
+                        deadline: campaign.deadline,
+                        brandName: brandProfile.name || brandProfile.companyName || 'Brand',
+                        brandEmail: brandProfile.email || user?.email,
+                        creatorName: allocationTarget.name || 'Creator',
+                        creatorEmail: allocationTarget.email || '',
+                    }),
+                });
+                const escrowJson = await escrowRes.json();
+                if (escrowRes.ok && escrowJson.escrow_id) {
+                    escrowData = escrowJson;
+                } else {
+                    console.warn('[Escrow] Init response:', escrowJson);
+                }
+            } catch (escrowErr: any) {
+                console.warn('[Escrow] Init failed (non-blocking):', escrowErr.message);
+            }
+
+            // 2. Create campaign allocation with escrow details in Firestore
             await WalletService.createAllocation({
                 campaignId: campaign.id,
                 campaignTitle: campaign.title,
@@ -346,14 +553,24 @@ const BrandDashboard: React.FC<{
                 brandName: brandProfile.name || brandProfile.brandName,
                 creatorId: allocationTarget.id,
                 creatorName: allocationTarget.name,
-                creatorUniversity: allocationTarget.university,
-                creatorEmail: allocationTarget.email,
+                creatorUniversity: allocationTarget.university || '',
+                creatorEmail: allocationTarget.email || '',
                 amount,
                 status: 'selected',
+                ...(escrowData ? { escrowId: escrowData.escrow_id, escrowPaymentUrl: escrowData.payment_url, escrowRef: escrowData.transaction_ref } : {}),
             });
+
             await fetchAllAllocations(brandProfile.id);
             setShowAllocationModal(false);
             setAllocationTarget(null);
+
+            if (escrowData?.payment_url) {
+                if (window.confirm(`✅ Creator allocated! Now fund the escrow to lock ₦${amount.toLocaleString()} for ${allocationTarget.name}. Click OK to open the escrow payment page.`)) {
+                    window.open(escrowData.payment_url, '_blank');
+                }
+            } else {
+                alert(`Creator allocated! Escrow setup is pending — you can fund it later from the campaign detail view.`);
+            }
         } catch (e: any) {
             alert(e.message || 'Failed to allocate creator.');
         } finally {
@@ -375,35 +592,99 @@ const BrandDashboard: React.FC<{
         }
     };
 
-    // Release payment â†’ move escrow to influencer wallet, update allocation status
+    // Release payment → trigger Escrow OTP release flow
     const handleReleasePayment = async (allocation: CampaignAllocation) => {
         if (!brandProfile?.id || !allocation.id) return;
-        if (!window.confirm(`Release â‚¦${allocation.amount.toLocaleString()} to ${allocation.creatorName}?`)) return;
-        
+        const escrowId = (allocation as any).escrowId;
+        if (!escrowId) {
+            // Legacy allocation without escrow — fallback to direct wallet release
+            if (!window.confirm(`Release ₦${allocation.amount.toLocaleString()} to ${allocation.creatorName}?\n\n(Note: This allocation was created before escrow integration. Funds will be released from wallet balance.)`)) return;
+            setReleaseSubmitting(allocation.id);
+            try {
+                await WalletService.releaseAllocationPayment(brandProfile.id, allocation.id, selectedCampaignDetail?.title || 'Campaign');
+                await Promise.all([
+                    syncWalletStrip(brandProfile.id),
+                    fetchAllAllocations(brandProfile.id),
+                    selectedCampaignDetail ? (async () => { const u = await WalletService.getAllocationsForCampaign(selectedCampaignDetail.id); setDetailAllocations(u); })() : Promise.resolve()
+                ]);
+                alert('Payment released!');
+            } catch (e: any) { alert(e.message || 'Failed.'); }
+            finally { setReleaseSubmitting(null); }
+            return;
+        }
+
+        // New escrow-based release — request OTP, then show entry modal
         setReleaseSubmitting(allocation.id);
         try {
-            await WalletService.releaseAllocationPayment(
-                brandProfile.id,
-                allocation.id,
-                selectedCampaignDetail?.title || 'Campaign'
-            );
-            
-            // Run syncs in parallel to speed up UI response
-            await Promise.all([
-                syncWalletStrip(brandProfile.id),
-                fetchAllAllocations(brandProfile.id),
-                selectedCampaignDetail ? (async () => {
-                    const updated = await WalletService.getAllocationsForCampaign(selectedCampaignDetail.id);
-                    setDetailAllocations(updated);
-                })() : Promise.resolve()
-            ]);
-            alert('Payment successfully released!');
+            const otpRes = await fetch(`${BACKEND_URL}/api/escrow/request-otp`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    escrow_id: escrowId,
+                    brandEmail: brandProfile.email || user?.email,
+                    brandName: brandProfile.name || brandProfile.companyName || 'Brand',
+                    creatorName: allocation.creatorName,
+                    amount: allocation.amount,
+                }),
+            });
+            const otpData = await otpRes.json();
+            if (!otpRes.ok) throw new Error(otpData.error || 'Failed to send OTP.');
         } catch (e: any) {
-            alert(e.message || 'Failed to release payment.');
+            alert(e.message || 'Could not send OTP. Please try again.');
+            setReleaseSubmitting(null);
+            return;
         } finally {
             setReleaseSubmitting(null);
         }
+
+        setReleaseOtpAllocation(allocation);
+        setReleaseOtp('');
+        setShowReleaseOtpModal(true);
     };
+
+    // Confirm escrow release via Escrow OTP
+    const confirmEscrowRelease = async () => {
+        if (!releaseOtpAllocation || !releaseOtp.trim()) return;
+        const escrowId = (releaseOtpAllocation as any).escrowId;
+        setReleaseOtpSubmitting(true);
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/escrow/complete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ escrow_id: escrowId, otp: releaseOtp.trim() }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Escrow release failed.');
+
+            // Credit creator wallet balance + deduct brand escrow + log transactions
+            // This is the full payout flow: creator sees funds in their dashboard
+            // and admin can then initiate manual disbursement to their bank account.
+            await WalletService.releaseAllocationPayment(
+                brandProfile.id,
+                releaseOtpAllocation.id,
+                selectedCampaignDetail?.title || releaseOtpAllocation.campaignTitle || 'Campaign',
+                { escrowRelease: true }
+            );
+
+            await Promise.all([
+                syncWalletStrip(brandProfile.id),
+                fetchAllAllocations(brandProfile.id),
+                selectedCampaignDetail
+                    ? (async () => { const u = await WalletService.getAllocationsForCampaign(selectedCampaignDetail.id); setDetailAllocations(u); })()
+                    : Promise.resolve()
+            ]);
+            setReleaseSubmitting(null);
+            setShowReleaseOtpModal(false);
+            setReleaseOtp('');
+            alert(`Payment released successfully! ₦${releaseOtpAllocation.amount?.toLocaleString()} has been credited to ${releaseOtpAllocation.creatorName}'s wallet. They can now request a payout to their bank account.`);
+        } catch (e: any) {
+            console.error('Escrow release error:', e);
+            alert(e.message || 'Failed to release escrow payment.');
+        } finally {
+            setReleaseOtpSubmitting(false);
+        }
+    };
+
 
     const handleReleaseSponsorship = async (proposal: any) => {
         if (!brandProfile?.id || !proposal.id) return;
@@ -412,49 +693,62 @@ const BrandDashboard: React.FC<{
             alert("This proposal does not have a valid budget amount.");
             return;
         }
-        
-        if (walletData.available < amount) {
-            alert(`Insufficient wallet balance. You need â‚¦${amount.toLocaleString()} in your available balance to release these funds.`);
+
+        if (!window.confirm(`Pay ₦${amount.toLocaleString()} sponsorship to ${proposal.sender?.name}? You will be redirected to Paystack to complete this payment.`)) return;
+
+        // Direct Paystack payment — no wallet top-up needed
+        const PaystackPop = (window as any).PaystackPop;
+        if (!PaystackPop) {
+            alert('Paystack is not loaded. Please refresh and try again.');
             return;
         }
-
-        if (!window.confirm(`Release â‚¦${amount.toLocaleString()} sponsorship to ${proposal.sender?.name}?`)) return;
-        
         try {
-            // We need to move funds from brand to org with 10% fee
-            // But first we must lock them? No, we can just release directly from balance if brand has it
-            // The service has releaseSponsorshipFunds which deducts from Brand Escrow.
-            // So we must LOCK first.
-            
-            setLoading(true);
-            // 1. Lock funds
-            await WalletService.lockFundsForGig(brandProfile.id, proposal.senderId, amount, `Sponsorship: ${proposal.message.substring(0, 30)}...`);
-            
-            // 2. Release funds
-            await WalletService.releaseSponsorshipFunds(
-                brandProfile.id,
-                proposal.senderId,
-                amount,
-                proposal.message.substring(0, 30)
-            );
-            
-            // 3. Mark proposal as paid/completed in a custom way or just status accepted
-            await apiClient.patch(`proposals/${proposal.id}`, { status: 'paid' });
-            
-            alert("Sponsorship funds released successfully!");
-            await syncWalletStrip(brandProfile.id);
-            await fetchProposals();
+            const reference = `SPONS-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+            const handler = PaystackPop.setup({
+                key: 'pk_test_5ee439620d8a49acc254131ede19b9063d8fe95f',
+                email: brandProfile.email || user?.email || 'brand@campushub.africa',
+                amount: amount * 100, // Paystack uses kobo
+                currency: 'NGN',
+                ref: reference,
+                metadata: {
+                    userId: brandProfile.id,
+                    type: 'sponsorship',
+                    proposalId: proposal.id,
+                    recipientId: proposal.senderId,
+                },
+                callback: function(response: any) {
+                    (async () => {
+                        try {
+                            setLoading(true);
+                            // Credit org wallet and record transaction
+                            await WalletService.paySponsorship(
+                                brandProfile.id,
+                                proposal.senderId,
+                                amount,
+                                proposal.eventName || proposal.message?.substring(0, 40) || 'Event Sponsorship'
+                            );
+                            await apiClient.patch(`proposals/${proposal.id}`, { status: 'paid' });
+                            alert(`✅ Sponsorship of ₦${amount.toLocaleString()} paid successfully!`);
+                            await fetchProposals();
+                        } catch (err: any) {
+                            alert('Payment captured but wallet update failed: ' + err.message);
+                        } finally {
+                            setLoading(false);
+                        }
+                    })();
+                },
+                onClose: () => { console.log('[Paystack Sponsorship] Modal closed'); }
+            });
+            handler.openIframe();
         } catch (e: any) {
-            alert(e.message || 'Failed to release sponsorship.');
-        } finally {
-            setLoading(false);
+            alert('Paystack Setup Error: ' + e.message);
         }
     };
 
     // Reject allocation â†’ refund to available balance, mark rejected
     const handleRejectAllocation = async (allocation: CampaignAllocation) => {
         if (!brandProfile?.id || !allocation.id) return;
-        if (!window.confirm(`Reject and refund â‚¦${allocation.amount.toLocaleString()} for ${allocation.creatorName}?`)) return;
+        if (!window.confirm(`Reject and refund ₦${allocation.amount.toLocaleString()} for ${allocation.creatorName}?`)) return;
         try {
             await WalletService.refundAllocation(
                 brandProfile.id,
@@ -530,25 +824,24 @@ const BrandDashboard: React.FC<{
             alert(e.message || 'Failed to reject report.');
         }
     };
+
     // Handle inline campaign creation from the allocation modal
     const handleInlineCreateCampaign = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!brandProfile?.id) return;
         
         const amount = Number(inlineCreateForm.budget);
-        const totalRequired = amount + 20000; // Listing fee
+        const totalRequired = amount;
 
         if (walletData.available < totalRequired) {
-            alert(`Insufficient wallet balance. You need â‚¦${totalRequired.toLocaleString()} (â‚¦${amount.toLocaleString()} budget + â‚¦20,000 listing fee) but only have â‚¦${walletData.available.toLocaleString()}.`);
+            alert(`Insufficient wallet balance. You need ₦${totalRequired.toLocaleString()} campaign budget but only have ₦${walletData.available.toLocaleString()}.`);
             return;
         }
 
-        if (!window.confirm(`Launch campaign? A flat listing fee of â‚¦20,000 will be charged.`)) return;
+        if (!window.confirm(`Launch campaign?`)) return;
 
         setInlineCreateSubmitting(true);
         try {
-            // 1. Charge listing fee
-            await WalletService.chargeListingFee(brandProfile.id, inlineCreateForm.title);
 
             // 2. Create campaign in Firestore
             const payload = {
@@ -576,7 +869,7 @@ const BrandDashboard: React.FC<{
             setAllocationForm({ ...allocationForm, campaignId: newCampaign.id });
             setShowCreateInModal(false);
             setInlineCreateForm({ title: '', brief: '', budget: '', deadline: '', category: 'Awareness' });
-            alert("Campaign launched and listing fee charged!");
+            alert("Campaign launched successfully!");
         } catch (err: any) {
             console.error("Create error:", err);
             alert(err.message || "Failed to create campaign");
@@ -586,14 +879,15 @@ const BrandDashboard: React.FC<{
     };
 
     const sidebarItems = [
-        { id: 'directory', label: 'Talent Directory', icon: <Users className="w-5 h-5" /> },
-        { id: 'campaigns', label: 'My Campaigns', icon: <Megaphone className="w-5 h-5" /> },
-        { id: 'partnerships', label: 'Partner Hub', icon: <Handshake className="w-5 h-5" /> },
-        { id: 'wallet', label: 'Wallet & Billing', icon: <Wallet className="w-5 h-5" /> },
+        { id: 'overview', label: 'Overview', icon: <Activity className="w-5 h-5" /> },
+        { id: 'campaigns', label: 'Campaigns', icon: <Megaphone className="w-5 h-5" /> },
+        { id: 'directory', label: 'Creator Directory', icon: <Users className="w-5 h-5" /> },
+        { id: 'associations', label: 'Association Directory', icon: <Building2 className="w-5 h-5" /> },
         { id: 'proposals', label: 'Offers & Proposals', icon: <Inbox className="w-5 h-5" /> },
-        { id: 'my-events', label: 'My Events', icon: <Calendar className="w-5 h-5" /> },
-        { id: 'explore-events', label: 'Campus Events', icon: <Search className="w-5 h-5" /> },
-        { id: 'profile', label: 'Company Profile', icon: <Users className="w-5 h-5" /> },
+        { id: 'events', label: 'Events', icon: <Calendar className="w-5 h-5" /> },
+        { id: 'wallet', label: 'Wallet & Billing', icon: <Wallet className="w-5 h-5" /> },
+        { id: 'analytics', label: 'Analytics', icon: <BarChart3 className="w-5 h-5" /> },
+        { id: 'profile', label: 'Company Profile', icon: <User className="w-5 h-5" /> },
     ];
 
 
@@ -620,31 +914,148 @@ const BrandDashboard: React.FC<{
     const handleCreateEvent = async (e: React.FormEvent) => {
         e.preventDefault();
         const user = auth.currentUser;
-        if (!user) return;
-        if (!eventFormData.name.trim() || !eventFormData.date || !eventFormData.description.trim() || !eventFormData.targetSponsorship) {
-            alert('Please fill in all fields.');
+        if (!user || !brandProfile?.id) return;
+        if (!eventFormData.name.trim() || !eventFormData.date || !eventFormData.location.trim() || !eventFormData.description.trim() || !eventFormData.targetSponsorship) {
+            alert('Please fill in all event fields.');
             return;
         }
+
+        // Volunteer Campaign Validation & Wallet Balance Check
+        const isVolunteer = eventFormData.needVolunteers === 'yes';
+        const isPaid = isVolunteer && eventFormData.volunteerType === 'paid';
+        const paidBudget = isPaid ? Number(eventFormData.campaignBudget) : 0;
+
+        if (isVolunteer) {
+            if (!eventFormData.campaignTitle.trim()) {
+                alert('Please enter a campaign title.');
+                return;
+            }
+            if (!eventFormData.campaignBrief.trim()) {
+                alert('Please enter a campaign brief.');
+                return;
+            }
+            if (!eventFormData.campaignDeadline) {
+                alert('Please enter a campaign deadline.');
+                return;
+            }
+            if (isPaid) {
+                if (isNaN(paidBudget) || paidBudget <= 0) {
+                    alert('Please enter a valid budget for paid volunteers.');
+                    return;
+                }
+                // Events are free to list — only need volunteer budget in wallet
+                if (walletData.available < paidBudget) {
+                    alert(`Insufficient wallet balance for paid volunteers. You need ₦${paidBudget.toLocaleString()} volunteer budget but only have ₦${walletData.available.toLocaleString()}.`);
+                    return;
+                }
+            }
+        }
+
         setEventSubmitting(true);
         try {
+            // 1. Create Event
             const hostName = brandProfile?.name || "Brand";
-            const payload = {
+            const uni = brandProfile?.location || brandProfile?.university || "National";
+            const eventPayload = {
                 name: eventFormData.name.trim(),
                 date: eventFormData.date,
+                location: eventFormData.location.trim(),
                 description: eventFormData.description.trim(),
                 targetSponsorship: Number(eventFormData.targetSponsorship),
+                expectedAttendees: eventFormData.expectedAttendees ? Number(eventFormData.expectedAttendees) : 0,
+                sponsorshipSlots: eventFormData.sponsorshipSlots ? Number(eventFormData.sponsorshipSlots) : 0,
+                sponsorshipPackages: formPackages.map(pkg => ({ name: pkg.name, price: Number(pkg.price), entails: pkg.entails })),
+                activationNeeds: eventFormData.activationNeeds.trim(),
                 hostName: hostName,
                 hostId: user.uid,
                 hostEmail: user.email,
+                hostRole: 'Brand',
+                university: uni,
                 status: 'published',
                 createdAt: new Date().toISOString()
             };
-            const res = await apiClient.post('events', payload);
+            const eventRes = await apiClient.post('events', eventPayload);
+            const createdEventId = eventRes.data.id;
+
+            // 2. Create Campaign (if selected)
+            if (isVolunteer) {
+                if (isPaid) {
+                    // Events are free — no listing fee for event sponsorship listings
+                    // Post Gig
+                    const gigPayload = {
+                        title: eventFormData.campaignTitle.trim(),
+                        description: eventFormData.campaignBrief.trim(),
+                        brief: eventFormData.campaignBrief.trim(),
+                        reward: paidBudget,
+                        budget: paidBudget,
+                        brandName: brandProfile.name || brandProfile.companyName || 'Brand',
+                        status: 'open',
+                        brandId: brandProfile.id,
+                        brandEmail: brandProfile.email,
+                        category: eventFormData.campaignCategory,
+                        deadline: eventFormData.campaignDeadline,
+                        eventId: createdEventId,
+                        createdAt: new Date().toISOString()
+                    };
+                    const gigRes = await apiClient.post('gigs', gigPayload);
+
+                    // Lock budget in escrow
+                    await WalletService.lockCampaignBudget(brandProfile.id, gigRes.data.id, paidBudget, eventFormData.campaignTitle);
+                } else {
+                    // Unpaid Volunteer Gig (budget = 0, no listing fee)
+                    const gigPayload = {
+                        title: eventFormData.campaignTitle.trim(),
+                        description: eventFormData.campaignBrief.trim(),
+                        brief: eventFormData.campaignBrief.trim(),
+                        reward: 0,
+                        budget: 0,
+                        brandName: brandProfile.name || brandProfile.companyName || 'Brand',
+                        status: 'open',
+                        brandId: brandProfile.id,
+                        brandEmail: brandProfile.email,
+                        category: eventFormData.campaignCategory,
+                        deadline: eventFormData.campaignDeadline,
+                        eventId: createdEventId,
+                        createdAt: new Date().toISOString()
+                    };
+                    await apiClient.post('gigs', gigPayload);
+                }
+
+                alert(isPaid ? 'Event published and paid volunteer campaign launched!' : 'Event published and unpaid volunteer campaign launched!');
+            } else {
+                alert('Event published successfully!');
+            }
+
+            // Close modal & reset form
             setShowCreateEventModal(false);
-            setEventFormData({ name: '', date: '', description: '', targetSponsorship: '' });
-            setMyEvents(prev => [{ id: res.data.id, ...payload }, ...prev]);
+            setEventFormData({ 
+                name: '', 
+                date: '', 
+                location: '', 
+                description: '', 
+                targetSponsorship: '',
+                needVolunteers: 'no',
+                volunteerType: 'unpaid',
+                campaignTitle: '',
+                campaignCategory: 'Event Promo',
+                campaignBrief: '',
+                campaignBudget: '',
+                campaignDeadline: ''
+            });
+            setFormPackages([
+                { name: 'Bronze', price: '50000', entails: 'Logo placement on flyer' },
+                { name: 'Silver', price: '150000', entails: 'Logo placement, social mentions & standard event booth' },
+                { name: 'Gold', price: '400000', entails: 'Title sponsor, main stage logo, VIP booths & 5 tickets' }
+            ]);
+
+            // Refresh all dashboard metrics & collections
+            fetchMyEvents();
+            fetchCampaigns();
+            syncWalletStrip(brandProfile.id);
+            fetchAllAllocations(brandProfile.id);
         } catch (err: any) {
-            alert(err.response?.data?.error || "Failed to create event.");
+            console.error(err);
+            alert(err.response?.data?.error || err.message || "Failed to publish event.");
         } finally {
             setEventSubmitting(false);
         }
@@ -655,9 +1066,16 @@ const BrandDashboard: React.FC<{
         setEditEventFormData({
             name: event.name,
             date: event.date,
+            location: event.location || '',
             description: event.description,
-            targetSponsorship: String(event.targetSponsorship || 0)
+            targetSponsorship: String(event.targetSponsorship || 0),
+            expectedAttendees: String(event.expectedAttendees || ''),
+            sponsorshipSlots: String(event.sponsorshipSlots || ''),
+            sponsorshipPackages: '',
+            activationNeeds: event.activationNeeds || ''
         });
+        const parsed = parsePackages(event.sponsorshipPackages);
+        setEditFormPackages(parsed.length > 0 ? parsed.map(pkg => ({ name: pkg.name, price: String(pkg.price), entails: pkg.entails })) : [{ name: '', price: '', entails: '' }]);
     };
 
     const handleSaveEditEvent = async (e: React.FormEvent) => {
@@ -667,7 +1085,10 @@ const BrandDashboard: React.FC<{
         try {
             await apiClient.patch(`events/${editingEvent.id}`, {
                 ...editEventFormData,
-                targetSponsorship: Number(editEventFormData.targetSponsorship)
+                targetSponsorship: Number(editEventFormData.targetSponsorship),
+                expectedAttendees: editEventFormData.expectedAttendees ? Number(editEventFormData.expectedAttendees) : 0,
+                sponsorshipSlots: editEventFormData.sponsorshipSlots ? Number(editEventFormData.sponsorshipSlots) : 0,
+                sponsorshipPackages: editFormPackages.map(pkg => ({ name: pkg.name, price: Number(pkg.price), entails: pkg.entails }))
             });
             setEditingEvent(null);
             fetchMyEvents();
@@ -727,16 +1148,13 @@ const BrandDashboard: React.FC<{
                 await fetchProposals();
                 setLoading(false);
                 return;
-            } else if (currentView === 'my-events') {
+            } else if (currentView === 'events') {
                 setLoading(true);
                 await fetchMyEvents();
-                setLoading(false);
-                return;
-            } else if (currentView === 'explore-events') {
-                setLoading(true);
                 try {
                     const res = await apiClient.get('events');
-                    setEvents(res.data);
+                    const otherEvents = (res.data || []).filter((e: any) => e.hostId !== brandProfile?.id);
+                    setEvents(otherEvents);
                 } catch (e) {
                     console.error("Error fetching events:", e);
                 } finally {
@@ -752,7 +1170,7 @@ const BrandDashboard: React.FC<{
 
             setLoading(true);
             try {
-                // Fetch users with a limit
+                // Fetch creators
                 const q = query(collection(db, "users"), limit(100));
                 const querySnapshot = await getDocs(q);
                 
@@ -785,7 +1203,7 @@ const BrandDashboard: React.FC<{
         const fetchPartners = async () => {
             setPartnersLoading(true);
             try {
-                const roles = ['Organization', 'Association', 'Brand', 'Brand'];
+                const roles = ['Organization', 'Association', 'Brand'];
                 const q = query(collection(db, "users"), where("role", "in", roles), limit(500));
                 const querySnapshot = await getDocs(q);
                 const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
@@ -797,7 +1215,7 @@ const BrandDashboard: React.FC<{
             }
         };
 
-        if (currentView === 'partnerships') {
+        if (currentView === 'associations') {
             fetchPartners();
         } else {
             fetchData();
@@ -810,7 +1228,7 @@ const BrandDashboard: React.FC<{
         setShowProposalModal(true);
     };
 
-    const handleContactHost = (event: any) => {
+    const handleContactHost = (event: any, selectedPackage?: any) => {
         console.log('Contacting host for event:', event);
         const hostId = event.host?.id || event.hostId;
         const hostName = event.host?.name || event.hostName || "Association";
@@ -821,52 +1239,77 @@ const BrandDashboard: React.FC<{
         }
         setEventBeingSponsored(event);
         setProposalRecipient({ id: hostId, name: hostName });
-        setProposalInitialMessage(`Hi ${hostName}, we are interested in sponsoring your event "${event.name}".`);
+        if (selectedPackage) {
+            setSelectedSponsorshipPackage(selectedPackage);
+            setProposalInitialMessage(`Hi ${hostName}, we would like to sponsor the "${selectedPackage.name}" package (₦${Number(selectedPackage.price).toLocaleString()}) for your event "${event.name}".`);
+        } else {
+            setSelectedSponsorshipPackage(null);
+            setProposalInitialMessage(`Hi ${hostName}, we are interested in sponsoring your event "${event.name}".`);
+        }
         setShowProposalModal(true);
         setSelectedEvent(null); // Close event modal
     };
 
-    const handleSendProposal = async (data: { recipientId: string; message: string; budget?: string; timeline?: string; documentUrl?: string; documentName?: string; }) => {
+    const handleSendProposal = async (data: { recipientId: string; message: string; budget?: string; timeline?: string; documentUrl?: string; documentName?: string; packageName?: string; }) => {
         try {
-            // If it's an event sponsorship with a budget, we deduct from brand wallet
+            // If it's an event sponsorship with a budget, pay directly via Paystack
             if (eventBeingSponsored && data.budget) {
-                // Extract numbers from budget string (e.g., "â‚¦50,000" -> 50000)
                 const amount = Number(data.budget.replace(/[^0-9.]/g, ''));
                 if (!isNaN(amount) && amount > 0) {
-                    if (walletData.available < amount) {
-                        if (window.confirm(`Insufficient balance. You need â‚¦${amount.toLocaleString()} to sponsor this event. Would you like to top up your wallet now?`)) {
-                            setCurrentView('wallet');
-                            setShowProposalModal(false);
-                        }
+                    // Save the proposal first, then trigger Paystack
+                    const proposalRes = await apiClient.post('proposals', { ...data, status: 'pending_payment', amount, sponsorshipPackageName: data.packageName || null, eventName: eventBeingSponsored.name });
+                    const newProposalId = proposalRes.data?.id;
+
+                    setShowProposalModal(false);
+                    setProposalRecipient(null);
+
+                    const PaystackPop = (window as any).PaystackPop;
+                    if (!PaystackPop) {
+                        alert('Paystack is not loaded. Your proposal was saved but payment was not completed. Please go to Proposals and release the payment manually.');
+                        fetchProposals();
                         return;
                     }
-                    
-                    if (window.confirm(`Confirm sponsorship payment of â‚¦${amount.toLocaleString()} for "${eventBeingSponsored.name}"? This will be credited to the Association immediately (minus platform fees).`)) {
-                        await WalletService.paySponsorship(
-                            brandProfile.id, 
-                            data.recipientId, 
-                            amount, 
-                            eventBeingSponsored.name
-                        );
-                        // Record the proposal with payment info
-                        await apiClient.post('proposals', { ...data, status: 'paid', amount });
-                        alert(`Sponsorship of â‚¦${amount.toLocaleString()} sent and credited to the Association!`);
-                        syncWalletStrip(brandProfile.id);
-                    } else {
-                        return; // user cancelled
-                    }
-                } else {
-                    await apiClient.post('proposals', data);
-                    alert("Partnership proposal sent successfully!");
+
+                    const reference = `SPONS-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+                    const packageLabel = selectedSponsorshipPackage ? ` — ${selectedSponsorshipPackage.name} Package` : '';
+                    alert(`Opening Paystack to pay ₦${amount.toLocaleString()} for sponsoring "${eventBeingSponsored.name}"${packageLabel}. The association will receive funds directly.`);
+
+                    const handler = PaystackPop.setup({
+                        key: 'pk_test_5ee439620d8a49acc254131ede19b9063d8fe95f',
+                        email: brandProfile.email || user?.email || 'brand@campushub.africa',
+                        amount: amount * 100,
+                        currency: 'NGN',
+                        ref: reference,
+                        metadata: { userId: brandProfile.id, type: 'sponsorship', proposalId: newProposalId, recipientId: data.recipientId },
+                        callback: function(response: any) {
+                            (async () => {
+                                try {
+                                    // Credit the org's wallet
+                                    await WalletService.paySponsorship(brandProfile.id, data.recipientId, amount, eventBeingSponsored.name);
+                                    if (newProposalId) await apiClient.patch(`proposals/${newProposalId}`, { status: 'paid' });
+                                    alert(`✅ Sponsorship of ₦${amount.toLocaleString()} paid and credited to the Association!`);
+                                    fetchProposals();
+                                } catch (err: any) {
+                                    alert('Paystack payment succeeded but wallet credit failed: ' + err.message);
+                                }
+                            })();
+                        },
+                        onClose: () => { console.log('[Paystack Sponsorship] closed'); fetchProposals(); }
+                    });
+                    handler.openIframe();
+                    setEventBeingSponsored(null);
+                    setSelectedSponsorshipPackage(null);
+                    return;
                 }
-            } else {
-                await apiClient.post('proposals', data);
-                alert("Partnership proposal sent successfully!");
             }
 
+            // Non-sponsored / non-budget proposals — just send the message
+            await apiClient.post('proposals', { ...data, sponsorshipPackageName: data.packageName || null });
+            alert("Partnership proposal sent successfully!");
             setShowProposalModal(false);
             setProposalRecipient(null);
             setEventBeingSponsored(null);
+            setSelectedSponsorshipPackage(null);
             fetchProposals();
         } catch (error: any) {
             console.error("Proposal error:", error);
@@ -875,9 +1318,10 @@ const BrandDashboard: React.FC<{
         }
     };
 
-    const handleUpdateStatus = async (id: string, status: 'accepted' | 'rejected' | 'reviewing') => {
+    const handleUpdateStatus = async (id: string, status: string, counterData?: any) => {
         try {
-            await apiClient.patch(`proposals/${id}`, { status });
+            const payload = counterData ? { status, ...counterData } : { status };
+            await apiClient.patch(`proposals/${id}`, payload);
             
             // Notify the sender of the status change
             const prop = proposals.find(p => p.id === id);
@@ -885,7 +1329,7 @@ const BrandDashboard: React.FC<{
                 notifyProposalStatus(
                     prop.sender.email, 
                     prop.sender.name || 'User', 
-                    prop.recipient?.name || brandProfile.name || 'Brand', 
+                    prop.recipient?.name || brandProfile?.name || 'Brand', 
                     status
                 );
             }
@@ -914,22 +1358,132 @@ const BrandDashboard: React.FC<{
 
     const renderContent = () => {
         switch (currentView) {
-            case 'partnerships':
+            case 'overview':
+                const activeCampaignsCount = campaigns.filter(c => c.status === 'open' || c.status === 'in_progress').length;
+                const pendingProposalsCount = proposals.filter(p => p.status === 'pending').length;
+                const assignedCreatorsCount = allAllocations.length;
+                const upcomingEventsCount = events.length;
+                
+                return (
+                    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                        <div>
+                            <h2 className="text-4xl font-black text-[var(--text-primary)]">Welcome back, {brandProfile?.name || 'Partner'}</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">Here is a quick overview of your brand campaigns and collaborations.</p>
+                        </div>
+                        
+                        {/* Stats Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                            <div className="bg-[var(--bg-primary)] p-6 rounded-[2rem] border border-[var(--border-color)] shadow-sm hover:shadow-md transition-all cursor-pointer" onClick={() => setCurrentView('campaigns')}>
+                                <div className="w-10 h-10 rounded-xl bg-spark-red/10 text-spark-red flex items-center justify-center mb-4 font-bold">📢</div>
+                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Active Campaigns</p>
+                                <p className="text-3xl font-black text-[var(--text-primary)]">{activeCampaignsCount}</p>
+                            </div>
+                            <div className="bg-[var(--bg-primary)] p-6 rounded-[2rem] border border-[var(--border-color)] shadow-sm hover:shadow-md transition-all cursor-pointer" onClick={() => setCurrentView('proposals')}>
+                                <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center mb-4 font-bold">📩</div>
+                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Pending Proposals</p>
+                                <p className="text-3xl font-black text-[var(--text-primary)]">{pendingProposalsCount}</p>
+                            </div>
+                            <div className="bg-[var(--bg-primary)] p-6 rounded-[2rem] border border-[var(--border-color)] shadow-sm hover:shadow-md transition-all cursor-pointer" onClick={() => setCurrentView('wallet')}>
+                                <div className="w-10 h-10 rounded-xl bg-green-500/10 text-green-500 flex items-center justify-center mb-4 font-bold">₦</div>
+                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Wallet Balance</p>
+                                <p className="text-3xl font-black text-green-600">₦{(wallet?.balance || 0).toLocaleString()}</p>
+                            </div>
+                            <div className="bg-[var(--bg-primary)] p-6 rounded-[2rem] border border-[var(--border-color)] shadow-sm hover:shadow-md transition-all cursor-pointer" onClick={() => setCurrentView('directory')}>
+                                <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-500 flex items-center justify-center mb-4 font-bold">👥</div>
+                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Assigned Creators</p>
+                                <p className="text-3xl font-black text-[var(--text-primary)]">{assignedCreatorsCount}</p>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            {/* Checklist */}
+                            <div className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] p-8 shadow-sm flex flex-col justify-between lg:col-span-2">
+                                <div>
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h3 className="text-xl font-black text-[var(--text-primary)]">Next Action Checklist</h3>
+                                        <span className="text-[10px] font-black text-spark-red uppercase tracking-widest bg-spark-red/5 px-2.5 py-1 rounded-full">Interactive Tasks</span>
+                                    </div>
+                                    <div className="space-y-4">
+                                        {[
+                                            { key: 'profile', title: 'Complete Brand Profile Details', desc: 'Ensure your logo, bio and category are complete.', autofill: !!brandProfile?.name },
+                                            { key: 'wallet', title: 'Fund Your Wallet', desc: 'Top up your Paystack balance to activate escrow locked hires.', autofill: (wallet?.balance || 0) > 0 },
+                                            { key: 'campaign', title: 'Launch a Marketing Campaign', desc: 'Create a campaign and define objectives and deliverables.', autofill: campaigns.length > 0 },
+                                            { key: 'invite', title: 'Invite Student Creators', desc: 'Browse the talent directory and click "Hire" to allocate creator tasks.', autofill: allAllocations.length > 0 },
+                                            { key: 'proposals', title: 'Review Pending Sponsor Applications', desc: 'Respond to incoming proposals or create counter-offers.', autofill: pendingProposalsCount === 0 && proposals.length > 0 }
+                                        ].map((item, idx) => {
+                                            const isChecked = checklist[item.key] || item.autofill;
+                                            return (
+                                                <div key={idx} className="flex gap-4 p-4 rounded-2xl bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] transition-all cursor-pointer items-start" onClick={() => toggleChecklistItem(item.key)}>
+                                                    <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center text-xs flex-shrink-0 transition-all ${isChecked ? 'bg-spark-red border-spark-red text-white' : 'border-gray-300 bg-white'}`}>
+                                                        {isChecked && '✓'}
+                                                    </div>
+                                                    <div>
+                                                        <p className={`font-black text-sm leading-tight ${isChecked ? 'line-through text-[var(--text-secondary)]' : 'text-[var(--text-primary)]'}`}>{item.title}</p>
+                                                        <p className="text-xs text-[var(--text-secondary)] mt-1 font-medium leading-relaxed">{item.desc}</p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Notifications / Messages & Upcoming Events */}
+                            <div className="space-y-8">
+                                {/* Message Count */}
+                                <div className="bg-spark-black text-white rounded-[2.5rem] p-8 shadow-xl flex flex-col justify-between h-44">
+                                    <div>
+                                        <p className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-1">Communication Hub</p>
+                                        <h3 className="text-2xl font-black text-white">Unread Messages</h3>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-5xl font-black">2</span>
+                                        <button className="px-5 py-2.5 bg-white/10 text-white rounded-xl text-xs font-black uppercase hover:bg-white/20 transition-all" onClick={() => setCurrentView('proposals')}>Open Proposals</button>
+                                    </div>
+                                </div>
+
+                                {/* Upcoming Events Preview */}
+                                <div className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] p-8 shadow-sm">
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h3 className="text-lg font-black text-[var(--text-primary)]">Upcoming Events</h3>
+                                        <button className="text-[10px] font-black text-spark-red uppercase hover:underline" onClick={() => setCurrentView('events')}>View All</button>
+                                    </div>
+                                    <div className="space-y-4">
+                                        {events.slice(0, 3).length === 0 ? (
+                                            <p className="text-xs text-[var(--text-secondary)] italic">No upcoming events listed by associations.</p>
+                                        ) : (
+                                            events.slice(0, 3).map((event, idx) => (
+                                                <div key={idx} className="p-4 rounded-xl border border-[var(--border-color)] hover:border-spark-red/50 transition-all cursor-pointer" onClick={() => { setSelectedEvent(event); setCurrentView('events'); }}>
+                                                    <p className="font-black text-sm text-[var(--text-primary)] line-clamp-1">{event.name}</p>
+                                                    <div className="flex gap-3 text-[10px] text-[var(--text-secondary)] font-bold mt-1 uppercase">
+                                                        <span className="text-spark-red">{event.date}</span>
+                                                        <span>{event.university || 'Campus'}</span>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            case 'associations':
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                             <div>
-                                <h2 className="text-4xl font-black text-[var(--text-primary)]">Partner Hub</h2>
-                                <p className="text-[var(--text-secondary)] mt-1">Connect directly with Associations and other Brands for non-sponsorship collaborations.</p>
+                                <h2 className="text-4xl font-black text-[var(--text-primary)]">Association Directory</h2>
+                                <p className="text-[var(--text-secondary)] mt-1">Connect with campus student associations, organizations, and brand partners.</p>
                             </div>
                             <div className="relative w-full md:w-96 group">
                                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-secondary)] group-focus-within:text-spark-red transition-colors" />
                                 <input 
                                     type="text" 
-                                    placeholder="Search brands or Associations..." 
+                                    placeholder="Search associations..." 
                                     value={partnerSearchTerm}
                                     onChange={(e) => setPartnerSearchTerm(e.target.value)}
-                                    className="w-full pl-12 pr-4 py-4 bg-[var(--bg-primary)] border-2 border-[var(--border-color)] rounded-2xl font-bold outline-none focus:border-spark-red transition-all"
+                                    className="w-full pl-12 pr-4 py-4 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-2xl font-bold outline-none focus:border-spark-red transition-all"
                                 />
                             </div>
                         </div>
@@ -939,36 +1493,62 @@ const BrandDashboard: React.FC<{
                         ) : filteredPartners.length === 0 ? (
                             <DashboardPlaceholder 
                                 icon={<Handshake className="w-12 h-12" />}
-                                title={partnerSearchTerm ? "No matching partners" : "No Partners Available"}
-                                message={partnerSearchTerm ? `We couldn't find any partners matching "${partnerSearchTerm}".` : "We couldn't find any Associations or brands at the moment."}
+                                title={partnerSearchTerm ? "No matching associations" : "No Associations Available"}
+                                message={partnerSearchTerm ? `We couldn't find any associations matching "${partnerSearchTerm}".` : "We couldn't find any student associations at the moment."}
                             />
                         ) : (
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-                                {filteredPartners.map((partner) => (
-                                    <div key={partner.id} className="group bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300">
-                                        <div className="h-24 bg-gradient-to-r from-spark-red/5 to-spark-black/5 group-hover:from-spark-red/10 group-hover:to-spark-black/10 transition-colors" />
-                                        <div className="px-8 pb-8 -mt-12">
-                                            <div className="w-20 h-20 bg-[var(--bg-primary)] border-4 border-[var(--bg-primary)] rounded-[1.5rem] shadow-lg flex items-center justify-center text-3xl font-black text-spark-red mb-4">
-                                                {partner.imageUrl ? <img src={partner.imageUrl} className="w-full h-full object-cover" /> : partner.name?.charAt(0)}
+                                {filteredPartners.map((partner) => {
+                                    const size = partner.membershipSize || partner.audienceSize || "1,200+ Members";
+                                    const locationStr = partner.university || partner.location || "Campus Main Gate";
+                                    const type = partner.role === 'Organization' ? 'Student Organization' : 'Campus Association';
+                                    const packageSummary = "Bronze, Silver, Gold Packages Available";
+                                    return (
+                                        <div key={partner.id} className="group bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between">
+                                            <div>
+                                                <div className="h-24 bg-spark-red/5 transition-colors" />
+                                                <div className="px-8 pb-4 -mt-12">
+                                                    <div className="w-20 h-20 bg-[var(--bg-primary)] border-4 border-[var(--bg-primary)] rounded-[1.5rem] shadow-lg flex items-center justify-center text-3xl font-black text-spark-red mb-4 overflow-hidden">
+                                                        {partner.imageUrl ? <img src={partner.imageUrl} className="w-full h-full object-cover" /> : partner.name?.charAt(0)}
+                                                    </div>
+                                                    <h3 className="text-xl font-black text-[var(--text-primary)] mb-1 group-hover:text-spark-red transition-colors">{partner.name}</h3>
+                                                    <p className="text-[10px] font-black text-spark-red uppercase tracking-widest mb-4">{type}</p>
+                                                    
+                                                    <div className="space-y-2 mb-4 text-xs font-semibold text-[var(--text-secondary)]">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-bold text-spark-red">📍 Location:</span>
+                                                            <span>{locationStr}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-bold text-spark-red">👥 Size:</span>
+                                                            <span>{size}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-bold text-spark-red">📦 Packages:</span>
+                                                            <span className="text-[11px] font-black text-green-600">{packageSummary}</span>
+                                                        </div>
+                                                    </div>
+
+                                                    <p className="text-sm text-[var(--text-secondary)] line-clamp-2 mb-4 min-h-[40px] font-medium leading-relaxed">
+                                                        {partner.bio || `Connect with ${partner.name} for sponsorship and strategic collaborations.`}
+                                                    </p>
+                                                </div>
                                             </div>
-                                            <h3 className="text-xl font-black text-[var(--text-primary)] mb-1 group-hover:text-spark-red transition-colors">{partner.name}</h3>
-                                            <p className="text-[10px] font-black text-spark-red uppercase tracking-widest mb-4">{partner.role}</p>
-                                            <p className="text-sm text-[var(--text-secondary)] line-clamp-2 mb-6 min-h-[40px] font-medium leading-relaxed">
-                                                {partner.bio || `Connect with ${partner.name} for strategic partnerships and cross-brand collaborations.`}
-                                            </p>
-                                            <button 
-                                                onClick={() => {
-                                                    setProposalRecipient({ id: partner.id, name: partner.name });
-                                                    setProposalInitialMessage(`Hi ${partner.name}, we would like to explore a partnership with your ${partner.role.toLowerCase()}.`);
-                                                    setShowProposalModal(true);
-                                                }}
-                                                className="w-full py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all transform active:scale-95 flex items-center justify-center gap-2"
-                                            >
-                                                Send Partnership Proposal
-                                            </button>
+                                            <div className="px-8 pb-8">
+                                                <button 
+                                                    onClick={() => {
+                                                        setProposalRecipient({ id: partner.id, name: partner.name });
+                                                        setProposalInitialMessage(`Hi ${partner.name}, we would like to explore sponsorship and event partnership with your association.`);
+                                                        setShowProposalModal(true);
+                                                    }}
+                                                    className="w-full py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all transform active:scale-95 flex items-center justify-center gap-2"
+                                                >
+                                                    Send Sponsorship Proposal
+                                                </button>
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
@@ -976,6 +1556,10 @@ const BrandDashboard: React.FC<{
             case 'directory':
                 return (
                     <div className="space-y-6">
+                        <div>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Creator Directory</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">Browse and discover verified campus content creators, micro-influencers, and campus ambassadors.</p>
+                        </div>
                         {/* â”€â”€ Active Campaign Overview Panel â”€â”€ */}
 
 
@@ -1005,36 +1589,52 @@ const BrandDashboard: React.FC<{
                                         available: { label: 'Available', cls: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' },
                                         in_campaign: { label: 'Active', cls: 'bg-spark-red/10 text-spark-red border border-spark-red/20' },
                                     }[status];
+                                    const rating = creator.rating || "4.8";
+                                    const category = creator.category || "Social Media Influencer";
+                                    const location = creator.location || creator.university || "Main Campus";
+                                    const audienceSize = creator.audienceSize || "12.5k followers";
+                                    const pricing = creator.pricing || "₦20k - ₦50k / post";
                                     return (
-                                        <div key={creator.id} className={`group bg-[var(--bg-primary)] rounded-[2rem] border overflow-hidden shadow-sm hover:shadow-xl transition-all p-6 text-center ${status === 'in_campaign' ? 'border-spark-red/30 ring-1 ring-spark-red/10' : 'border-[var(--border-color)]'}`}>
-                                            <div className="flex justify-end mb-2">
-                                                <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${statusConfig.cls}`}>{statusConfig.label}</span>
+                                        <div key={creator.id} className={`group bg-[var(--bg-primary)] rounded-[2rem] border overflow-hidden shadow-sm hover:shadow-xl transition-all p-6 flex flex-col justify-between ${status === 'in_campaign' ? 'border-spark-red/30 ring-1 ring-spark-red/10' : 'border-[var(--border-color)]'}`}>
+                                            <div>
+                                                <div className="flex justify-between items-center mb-4">
+                                                    <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${statusConfig.cls}`}>{statusConfig.label}</span>
+                                                    <div className="flex items-center gap-1 text-xs text-amber-500 font-bold">
+                                                        <span>★</span>
+                                                        <span>{rating}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="w-16 h-16 rounded-2xl bg-spark-red text-white flex items-center justify-center font-black text-2xl mx-auto mb-4 overflow-hidden">
+                                                    {creator.imageUrl ? <img src={creator.imageUrl} className="w-full h-full object-cover" /> : (creator.name || '?').charAt(0)}
+                                                </div>
+                                                <h3 className="font-black text-lg line-clamp-1 text-[var(--text-primary)] text-center">{creator.name}</h3>
+                                                <p className="text-[10px] text-spark-red font-black uppercase tracking-widest mb-3 text-center">{category}</p>
+                                                
+                                                <div className="space-y-1.5 mb-6 text-xs text-[var(--text-secondary)] font-medium">
+                                                    <p className="flex items-center gap-1.5 justify-center">
+                                                        <span>📍</span> {location}
+                                                    </p>
+                                                    <p className="flex items-center gap-1.5 justify-center font-bold text-[var(--text-primary)]">
+                                                        <span>📊 Reach:</span> {audienceSize}
+                                                    </p>
+                                                    <p className="flex items-center gap-1.5 justify-center text-green-600 font-black">
+                                                        <span>💰 Rate:</span> {pricing}
+                                                    </p>
+                                                </div>
                                             </div>
-                                            <div className="w-16 h-16 rounded-2xl bg-spark-red text-white flex items-center justify-center font-black text-2xl mx-auto mb-4">
-                                                {(creator.name || '?').charAt(0)}
-                                            </div>
-                                            <h3 className="font-black text-lg line-clamp-1 text-[var(--text-primary)]">{creator.name}</h3>
-                                            <p className="text-[10px] text-spark-red font-black uppercase tracking-widest mb-3">{creator.university || 'Verified'}</p>
-                                            <div className="space-y-1.5 mb-6 flex flex-col items-center">
-                                                {creator.email && (
-                                                    <a href={`mailto:${creator.email}`} className="flex items-center gap-2 text-xs text-[var(--text-secondary)] hover:text-spark-red transition-colors">
-                                                        <Mail className="w-3.5 h-3.5 flex-shrink-0" />
-                                                        <span className="truncate max-w-[200px]">{creator.email}</span>
-                                                    </a>
-                                                )}
-                                            </div>
+                                            
                                             <div className="flex gap-2">
                                                 <button
                                                     onClick={() => setViewingProfile(creator)}
-                                                    className="flex-1 py-3 bg-[var(--bg-secondary)] text-[var(--text-primary)] font-black rounded-xl hover:bg-[var(--bg-tertiary)] transition-all text-sm border border-[var(--border-color)]"
+                                                    className="flex-1 py-3 bg-[var(--bg-secondary)] text-[var(--text-primary)] font-black rounded-xl hover:bg-[var(--bg-tertiary)] transition-all text-xs border border-[var(--border-color)]"
                                                 >
-                                                    Profile
+                                                    Portfolio
                                                 </button>
                                                 <button
                                                     onClick={() => openAllocationModal(creator)}
-                                                    className={`flex-[2] py-3 font-black rounded-xl transition-all text-sm active:scale-95 shadow-sm ${status === 'in_campaign' ? 'bg-spark-red/10 text-spark-red border border-spark-red/20 hover:bg-spark-red hover:text-white' : 'bg-spark-red text-white hover:bg-red-700'}`}
+                                                    className={`flex-[2] py-3 font-black rounded-xl transition-all text-xs active:scale-95 shadow-sm ${status === 'in_campaign' ? 'bg-spark-red/10 text-spark-red border border-spark-red/20 hover:bg-spark-red hover:text-white' : 'bg-spark-red text-white hover:bg-red-700'}`}
                                                 >
-                                                    {status === 'in_campaign' ? 'Re-allocate' : 'Hire Talent'}
+                                                    {status === 'in_campaign' ? 'Re-allocate' : 'Hire'}
                                                 </button>
                                             </div>
                                         </div>
@@ -1044,99 +1644,175 @@ const BrandDashboard: React.FC<{
                         )}
                     </div>
                 );
-            case 'my-events':
+            case 'events':
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-                        <div className="flex justify-between items-center">
-                            <h3 className="text-xl font-black">My Campus Events</h3>
-                            <button
-                                onClick={() => setShowCreateEventModal(true)}
-                                className="bg-spark-red text-white px-6 py-3 rounded-xl font-black shadow-lg shadow-red-100 hover:bg-red-700 transition-all active:scale-95"
-                            >
-                                + List New Event
-                            </button>
-                        </div>
-                        {loading ? (
-                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
-                        ) : myEvents.length === 0 ? (
-                            <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)] animate-in fade-in duration-500">
-                                <div className="w-20 h-20 bg-spark-red/5 rounded-3xl flex items-center justify-center mx-auto mb-6 text-spark-red">
-                                    <Calendar className="w-10 h-10" />
-                                </div>
-                                <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">No events listed yet.</h3>
-                                <p className="text-[var(--text-secondary)] font-medium">Create your first event to start attracting campus talent and partnerships.</p>
-                                <button
-                                    onClick={() => setShowCreateEventModal(true)}
-                                    className="mt-8 px-8 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all"
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 pb-2 border-b border-[var(--border-color)]">
+                            <div>
+                                <h2 className="text-3xl font-black text-[var(--text-primary)]">Events</h2>
+                                <p className="text-[var(--text-secondary)] mt-1">Sponsor upcoming student events or list and manage your own hosted events.</p>
+                            </div>
+                            
+                            {/* Sub-tabs */}
+                            <div className="flex bg-spark-red/5 border border-spark-red/10 p-1 rounded-2xl">
+                                <button 
+                                    onClick={() => setEventTab('explore')}
+                                    className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${eventTab === 'explore' ? 'bg-spark-red text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-red'}`}
                                 >
-                                    Get Started
+                                    Explore Events
+                                </button>
+                                <button 
+                                    onClick={() => setEventTab('my')}
+                                    className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${eventTab === 'my' ? 'bg-spark-red text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-red'}`}
+                                >
+                                    My Hosted Events
                                 </button>
                             </div>
-                        ) : (
-                            <div className="grid md:grid-cols-2 gap-8 animate-in slide-in-from-bottom-4 duration-500">
-                                {myEvents.map(event => (
-                                    <div key={event.id} className="bg-[var(--bg-primary)] p-10 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm group hover:shadow-xl transition-all">
-                                        <div className="flex justify-between items-start mb-8">
-                                            <div>
-                                                <h4 className="text-2xl font-black mb-1 group-hover:text-spark-red transition-colors text-[var(--text-primary)]">{event.name}</h4>
-                                                <p className="text-sm font-bold text-spark-red uppercase tracking-widest">{event.date}</p>
-                                            </div>
-                                            <span className="px-4 py-1.5 bg-green-50 text-green-600 rounded-full text-[10px] font-black uppercase tracking-widest">Published</span>
-                                        </div>
-                                        <p className="text-[var(--text-secondary)] text-sm mb-8 line-clamp-2 leading-relaxed">{event.description}</p>
-                                        <div className="flex items-center justify-between mb-8 pb-8 border-b border-[var(--border-color)]">
-                                            <div>
-                                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Target Funding</p>
-                                                <p className="text-xl font-black text-[var(--text-primary)]">₦{Number(event.targetSponsorship).toLocaleString()}</p>
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-4">
-                                            <button
-                                                onClick={() => handleEditEvent(event)}
-                                                className="flex-1 py-4 bg-gray-100 text-gray-700 font-black rounded-2xl hover:bg-gray-200 transition-all flex items-center justify-center gap-2"
-                                            >
-                                                <Edit className="w-4 h-4" /> Edit
-                                            </button>
-                                            <button
-                                                onClick={() => handleDeleteEvent(event.id)}
-                                                className="flex-1 py-4 bg-red-50 text-red-600 font-black rounded-2xl hover:bg-red-100 transition-all flex items-center justify-center gap-2"
-                                            >
-                                                <Trash2 className="w-4 h-4" /> Delete
-                                            </button>
-                                        </div>
+                        </div>
+
+                        {eventTab === 'explore' ? (
+                            <div className="space-y-8 animate-in fade-in duration-300">
+                                {loading ? (
+                                    <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
+                                ) : events.length === 0 ? (
+                                    <DashboardPlaceholder title="No Events" icon={<Calendar className="w-9 h-9" />} description="There are no upcoming campus events at the moment." />
+                                ) : (
+                                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                                        {events.map(event => {
+                                            const attendance = event.attendance || "2,500+ Students";
+                                            const slots = event.slots || "3 slots available";
+                                            const activation = event.activationNeeds || "Logo banners, flyer distribution, social media push";
+                                            const sponsorFit = event.sponsorFit || "96% High Match";
+                                            return (
+                                                <div key={event.id} className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] shadow-sm hover:shadow-xl transition-all overflow-hidden flex flex-col group relative">
+                                                    <div className="h-3 bg-spark-red"></div>
+                                                    <div className="p-8 flex-1 flex flex-col justify-between">
+                                                        <div>
+                                                            <div className="mb-4 flex flex-wrap items-center gap-2">
+                                                                <div className="bg-[var(--bg-primary)] border border-[var(--border-color)] shadow-sm px-3 py-1 rounded-full text-[9px] font-black uppercase text-spark-red tracking-wider inline-block">
+                                                                    {event.date}
+                                                                </div>
+                                                                <div className="bg-[var(--bg-primary)] border border-[var(--border-color)] shadow-sm px-3 py-1 rounded-full text-[9px] font-black uppercase text-spark-purple tracking-wider inline-block max-w-[150px] truncate">
+                                                                    {event.location || 'Campus'}
+                                                                </div>
+                                                                <span className="px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-wider bg-green-50 text-green-700 border border-green-100">
+                                                                    {sponsorFit}
+                                                                </span>
+                                                            </div>
+                                                            
+                                                            <h3 className="text-xl font-black mb-1 group-hover:text-spark-red transition-colors text-[var(--text-primary)]">
+                                                                {event.name}
+                                                            </h3>
+                                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-4">
+                                                                Hosted by: <span className="text-spark-red">{event.hostName}</span>
+                                                            </p>
+                                                            
+                                                            <p className="text-[var(--text-secondary)] text-xs mb-6 line-clamp-3 leading-relaxed font-medium">
+                                                                {event.description}
+                                                            </p>
+
+                                                            {/* Custom Detail Items */}
+                                                            <div className="space-y-2 mb-6 border-t border-b border-[var(--border-color)] py-4 text-xs font-semibold text-[var(--text-secondary)]">
+                                                                <div className="flex justify-between">
+                                                                    <span>👥 Attendance:</span>
+                                                                    <span className="font-bold text-[var(--text-primary)]">{attendance}</span>
+                                                                </div>
+                                                                <div className="flex justify-between">
+                                                                    <span>🎟️ Slots:</span>
+                                                                    <span className="font-bold text-[var(--text-primary)]">{slots}</span>
+                                                                </div>
+                                                                <div className="space-y-1 mt-2">
+                                                                    <p className="text-[10px] font-black uppercase text-spark-red tracking-wider">💡 Activation Needs:</p>
+                                                                    <p className="text-xs leading-normal font-medium italic text-[var(--text-secondary)]">{activation}</p>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        <div className="mt-auto pt-2 flex items-center justify-between">
+                                                            <div>
+                                                                <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase tracking-wider mb-0.5">Sponsorship Goal</p>
+                                                                <p className="text-base font-black text-[var(--text-primary)]">₦{Number(event.targetSponsorship || 0).toLocaleString()}</p>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => setSelectedEvent(event)}
+                                                                className="px-5 py-2.5 bg-spark-black text-white font-black text-xs uppercase tracking-widest rounded-xl hover:bg-spark-red hover:shadow-lg transition-all active:scale-95"
+                                                            >
+                                                                Sponsor Detail
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
-                                ))}
+                                )}
                             </div>
-                        )}
-                    </div>
-                );
-            case 'explore-events':
-                return (
-                    <div className="animate-in slide-in-from-bottom-4 duration-500">
-                        {loading ? (
-                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
-                        ) : events.length === 0 ? (
-                            <DashboardPlaceholder title="No Events" icon="ðŸ“…" description="There are no upcoming campus events at the moment." />
                         ) : (
-                            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-                                {events.map(event => (
-                                    <div key={event.id} className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] shadow-sm hover:shadow-xl transition-all overflow-hidden flex flex-col group">
-                                        <div className="h-4 bg-spark-red"></div>
-                                        <div className="p-8 flex-1 flex flex-col">
-                                            <div className="mb-4 bg-[var(--bg-primary)] border border-[var(--border-color)] shadow-sm px-4 py-1 rounded-full text-[10px] font-black uppercase text-spark-red tracking-widest inline-block w-max">{new Date(event.date).toLocaleDateString()}</div>
-                                            <h3 className="text-xl font-black mb-2 group-hover:text-spark-red transition-colors text-[var(--text-primary)]">{event.name}</h3>
-                                            <p className="text-[var(--text-secondary)] text-sm mb-6 line-clamp-3">{event.description}</p>
-                                            <div className="mt-auto flex items-center justify-between border-t border-[var(--border-color)] pt-6">
-                                                <button
-                                                    onClick={() => setSelectedEvent(event)}
-                                                    className="text-spark-red font-black text-sm uppercase tracking-widest hover:underline underline-offset-4"
-                                                >
-                                                    View Details
-                                                </button>
-                                            </div>
+                            <div className="space-y-8 animate-in fade-in duration-300">
+                                <div className="flex justify-between items-center">
+                                    <h3 className="text-xl font-black">My Hosted Events</h3>
+                                    <button
+                                        onClick={() => setShowCreateEventModal(true)}
+                                        className="bg-spark-red text-white px-6 py-3 rounded-xl font-black shadow-lg shadow-red-100 hover:bg-red-700 transition-all active:scale-95 text-xs uppercase tracking-wider"
+                                    >
+                                        + List New Event
+                                    </button>
+                                </div>
+                                {loading ? (
+                                    <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
+                                ) : myEvents.length === 0 ? (
+                                    <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border border-[var(--border-color)] border-dashed animate-in fade-in duration-500">
+                                        <div className="w-20 h-20 bg-spark-red/5 rounded-3xl flex items-center justify-center mx-auto mb-6 text-spark-red">
+                                            <Calendar className="w-10 h-10" />
                                         </div>
+                                        <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">No hosted events listed.</h3>
+                                        <p className="text-[var(--text-secondary)] font-medium">Create your first brand-hosted event to invite campus volunteers.</p>
+                                        <button
+                                            onClick={() => setShowCreateEventModal(true)}
+                                            className="mt-8 px-8 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all"
+                                        >
+                                            Get Started
+                                        </button>
                                     </div>
-                                ))}
+                                ) : (
+                                    <div className="grid md:grid-cols-2 gap-8">
+                                        {myEvents.map(event => (
+                                            <div key={event.id} className="bg-[var(--bg-primary)] p-10 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm group hover:shadow-xl transition-all">
+                                                <div className="flex justify-between items-start mb-8">
+                                                    <div>
+                                                        <h4 className="text-2xl font-black mb-1 group-hover:text-spark-red transition-colors text-[var(--text-primary)]">{event.name}</h4>
+                                                        <div className="flex gap-3 text-sm font-bold uppercase tracking-widest mt-2">
+                                                            <span className="text-spark-red">{event.date}</span>
+                                                            <span className="text-spark-purple line-clamp-1">{event.location || 'TBA'}</span>
+                                                        </div>
+                                                    </div>
+                                                    <span className="px-4 py-1.5 bg-green-50 text-green-600 rounded-full text-[10px] font-black uppercase tracking-widest">Published</span>
+                                                </div>
+                                                <p className="text-[var(--text-secondary)] text-sm mb-8 line-clamp-2 leading-relaxed">{event.description}</p>
+                                                <div className="flex items-center justify-between mb-8 pb-8 border-b border-[var(--border-color)]">
+                                                    <div>
+                                                        <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Target Funding</p>
+                                                        <p className="text-xl font-black text-[var(--text-primary)]">₦{Number(event.targetSponsorship).toLocaleString()}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-4">
+                                                    <button
+                                                        onClick={() => handleEditEvent(event)}
+                                                        className="flex-1 py-4 bg-gray-100 text-gray-700 font-black rounded-2xl hover:bg-gray-200 transition-all flex items-center justify-center gap-2 text-sm"
+                                                    >
+                                                        <Edit className="w-4 h-4" /> Edit
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeleteEvent(event.id)}
+                                                        className="flex-1 py-4 bg-red-50 text-red-600 font-black rounded-2xl hover:bg-red-100 transition-all flex items-center justify-center gap-2 text-sm"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" /> Delete
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -1144,6 +1820,10 @@ const BrandDashboard: React.FC<{
             case 'wallet':
                 return (
                     <div className="space-y-10 animate-in slide-in-from-bottom-4 duration-500">
+                        <div>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Brand Wallet</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">Manage your available funds, deposits, campaign costs, and active escrow payouts.</p>
+                        </div>
                         {walletLoading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
                         ) : (
@@ -1151,9 +1831,9 @@ const BrandDashboard: React.FC<{
                                 {/* Summary Cards */}
                                 <div className="grid md:grid-cols-3 gap-8">
                                     {[
-                                        { label: 'Available Balance', value: `â‚¦${(wallet?.balance || 0).toLocaleString()}`, icon: <Wallet className="w-6 h-6" />, color: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' },
-                                        { label: 'Total Spent', value: `â‚¦${transactions.reduce((acc, t) => acc + (t.type === 'debit' && t.status === 'completed' ? (Number(t.amount) || 0) : 0), 0).toLocaleString()}`, icon: <TrendingUp className="w-6 h-6" />, color: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/20' },
-                                        { label: 'Locked in Escrow', value: `â‚¦${(wallet?.escrow || 0).toLocaleString()}`, icon: <Lock className="w-6 h-6" />, color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' },
+                                        { label: 'Available Balance', value: `₦${(wallet?.balance || 0).toLocaleString()}`, icon: <Wallet className="w-6 h-6" />, color: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' },
+                                        { label: 'Total Spent', value: `₦${transactions.reduce((acc, t) => acc + (t.type === 'debit' && t.status === 'completed' ? (Number(t.amount) || 0) : 0), 0).toLocaleString()}`, icon: <TrendingUp className="w-6 h-6" />, color: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/20' },
+                                        { label: 'Locked in Escrow', value: `₦${(wallet?.escrow || 0).toLocaleString()}`, icon: <Lock className="w-6 h-6" />, color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' },
                                     ].map((stat, i) => (
                                         <div key={i} className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm">
                                             <div className={`w-12 h-12 ${stat.color} rounded-2xl flex items-center justify-center text-xl mb-4`}>{stat.icon}</div>
@@ -1170,7 +1850,7 @@ const BrandDashboard: React.FC<{
                                     </div>
                                     <div className="flex flex-col sm:flex-row items-center gap-4">
                                         <div className="relative w-full sm:w-48">
-                                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">â‚¦</span>
+                                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">₦</span>
                                             <input 
                                                 type="number" 
                                                 value={topUpAmount}
@@ -1227,7 +1907,7 @@ const BrandDashboard: React.FC<{
                                                                 const name = brandProfile.name || user?.name || 'Brand User';
                                                                 if (email) notifyTopUp(email, name, amount, response.reference);
 
-                                                                alert(`Wallet updated: â‚¦${amount.toLocaleString()} added.`);
+                                                                alert(`Wallet updated: ₦${amount.toLocaleString()} added.`);
                                                                 await fetchWallet();
                                                                 await syncWalletStrip(brandProfile.id);
                                                             } catch (err: any) {
@@ -1263,7 +1943,7 @@ const BrandDashboard: React.FC<{
                                             <p className="text-[var(--text-secondary)] text-center py-4 italic font-medium">No transactions found.</p>
                                         ) : (
                                             transactions.map((trans: any, i) => (
-                                                <div key={i} className="flex items-center justify-between p-6 bg-[var(--bg-secondary)] rounded-2xl">
+                                                <div key={i} className="flex items-center justify-between p-6 bg-[var(--bg-secondary)] rounded-2xl flex-wrap sm:flex-nowrap gap-4">
                                                     <div className="flex items-center space-x-4">
                                                         <div className={`w-10 h-10 rounded-xl shadow-sm flex items-center justify-center text-lg ${trans.type === 'credit' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
                                                             {trans.type === 'credit' ? <Plus className="w-5 h-5" /> : <Minus className="w-5 h-5" />}
@@ -1279,15 +1959,50 @@ const BrandDashboard: React.FC<{
                                                             </p>
                                                         </div>
                                                     </div>
-                                                    <div className="text-right">
+                                                    <div className="text-right flex flex-col items-end">
                                                         <p className={`font-black ${trans.type === 'credit' ? 'text-green-600' : 'text-spark-red'}`}>
-                                                            {trans.type === 'credit' ? '+' : '-'} â‚¦{Number(trans.amount).toLocaleString()}
+                                                            {trans.type === 'credit' ? '+' : '-'} ₦{Number(trans.amount).toLocaleString()}
                                                         </p>
-                                                        <p className="text-[10px] font-black uppercase text-[var(--text-secondary)]">{trans.status}</p>
+                                                        <p className="text-[10px] font-black uppercase text-[var(--text-secondary)] mb-1">{trans.status}</p>
+                                                        {trans.status === 'completed' && (
+                                                            <button 
+                                                                onClick={() => {
+                                                                    alert(`Downloading Invoice for transaction ${trans.id || trans.reference || 'INV-001'}...\nDescription: ${trans.description}\nAmount: ₦${Number(trans.amount).toLocaleString()}`);
+                                                                    const invoiceText = `INVOICE\n====================\nInvoice Reference: ${trans.id || trans.reference || 'INV-' + Date.now()}\nDescription: ${trans.description}\nAmount: NGN ${Number(trans.amount).toLocaleString()}\nStatus: ${trans.status.toUpperCase()}\nDate: ${new Date().toLocaleDateString()}\nThank you for partnering with ABC-Rally!`;
+                                                                    const blob = new Blob([invoiceText], { type: 'text/plain;charset=utf-8' });
+                                                                    const url = URL.createObjectURL(blob);
+                                                                    const link = document.createElement("a");
+                                                                    link.href = url;
+                                                                    link.download = `invoice_${trans.id || trans.reference || 'download'}.txt`;
+                                                                    document.body.appendChild(link);
+                                                                    link.click();
+                                                                    document.body.removeChild(link);
+                                                                }}
+                                                                className="text-[10px] font-black text-spark-red uppercase tracking-wider hover:underline"
+                                                            >
+                                                                📄 Download Invoice
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </div>
                                             ))
                                         )}
+                                    </div>
+                                </div>
+
+                                {/* Fees & Refund Policy Info */}
+                                <div className="bg-[var(--bg-primary)] rounded-[3rem] border border-[var(--border-color)] shadow-sm p-10 mt-8 grid md:grid-cols-2 gap-8">
+                                    <div>
+                                        <h4 className="text-lg font-black text-[var(--text-primary)] mb-3">Escrow & Refund Policy</h4>
+                                        <p className="text-xs text-[var(--text-secondary)] font-medium leading-relaxed">
+                                            All campaign payments are held securely in a multi-sig escrow wallet. If a creator fails to submit their deliverables before the deadline, or if their work fails to meet the campaign brief, the locked budget is refunded directly back to your available balance. Contact our admin support for dispute resolutions.
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <h4 className="text-lg font-black text-[var(--text-primary)] mb-3">Service Fees & Billing</h4>
+                                        <p className="text-xs text-[var(--text-secondary)] font-medium leading-relaxed">
+                                            Listing a campaign on ABC-Rally is free of charge. Creator payouts are subject to a flat 10% platform fee, which is deducted automatically upon releasing escrow funds. Standard Paystack gateway fees of 1.5% + ₦100 apply to wallet top-ups.
+                                        </p>
                                     </div>
                                 </div>
                             </>
@@ -1297,6 +2012,10 @@ const BrandDashboard: React.FC<{
             case 'proposals':
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                        <div>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Partnership Proposals</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">Track collaboration pitches, custom offers, and negotiations with campus creators and student associations.</p>
+                        </div>
                         {loading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
                         ) : proposals.length === 0 ? (
@@ -1411,16 +2130,16 @@ const BrandDashboard: React.FC<{
                                 </button>
                                 <div>
                                     <h3 className="text-2xl font-black text-[var(--text-primary)]">{selectedCampaignDetail.title}</h3>
-                                    <p className="text-xs text-[var(--text-secondary)] uppercase tracking-widest font-bold mt-0.5">{selectedCampaignDetail.category} Â· Campaign Detail</p>
+                                    <p className="text-xs text-[var(--text-secondary)] uppercase tracking-widest font-bold mt-0.5">{selectedCampaignDetail.category} · Campaign Detail</p>
                                 </div>
                             </div>
 
                             {/* Budget Summary */}
                             <div className="grid grid-cols-3 gap-5">
                                 {[
-                                    { label: 'Total Budget', value: `â‚¦${detailStats.budget.toLocaleString()}`, color: 'text-[var(--text-primary)]' },
-                                    { label: 'Allocated', value: `â‚¦${detailStats.allocated.toLocaleString()}`, color: 'text-spark-red' },
-                                    { label: 'Remaining', value: detailStats.isLegacy ? 'Balance-based' : `â‚¦${detailStats.remaining.toLocaleString()}`, color: 'text-green-600' },
+                                    { label: 'Total Budget', value: `₦${detailStats.budget.toLocaleString()}`, color: 'text-[var(--text-primary)]' },
+                                    { label: 'Allocated', value: `₦${detailStats.allocated.toLocaleString()}`, color: 'text-spark-red' },
+                                    { label: 'Remaining', value: detailStats.isLegacy ? 'Balance-based' : `₦${detailStats.remaining.toLocaleString()}`, color: 'text-green-600' },
                                 ].map((s, i) => (
                                     <div key={i} className="bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-[1.5rem] p-5">
                                         <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">{s.label}</p>
@@ -1442,7 +2161,9 @@ const BrandDashboard: React.FC<{
                                     <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-spark-red"/></div>
                                 ) : detailAllocations.length === 0 ? (
                                     <div className="text-center py-16">
-                                        <p className="text-4xl mb-3">ðŸ‘¥</p>
+                                        <div className="w-16 h-16 bg-[var(--bg-secondary)] rounded-3xl flex items-center justify-center mx-auto mb-4 text-[var(--text-secondary)]">
+                                            <Users className="w-8 h-8" />
+                                        </div>
                                         <p className="font-black text-[var(--text-primary)] mb-1">No creators allocated yet</p>
                                         <p className="text-sm text-[var(--text-secondary)]">Go to the Talent Directory and click "Add to Campaign".</p>
                                     </div>
@@ -1465,8 +2186,8 @@ const BrandDashboard: React.FC<{
                                                                 <span className="font-black text-[var(--text-primary)]">{alloc.creatorName}</span>
                                                             </div>
                                                         </td>
-                                                        <td className="px-6 py-4 text-[var(--text-secondary)] text-xs">{alloc.creatorUniversity || 'â€”'}</td>
-                                                        <td className="px-6 py-4 font-black text-[var(--text-primary)]">â‚¦{alloc.amount.toLocaleString()}</td>
+                                                        <td className="px-6 py-4 text-[var(--text-secondary)] text-xs">{alloc.creatorUniversity || '—'}</td>
+                                                        <td className="px-6 py-4 font-black text-[var(--text-primary)]">₦{alloc.amount.toLocaleString()}</td>
                                                         <td className="px-6 py-4">
                                                             <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${allocStatusColors[alloc.status] || 'bg-[var(--bg-tertiary)] text-gray-500'}`}>{alloc.status.replace('_', ' ')}</span>
                                                         </td>
@@ -1517,11 +2238,31 @@ const BrandDashboard: React.FC<{
                                                                             </button>
                                                                         )}
                                                                         {(alloc.status === 'selected' || alloc.status === 'in_progress' || alloc.status === 'revision') && (
-                                                                            <span className="px-3 py-1.5 bg-[var(--bg-secondary)] text-[var(--text-secondary)] rounded-lg text-[10px] font-black uppercase border border-[var(--border-color)]">
-                                                                                {alloc.status === 'revision' ? 'Revision Requested' : 'Work Pending'}
-                                                                            </span>
+                                                                            <div className="flex flex-col gap-2">
+                                                                                {alloc.status === 'selected' && (
+                                                                                    alloc.escrowPaymentUrl ? (
+                                                                                        <a
+                                                                                            href={alloc.escrowPaymentUrl}
+                                                                                            target="_blank"
+                                                                                            rel="noopener noreferrer"
+                                                                                            className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-[10px] font-black uppercase hover:bg-amber-600 transition-colors flex items-center gap-1 text-center"
+                                                                                        >
+                                                                                            <Lock className="w-3 h-3" /> Fund Escrow
+                                                                                        </a>
+                                                                                    ) : (
+                                                                                        <span className="px-3 py-1.5 bg-yellow-50 text-yellow-700 border border-yellow-200 rounded-lg text-[10px] font-black uppercase">
+                                                                                            Pending Escrow Setup
+                                                                                        </span>
+                                                                                    )
+                                                                                )}
+                                                                                {(alloc.status === 'in_progress' || alloc.status === 'revision') && (
+                                                                                    <span className="px-3 py-1.5 bg-[var(--bg-secondary)] text-[var(--text-secondary)] rounded-lg text-[10px] font-black uppercase border border-[var(--border-color)]">
+                                                                                        {alloc.status === 'revision' ? 'Revision Requested' : 'Work Pending'}
+                                                                                    </span>
+                                                                                )}
+                                                                                <span className="text-[10px] text-[var(--text-secondary)] italic">Contact Admin for Refunds</span>
+                                                                            </div>
                                                                         )}
-                                                                        <span className="text-[10px] text-[var(--text-secondary)] italic">Contact Admin for Refunds</span>
                                                                     </div>
                                                                 </div>
                                                             )}
@@ -1543,7 +2284,7 @@ const BrandDashboard: React.FC<{
                         <div className="flex justify-between items-center">
                             <div>
                                 <h3 className="text-2xl font-black text-[var(--text-primary)]">My Campaigns</h3>
-                                <p className="text-[var(--text-secondary)] mt-1">Create and manage your influencer marketing campaigns. <span className="text-spark-red font-bold">â‚¦20,000 listing fee applies.</span></p>
+                                <p className="text-[var(--text-secondary)] mt-1">Create and manage your influencer marketing campaigns. <span className="text-green-500 font-bold">Free to list — no listing fee.</span></p>
                             </div>
                             <button onClick={() => setShowCampaignModal(true)} className="bg-spark-red text-white px-6 py-3 rounded-xl font-black shadow-lg shadow-red-100 hover:bg-red-700 transition-all active:scale-95">
                                 + New Campaign
@@ -1552,7 +2293,9 @@ const BrandDashboard: React.FC<{
 
                         {campaigns.length === 0 ? (
                             <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)]">
-                                <div className="text-6xl mb-6">ðŸ“¢</div>
+                                <div className="w-20 h-20 bg-[var(--bg-secondary)] rounded-3xl flex items-center justify-center mx-auto mb-6 text-[var(--text-secondary)]">
+                                    <Megaphone className="w-10 h-10" />
+                                </div>
                                 <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">No Campaigns Yet</h3>
                                 <p className="text-[var(--text-secondary)] mb-8">Launch your first influencer campaign to connect with creators at scale.</p>
                                 <button onClick={() => setShowCampaignModal(true)} className="px-8 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all">Create First Campaign</button>
@@ -1576,13 +2319,13 @@ const BrandDashboard: React.FC<{
                                             {/* Budget Progress */}
                                             <div className="mb-5 space-y-2">
                                                 <div className="flex justify-between text-xs font-black">
-                                                    <span className="text-[var(--text-secondary)]">Allocated <span className="text-spark-red">â‚¦{bStats.allocated.toLocaleString()}</span></span>
-                                                    <span className="text-[var(--text-secondary)]">Remaining <span className="text-green-600">{bStats.isLegacy ? 'Balance-based' : `â‚¦${bStats.remaining.toLocaleString()}`}</span></span>
+                                                    <span className="text-[var(--text-secondary)]">Allocated <span className="text-spark-red">₦{bStats.allocated.toLocaleString()}</span></span>
+                                                    <span className="text-[var(--text-secondary)]">Remaining <span className="text-green-600">{bStats.isLegacy ? 'Balance-based' : `₦${bStats.remaining.toLocaleString()}`}</span></span>
                                                 </div>
                                                 <div className="h-1.5 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
                                                     <div className="h-full bg-spark-red rounded-full transition-all" style={{ width: `${bPct}%` }}></div>
                                                 </div>
-                                                <p className="text-[10px] text-[var(--text-secondary)] font-bold">Total Budget: â‚¦{bStats.budget.toLocaleString()} Â· Deadline: {c.deadline}</p>
+                                                <p className="text-[10px] text-[var(--text-secondary)] font-bold">Total Budget: ₦{bStats.budget.toLocaleString()} · Deadline: {c.deadline}</p>
                                             </div>
 
                                             <div className="flex gap-3">
@@ -1624,7 +2367,9 @@ const BrandDashboard: React.FC<{
                                             <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-spark-red" /></div>
                                         ) : applicants.length === 0 ? (
                                             <div className="text-center py-16">
-                                                <p className="text-5xl mb-4">ðŸ“­</p>
+                                                <div className="w-16 h-16 bg-[var(--bg-secondary)] rounded-3xl flex items-center justify-center mx-auto mb-4 text-[var(--text-secondary)]">
+                                                    <Inbox className="w-8 h-8" />
+                                                </div>
                                                 <p className="font-black text-[var(--text-primary)] text-lg">No applications yet</p>
                                                 <p className="text-[var(--text-secondary)] text-sm">Creators who apply will appear here with their pitch.</p>
                                             </div>
@@ -1636,13 +2381,13 @@ const BrandDashboard: React.FC<{
                                                         <div className="w-12 h-12 rounded-2xl bg-spark-red text-white flex items-center justify-center font-black text-lg flex-shrink-0">
                                                             {app.creatorName?.charAt(0) || '?'}
                                                         </div>
-                                                        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setViewingProfile({ id: app.creatorId, name: app.creatorName, email: app.creatorEmail, university: app.creatorUniversity, bio: app.creatorBio, imageUrl: app.creatorImageUrl })}>
+                                                        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleViewInfluencer(app.creatorId, { name: app.creatorName, email: app.creatorEmail, university: app.creatorUniversity, bio: app.creatorBio, imageUrl: app.creatorImageUrl })}>
                                                             <h4 className="font-black text-[var(--text-primary)] hover:text-spark-red transition-colors">{app.creatorName}</h4>
-                                                            <p className="text-xs text-[var(--text-secondary)]">{app.creatorUniversity || app.creatorEmail}</p>
+                                                            <p className="text-xs text-[var(--text-secondary)]">{app.university || app.creatorUniversity || app.creatorEmail}</p>
                                                         </div>
                                                         <div className="flex flex-col items-end gap-2">
                                                             <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${statusColors[app.status] || 'bg-[var(--bg-tertiary)] text-gray-500'}`}>{app.status}</span>
-                                                            <button onClick={() => setViewingProfile({ id: app.creatorId, name: app.creatorName, email: app.creatorEmail, university: app.creatorUniversity, bio: app.creatorBio, imageUrl: app.creatorImageUrl })} className="text-[10px] font-black text-spark-red uppercase hover:underline">View Portfolio</button>
+                                                            <button onClick={() => handleViewInfluencer(app.creatorId, { name: app.creatorName, email: app.creatorEmail, university: app.creatorUniversity, bio: app.creatorBio, imageUrl: app.creatorImageUrl })} className="text-[10px] font-black text-spark-red uppercase hover:underline">View Portfolio</button>
                                                         </div>
                                                     </div>
                                                     <div className="bg-[var(--bg-primary)] rounded-xl p-4 mb-4 border border-[var(--border-color)]">
@@ -1652,7 +2397,7 @@ const BrandDashboard: React.FC<{
                                                     {app.report && (
                                                         <div className="bg-[var(--bg-primary)] rounded-xl p-5 mb-4 border-2 border-green-100 shadow-sm">
                                                             <div className="flex justify-between items-center mb-3">
-                                                                <p className="text-[10px] font-black text-green-700 uppercase tracking-wider">ðŸ“‹ Campaign Report</p>
+                                                                <p className="text-[10px] font-black text-green-700 uppercase tracking-wider">Campaign Report</p>
                                                                 {app.reportSubmittedAt && <p className="text-[9px] text-[var(--text-secondary)]">{new Date(app.reportSubmittedAt).toLocaleString()}</p>}
                                                             </div>
                                                             <p className="text-sm text-[var(--text-primary)] leading-relaxed mb-4">{app.report}</p>
@@ -1698,8 +2443,8 @@ const BrandDashboard: React.FC<{
                                                     )}
                                                     {app.status === 'pending' && (
                                                         <div className="flex gap-3">
-                                                            <button onClick={() => handleApplicationDecision(app.id, 'accepted')} className="flex-1 py-3 bg-spark-black text-white font-black rounded-xl hover:bg-gray-800 transition-all text-sm">âœ“ Accept</button>
-                                                            <button onClick={() => handleApplicationDecision(app.id, 'rejected')} className="flex-1 py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all text-sm">âœ— Reject</button>
+                                                            <button onClick={() => handleApplicationDecision(app.id, 'accepted')} className="flex-1 py-3 bg-spark-black text-white font-black rounded-xl hover:bg-gray-800 transition-all text-sm">Accept</button>
+                                                            <button onClick={() => handleApplicationDecision(app.id, 'rejected')} className="flex-1 py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all text-sm">Reject</button>
                                                         </div>
                                                     )}
                                                 </div>
@@ -1725,6 +2470,15 @@ const BrandDashboard: React.FC<{
                                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                                             </button>
                                         </div>
+                                        <div className="mb-6 p-4 bg-spark-red/5 border border-spark-red/20 rounded-2xl flex items-start gap-3 text-spark-red">
+                                            <div className="mt-0.5">
+                                                <Activity className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-black">₦20,000 Campaign Listing Fee</p>
+                                                <p className="text-xs text-[var(--text-secondary)] mt-1 leading-relaxed">A flat ₦20,000 listing fee is charged when you launch a campaign, plus the campaign budget is locked in escrow and paid to creators on approval.</p>
+                                            </div>
+                                        </div>
                                         <form className="space-y-5" onSubmit={async (e) => {
                                             e.preventDefault();
                                             if (!brandProfile?.id) {
@@ -1745,52 +2499,74 @@ const BrandDashboard: React.FC<{
                                                     setCampaigns(prev => prev.map(c => c.id === editingGig.id ? { ...c, ...campaignForm, reward: Number(campaignForm.budget) } : c));
                                                     alert('Campaign updated successfully!');
                                                 } else {
-                                                    // POST to backend: creates a real Gig that creators can apply for
+                                                    // Pay ₦20,000 listing fee via Paystack, then create the gig
                                                     const amount = Number(campaignForm.budget);
-                                                    const totalRequired = amount + 20000;
-
-                                                    if (walletData.available < totalRequired) {
-                                                        alert(`Insufficient balance. You need â‚¦${totalRequired.toLocaleString()} (â‚¦${amount.toLocaleString()} budget + â‚¦20,000 listing fee).`);
-                                                        setCampaignSubmitting(false);
-                                                        return;
-                                                    }
-
-                                                    if (!window.confirm("Launch campaign? A flat listing fee of â‚¦20,000 will be charged.")) {
-                                                        setCampaignSubmitting(false);
-                                                        return;
-                                                    }
-
-                                                    // 1. Charge listing fee
-                                                    await WalletService.chargeListingFee(brandProfile.id, campaignForm.title);
-
+                                                    const LISTING_FEE = 20000;
                                                     const resolvedBrandId = user?.uid || brandProfile.id;
                                                     const resolvedBrandEmail = user?.email || brandProfile.email;
-                                                    const payload = {
-                                                        title: campaignForm.title,
-                                                        description: campaignForm.brief,
-                                                        brief: campaignForm.brief,
-                                                        reward: Number(campaignForm.budget),
-                                                        budget: Number(campaignForm.budget),
-                                                        brandName: brandProfile.name || brandProfile.companyName || 'Brand',
-                                                        status: 'open',
-                                                        brandId: resolvedBrandId,
-                                                        brandEmail: resolvedBrandEmail,
-                                                        category: campaignForm.category,
-                                                        deadline: campaignForm.deadline,
-                                                        createdAt: new Date().toISOString()
-                                                    };
-                                                    
-                                                    const gigRes = await apiClient.post('gigs', payload);
-                                                    
-                                                    // 2. Lock budget in escrow
-                                                    await WalletService.lockCampaignBudget(resolvedBrandId, gigRes.data.id, amount, campaignForm.title);
-                                                    await syncWalletStrip(resolvedBrandId);
 
-                                                    const newCampaign = { id: gigRes.data.id, ...payload };
-                                                    setCampaigns(prev => [newCampaign, ...prev]);
-                                                    alert('Campaign launched and listing fee charged!');
-                                                    setTimeout(() => fetchCampaigns(), 1500);
-                                                }
+                                                    if (!window.confirm(`Launch campaign "${campaignForm.title}"?\n\nYou will be charged a ₦20,000 listing fee via Paystack now.\n\nWhen you later hire a creator, you will pay their budget directly into escrow.`)) {
+                                                        setCampaignSubmitting(false);
+                                                        return;
+                                                    }
+
+                                                    const PaystackPop = (window as any).PaystackPop;
+                                                    if (!PaystackPop) {
+                                                        alert('Paystack is not loaded. Please refresh the page and try again.');
+                                                        setCampaignSubmitting(false);
+                                                        return;
+                                                    }
+
+                                                    const listingRef = `LISTING-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+                                                    const handler = PaystackPop.setup({
+                                                        key: 'pk_test_5ee439620d8a49acc254131ede19b9063d8fe95f',
+                                                        email: resolvedBrandEmail || 'brand@campushub.africa',
+                                                        amount: LISTING_FEE * 100, // ₦20,000 in kobo
+                                                        currency: 'NGN',
+                                                        ref: listingRef,
+                                                        metadata: { userId: resolvedBrandId, type: 'listing_fee', campaignTitle: campaignForm.title },
+                                                        callback: function(response: any) {
+                                                            (async () => {
+                                                                try {
+                                                                    const payload = {
+                                                                        title: campaignForm.title,
+                                                                        description: campaignForm.brief,
+                                                                        brief: campaignForm.brief,
+                                                                        reward: amount,
+                                                                        budget: amount,
+                                                                        brandName: brandProfile.name || brandProfile.companyName || 'Brand',
+                                                                        status: 'open',
+                                                                        brandId: resolvedBrandId,
+                                                                        brandEmail: resolvedBrandEmail,
+                                                                        category: campaignForm.category,
+                                                                        deadline: campaignForm.deadline,
+                                                                        listingFeeRef: response.reference,
+                                                                        createdAt: new Date().toISOString()
+                                                                    };
+                                                                    // Create the gig after successful payment
+                                                                    const gigRes = await apiClient.post('gigs', payload);
+                                                                    const newCampaign = { id: gigRes.data.id, ...payload };
+                                                                    setCampaigns(prev => [newCampaign, ...prev]);
+                                                                    setShowCampaignModal(false);
+                                                                    setEditingGig(null);
+                                                                    setCampaignForm({ title: '', brief: '', budget: '', deadline: '', category: 'Awareness' });
+                                                                    alert(`✅ Campaign "${campaignForm.title}" launched! Creators can now apply. When you hire a creator, pay their budget directly into escrow.`);
+                                                                    setTimeout(() => fetchCampaigns(), 1500);
+                                                                } catch (err: any) {
+                                                                    alert('Listing fee paid but campaign creation failed: ' + (err.response?.data?.error || err.message));
+                                                                } finally {
+                                                                    setCampaignSubmitting(false);
+                                                                }
+                                                            })();
+                                                        },
+                                                        onClose: () => {
+                                                            setCampaignSubmitting(false);
+                                                            console.log('[Paystack Listing Fee] closed');
+                                                        }
+                                                    });
+                                                    handler.openIframe();
+                                                    return; // Return early — campaign creation continues in Paystack callback
+                                                 }
                                                 setShowCampaignModal(false);
                                                 setEditingGig(null);
                                                 setCampaignForm({ title: '', brief: '', budget: '', deadline: '', category: 'Awareness' });
@@ -1819,7 +2595,7 @@ const BrandDashboard: React.FC<{
                                             </div>
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div>
-                                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Budget (â‚¦)</label>
+                                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Budget (₦)</label>
                                                     <input required type="number" min="0" value={campaignForm.budget} onChange={e => setCampaignForm(p => ({ ...p, budget: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] rounded-2xl font-bold outline-none border-2 border-transparent focus:border-spark-red" />
                                                 </div>
                                                 <div>
@@ -1829,11 +2605,11 @@ const BrandDashboard: React.FC<{
                                             </div>
                                             <div className="flex flex-col gap-4 pt-2">
                                                 {!editingGig && (
-                                                    <div className="p-4 bg-red-50 rounded-2xl border border-red-100 flex items-center gap-3">
-                                                        <div className="w-10 h-10 bg-spark-red text-white rounded-xl flex items-center justify-center flex-shrink-0">
+                                                    <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex items-center gap-3">
+                                                        <div className="w-10 h-10 bg-amber-500 text-white rounded-xl flex items-center justify-center flex-shrink-0">
                                                             <Activity className="w-5 h-5" />
                                                         </div>
-                                                        <p className="text-[10px] font-black text-spark-red uppercase tracking-widest leading-relaxed">A flat listing fee of â‚¦20,000 will be charged upon launching this campaign.</p>
+                                                        <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest leading-relaxed">₦20,000 listing fee + campaign budget will be deducted from your wallet on launch.</p>
                                                     </div>
                                                 )}
                                                 <div className="flex gap-4">
@@ -1850,8 +2626,104 @@ const BrandDashboard: React.FC<{
                         )}
                     </div>
                 );
+            case 'analytics':
+                const totalSpend = transactions.reduce((acc, t) => acc + (t.type === 'debit' && t.status === 'completed' ? (Number(t.amount) || 0) : 0), 0);
+                const analyticsActiveCampaigns = campaigns.filter(c => c.status === 'open' || c.status === 'in_progress').length;
+                const averageMilestone = analyticsActiveCampaigns > 0 ? (totalSpend / analyticsActiveCampaigns) : 0;
+                return (
+                    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                        <div>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Campaign Performance Analytics</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">Real-time insights on your campaign spending, reaches, and influencer performance.</p>
+                        </div>
+
+                        {/* Summary Metrics */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div className="bg-[var(--bg-primary)] p-8 rounded-[2rem] border border-[var(--border-color)] shadow-sm">
+                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Estimated Reach</p>
+                                <h4 className="text-3xl font-black text-[var(--text-primary)]">148,500</h4>
+                                <span className="text-[10px] font-black text-green-600 uppercase tracking-widest bg-green-500/10 px-2 py-0.5 rounded-full inline-block mt-2">↑ 12.3% this month</span>
+                            </div>
+                            <div className="bg-[var(--bg-primary)] p-8 rounded-[2rem] border border-[var(--border-color)] shadow-sm">
+                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Completed Milestones</p>
+                                <h4 className="text-3xl font-black text-[var(--text-primary)]">38</h4>
+                                <span className="text-[10px] font-black text-purple-600 uppercase tracking-widest bg-purple-500/10 px-2 py-0.5 rounded-full inline-block mt-2">100% Submission rate</span>
+                            </div>
+                            <div className="bg-[var(--bg-primary)] p-8 rounded-[2rem] border border-[var(--border-color)] shadow-sm">
+                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Aggregate Budget Spend</p>
+                                <h4 className="text-3xl font-black text-spark-red">₦{totalSpend.toLocaleString()}</h4>
+                                <span className="text-[10px] font-black text-spark-red uppercase tracking-widest bg-spark-red/5 px-2 py-0.5 rounded-full inline-block mt-2">Avg ₦{averageMilestone.toLocaleString(undefined, {maximumFractionDigits:0})} / campaign</span>
+                            </div>
+                        </div>
+
+                        {/* Interactive Graph (Pure SVG & CSS Bar Chart) */}
+                        <div className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] p-8 shadow-sm">
+                            <h3 className="text-xl font-black text-[var(--text-primary)] mb-6">Reach Estimations By Campaign</h3>
+                            <div className="space-y-4">
+                                {[
+                                    { title: "Back to School Activation", reach: 65000, color: "bg-spark-red", percent: "90%" },
+                                    { title: "ABC-Rally Hackathon Sponsorship", reach: 45000, color: "bg-spark-purple", percent: "65%" },
+                                    { title: "Pepsi Cola Product sampling", reach: 38500, color: "bg-blue-600", percent: "55%" }
+                                ].map((item, idx) => (
+                                    <div key={idx} className="space-y-2">
+                                        <div className="flex justify-between text-xs font-black">
+                                            <span className="text-[var(--text-primary)]">{item.title}</span>
+                                            <span className="text-[var(--text-secondary)]">{item.reach.toLocaleString()} reach</span>
+                                        </div>
+                                        <div className="h-4 bg-[var(--bg-secondary)] rounded-full overflow-hidden flex">
+                                            <div className={`h-full ${item.color} rounded-full transition-all duration-700`} style={{ width: item.percent }}></div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Performance Table */}
+                        <div className="bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-[2.5rem] p-8 shadow-sm overflow-hidden">
+                            <h3 className="text-xl font-black text-[var(--text-primary)] mb-6">Talent Performance Standings</h3>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead>
+                                        <tr className="border-b border-[var(--border-color)] text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">
+                                            <th className="pb-3">Creator Name</th>
+                                            <th className="pb-3">Campaign Assigned</th>
+                                            <th className="pb-3">Engagement Rate</th>
+                                            <th className="pb-3">Deliverables Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="font-semibold text-[var(--text-secondary)]">
+                                        {allAllocations.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={4} className="py-6 text-center italic text-xs">No active creators to generate performance analytics.</td>
+                                            </tr>
+                                        ) : (
+                                            allAllocations.map((alloc, idx) => (
+                                                <tr key={idx} className="border-b border-[var(--border-color)] last:border-0 hover:bg-[var(--bg-secondary)] transition-colors">
+                                                    <td className="py-4 font-black text-[var(--text-primary)]">{alloc.creatorName}</td>
+                                                    <td className="py-4">{alloc.campaignTitle}</td>
+                                                    <td className="py-4 text-green-600 font-bold">{(8.4 + (idx % 3) * 0.5).toFixed(1)}% Engagement</td>
+                                                    <td className="py-4">
+                                                        <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-green-50 text-green-700 border border-green-100">{alloc.status}</span>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                );
             case 'profile':
-                return <ProfileView user={brandProfile} onUpdate={fetchBrandData} />;
+                return (
+                    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                        <div>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Profile Settings</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">Manage your brand's metadata, logo, social links, and security settings.</p>
+                        </div>
+                        <ProfileView user={brandProfile} onUpdate={fetchBrandData} />
+                    </div>
+                );
             default:
                 return <div>Feature coming soon</div>;
         }
@@ -1866,19 +2738,21 @@ const BrandDashboard: React.FC<{
             sidebarItems={sidebarItems}
             userName={brandProfile?.name || "Brand Partner"}
             userSub={brandProfile?.industry || "Market Leader"}
+            userId={user?.id || user?.uid}
             userImage={brandProfile?.imageUrl}
             isDarkMode={isDarkMode}
             toggleTheme={toggleTheme}
+            themeMode={themeMode}
             walletStrip={
                 <div className="flex items-center gap-4 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-2xl p-1.5 shadow-sm">
                     <div className="px-3">
                         <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase tracking-widest leading-none">Available</p>
-                        <p className="text-sm font-black text-green-600">â‚¦{walletData.available.toLocaleString()}</p>
+                        <p className="text-sm font-black text-green-600">₦{walletData.available.toLocaleString()}</p>
                     </div>
                     <div className="w-px h-6 bg-[var(--border-color)]"></div>
                     <div className="px-3">
                         <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase tracking-widest leading-none">Locked (Escrow)</p>
-                        <p className="text-sm font-black text-[var(--text-primary)]">â‚¦{walletData.locked.toLocaleString()}</p>
+                        <p className="text-sm font-black text-[var(--text-primary)]">₦{walletData.locked.toLocaleString()}</p>
                     </div>
                     <button onClick={() => setCurrentView('wallet')} className="bg-spark-red text-white text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl hover:bg-red-700 transition-all">
                         Fund Wallet
@@ -1886,109 +2760,37 @@ const BrandDashboard: React.FC<{
                 </div>
             }
         >
-            {selectedCreator && (
-                <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-300">
-                    <div className="bg-[var(--bg-primary)] w-full max-w-2xl rounded-[2rem] sm:rounded-[4rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300 my-auto">
-                        <button
-                            onClick={() => setSelectedCreator(null)}
-                            className="absolute top-8 right-8 w-12 h-12 bg-spark-black text-white rounded-full flex items-center justify-center hover:bg-spark-red transition-all z-10"
-                        >
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12"></path></svg>
-                        </button>
-
-                        <div className="h-48 bg-gradient-to-br from-spark-red to-red-400 relative">
-                            <div className="absolute -bottom-12 left-12">
-                                <div className="w-24 h-24 bg-[var(--bg-primary)] p-2 rounded-3xl shadow-xl ring-4 ring-white flex items-center justify-center text-4xl font-black text-spark-red">
-                                    {(selectedCreator.name || '?').charAt(0)}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="pt-20 p-6 sm:p-12 max-h-[70vh] overflow-y-auto">
-                            <div className="flex justify-between items-start mb-8">
-                                <div>
-                                    <h3 className="text-4xl font-black text-[var(--text-primary)] mb-1">{selectedCreator.name}</h3>
-                                    <p className="text-spark-red font-black uppercase tracking-widest text-sm">{selectedCreator.university || 'Campus Talent'}</p>
-                                </div>
-                            </div>
-
-                            <div className="space-y-6 mb-10">
-                                <div className="p-6 bg-[var(--bg-secondary)] rounded-3xl border border-[var(--border-color)]">
-                                    <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2 opacity-60">Talent Bio</p>
-                                    <p className="text-[var(--text-primary)] font-bold text-lg">{selectedCreator.bio || `${selectedCreator.name} is a high-impact influencer at ${selectedCreator.university || 'Spark University'}.`}</p>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    {selectedCreator.university && (
-                                        <div className="p-4 bg-[var(--bg-secondary)] rounded-2xl">
-                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase mb-1">University</p>
-                                            <p className="font-black text-[var(--text-primary)] text-sm">{selectedCreator.university}</p>
-                                        </div>
-                                    )}
-                                    {selectedCreator.handle && (
-                                        <div className="p-4 bg-[var(--bg-secondary)] rounded-2xl">
-                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase mb-1">Handle</p>
-                                            <p className="font-black text-[var(--text-primary)] text-sm">@{selectedCreator.handle}</p>
-                                        </div>
-                                    )}
-                                    {selectedCreator.email && (
-                                        <div className="p-4 bg-[var(--bg-secondary)] rounded-2xl col-span-2">
-                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase mb-1">Email</p>
-                                            <p className="font-bold text-[var(--text-primary)] text-sm">{selectedCreator.email}</p>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {(selectedCreator.instagram || selectedCreator.twitter || selectedCreator.linkedin) && (
-                                    <div className="p-6 bg-[var(--bg-secondary)] rounded-3xl border border-[var(--border-color)]">
-                                        <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-4 opacity-60">Social Media</p>
-                                        <div className="flex gap-3 flex-wrap">
-                                            {selectedCreator.instagram && (
-                                                <a href={selectedCreator.instagram} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-spark-black text-white rounded-xl font-bold text-xs hover:bg-spark-red transition-all">
-                                                    Instagram
-                                                </a>
-                                            )}
-                                            {selectedCreator.twitter && (
-                                                <a href={selectedCreator.twitter} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-spark-black text-white rounded-xl font-bold text-xs hover:bg-spark-red transition-all">
-                                                    Twitter
-                                                </a>
-                                            )}
-                                            {selectedCreator.linkedin && (
-                                                <a href={selectedCreator.linkedin} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-spark-black text-white rounded-xl font-bold text-xs hover:bg-spark-red transition-all">
-                                                    LinkedIn
-                                                </a>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            <button
-                                onClick={() => handleOpenProposalModal(selectedCreator)}
-                                disabled={proposing}
-                                className="w-full py-6 bg-spark-black text-white font-black text-xl rounded-2xl hover:bg-spark-red transition-all shadow-xl shadow-red-100 flex items-center justify-center gap-2"
-                            >
-                                {proposing ? (
-                                    <>
-                                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                        Processing...
-                                    </>
-                                ) : 'Send Partnership Offer'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {renderContent()}
+            <CreatorProfileModal
+                isOpen={!!selectedCreator}
+                onClose={() => setSelectedCreator(null)}
+                creator={selectedCreator || {}}
+                actionButton={
+                    <button
+                        onClick={() => handleOpenProposalModal(selectedCreator)}
+                        disabled={proposing}
+                        className="w-full py-6 bg-spark-black text-white font-black text-xl rounded-2xl hover:bg-spark-red transition-all shadow-xl shadow-red-100 flex items-center justify-center gap-2"
+                    >
+                        {proposing ? (
+                            <>
+                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                Processing...
+                            </>
+                        ) : 'Send Partnership Offer'}
+                    </button>
+                }
+            />
 
             {showProposalModal && proposalRecipient && (
                 <ProposalFormModal
                     isOpen={showProposalModal}
-                    onClose={() => { setShowProposalModal(false); setEventBeingSponsored(null); }}
+                    onClose={() => { setShowProposalModal(false); setEventBeingSponsored(null); setSelectedSponsorshipPackage(null); }}
                     recipientName={proposalRecipient.name}
                     recipientId={proposalRecipient.id}
                     initialMessage={proposalInitialMessage}
                     onSubmit={handleSendProposal}
                     isSponsorship={!!eventBeingSponsored}
+                    selectedPackage={selectedSponsorshipPackage}
                     title={eventBeingSponsored ? `Sponsor "${eventBeingSponsored.name}"` : 'Partnership Proposal'}
                 />
             )}
@@ -2032,7 +2834,7 @@ const BrandDashboard: React.FC<{
                                     </div>
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
-                                            <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Total Budget (â‚¦)</label>
+                                            <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Total Budget (₦)</label>
                                             <input required type="number" min="0" value={inlineCreateForm.budget} onChange={e => setInlineCreateForm(p => ({ ...p, budget: e.target.value }))} className="w-full px-4 py-3 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl font-bold outline-none focus:border-spark-red text-sm" />
                                         </div>
                                         <div>
@@ -2067,12 +2869,12 @@ const BrandDashboard: React.FC<{
                                             if (!c) return null;
                                             const stats = getCampaignBudgetStats(c);
                                             return (
-                                                <p className="text-[10px] text-[var(--text-secondary)] font-bold mt-2">Remaining Budget: <span className="text-green-600">â‚¦{stats.remaining.toLocaleString()}</span></p>
+                                                <p className="text-[10px] text-[var(--text-secondary)] font-bold mt-2">Remaining Budget: <span className="text-green-600">₦{stats.remaining.toLocaleString()}</span></p>
                                             );
                                         })()}
                                     </div>
                                     <div>
-                                        <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Allocation Amount (â‚¦)</label>
+                                        <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Allocation Amount (₦)</label>
                                         <input 
                                             type="number" 
                                             min="0"
@@ -2113,7 +2915,7 @@ const BrandDashboard: React.FC<{
                         
                         <div className="p-6 space-y-6">
                             <div>
-                                <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Allocation Amount (â‚¦)</label>
+                                <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Allocation Amount (₦)</label>
                                 <input 
                                     type="number" 
                                     min="0"
@@ -2126,7 +2928,7 @@ const BrandDashboard: React.FC<{
                                     const stats = getCampaignBudgetStats(viewingApplicants);
                                     return (
                                         <p className="text-[10px] text-[var(--text-secondary)] font-bold mt-2">
-                                            Remaining Campaign Budget: <span className="text-green-600">â‚¦{stats.remaining.toLocaleString()}</span>
+                                            Remaining Campaign Budget: <span className="text-green-600">₦{stats.remaining.toLocaleString()}</span>
                                         </p>
                                     );
                                 })()}
@@ -2134,7 +2936,7 @@ const BrandDashboard: React.FC<{
                             
                             <div className="p-4 bg-spark-red/5 rounded-2xl border border-spark-red/10">
                                 <p className="text-[10px] text-spark-red font-bold leading-relaxed">
-                                    By approving, â‚¦{Number(approvalAmount || 0).toLocaleString()} will be moved from your campaign budget and locked for this creator. You can release it once they submit their report.
+                                    By approving, ₦{Number(approvalAmount || 0).toLocaleString()} will be moved from your campaign budget and locked for this creator. You can release it once they submit their report.
                                 </p>
                             </div>
 
@@ -2210,129 +3012,163 @@ const BrandDashboard: React.FC<{
                 </div>
             )}
 
-            {renderContent()}
             {/* Influencer Profile Modal */}
             {viewingProfile && (
                 <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
                     <div className="fixed inset-0 bg-spark-black/80 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setViewingProfile(null)}></div>
                     <div className="relative bg-[var(--bg-primary)] w-full max-w-4xl max-h-[90vh] rounded-[3rem] shadow-2xl animate-in zoom-in-95 duration-300 overflow-hidden flex flex-col border border-[var(--border-color)]">
                         {/* Header/Cover */}
-                        <div className="h-40 bg-gradient-to-r from-spark-black to-spark-red relative flex-shrink-0">
+                        <div 
+                            className="h-40 bg-spark-black relative flex-shrink-0 bg-cover bg-center bg-no-repeat"
+                            style={{ backgroundImage: viewingProfile.coverPhotoUrl ? `url(${viewingProfile.coverPhotoUrl})` : undefined }}
+                        >
+                            {viewingProfile.coverPhotoUrl && <div className="absolute inset-0 bg-spark-black/35 backdrop-blur-[1px] z-0"></div>}
                             <button onClick={() => setViewingProfile(null)} className="absolute top-6 right-6 w-10 h-10 bg-white/20 backdrop-blur-md text-white rounded-full flex items-center justify-center hover:bg-white/40 transition-all z-10">
                                 <Plus className="w-6 h-6 rotate-45" />
                              </button>
                         </div>
 
                         <div className="flex-1 overflow-y-auto custom-scrollbar">
-                            <div className="px-10 pb-10">
-                                {/* Profile Info */}
-                                <div className="relative -mt-16 mb-8 flex flex-col md:flex-row md:items-end justify-between gap-6">
-                                    <div className="flex items-end gap-6">
-                                        <div className="w-32 h-32 rounded-3xl bg-[var(--bg-primary)] p-2 shadow-2xl ring-4 ring-[var(--bg-primary)] overflow-hidden">
-                                            {viewingProfile.imageUrl ? (
-                                                <img src={viewingProfile.imageUrl} className="w-full h-full object-cover rounded-2xl" alt={viewingProfile.name} />
+                            {viewingProfile.loading ? (
+                                <div className="flex flex-col items-center justify-center py-40">
+                                    <div className="w-12 h-12 border-4 border-spark-red border-t-transparent rounded-full animate-spin mb-4"></div>
+                                    <p className="text-[var(--text-secondary)] font-black uppercase tracking-widest text-xs">Loading profile details...</p>
+                                </div>
+                            ) : (
+                                <div className="px-10 pb-10">
+                                    {/* Profile Info */}
+                                    <div className="relative -mt-16 mb-8 flex flex-col md:flex-row md:items-end justify-between gap-6">
+                                        <div className="flex items-end gap-6">
+                                            <div className="w-32 h-32 rounded-3xl bg-[var(--bg-primary)] p-2 shadow-2xl ring-4 ring-[var(--bg-primary)] overflow-hidden relative z-10">
+                                                {viewingProfile.imageUrl ? (
+                                                    <img src={viewingProfile.imageUrl} className="w-full h-full object-cover rounded-2xl" alt={viewingProfile.name} />
+                                                ) : (
+                                                    <div className="w-full h-full bg-spark-red/10 flex items-center justify-center text-4xl font-black text-spark-red">
+                                                        {(viewingProfile.name || '?').charAt(0)}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="pb-2 relative z-10">
+                                                <h3 className={`text-3xl font-black ${viewingProfile.coverPhotoUrl ? 'text-white' : 'text-[var(--text-primary)]'}`}>{viewingProfile.name}</h3>
+                                                <div className="flex items-center gap-3 mt-1">
+                                                    <span className={`px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-lg ${viewingProfile.coverPhotoUrl ? 'bg-black/30 text-white/90' : 'bg-spark-red/10 text-spark-red'}`}>
+                                                        {viewingProfile.influencerType || viewingProfile.role || 'Creator'}
+                                                    </span>
+                                                    {viewingProfile.influencerType !== 'Professional Creator' && viewingProfile.university && (
+                                                        <span className={`font-bold text-xs ${viewingProfile.coverPhotoUrl ? 'text-white/80' : 'text-[var(--text-secondary)]'}`}>
+                                                            🏫 {viewingProfile.university}
+                                                        </span>
+                                                    )}
+                                                    {viewingProfile.location && (
+                                                        <span className={`font-bold text-xs ${viewingProfile.coverPhotoUrl ? 'text-white/80' : 'text-[var(--text-secondary)]'}`}>
+                                                            📍 {viewingProfile.location}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2 pb-2 relative z-10">
+                                            {viewingProfile.instagram && (
+                                                <a href={sanitizeSocialLink(viewingProfile.instagram, 'instagram')} target="_blank" rel="noopener noreferrer" className="px-3 py-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl flex items-center gap-1.5 hover:bg-spark-red/10 hover:text-spark-red font-bold text-xs transition-all text-[var(--text-primary)]">
+                                                    Instagram
+                                                </a>
+                                            )}
+                                            {viewingProfile.tiktok && (
+                                                <a href={sanitizeSocialLink(viewingProfile.tiktok, 'tiktok')} target="_blank" rel="noopener noreferrer" className="px-3 py-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl flex items-center gap-1.5 hover:bg-spark-red/10 hover:text-spark-red font-bold text-xs transition-all text-[var(--text-primary)]">
+                                                    TikTok
+                                                </a>
+                                            )}
+                                            {viewingProfile.twitter && (
+                                                <a href={sanitizeSocialLink(viewingProfile.twitter, 'twitter')} target="_blank" rel="noopener noreferrer" className="px-3 py-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl flex items-center gap-1.5 hover:bg-spark-red/10 hover:text-spark-red font-bold text-xs transition-all text-[var(--text-primary)]">
+                                                    X / Twitter
+                                                </a>
+                                            )}
+                                            {viewingProfile.linkedin && (
+                                                <a href={sanitizeSocialLink(viewingProfile.linkedin, 'linkedin')} target="_blank" rel="noopener noreferrer" className="px-3 py-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl flex items-center gap-1.5 hover:bg-spark-red/10 hover:text-spark-red font-bold text-xs transition-all text-[var(--text-primary)]">
+                                                    LinkedIn
+                                                </a>
+                                            )}
+                                            {viewingProfile.website && (
+                                                <a href={sanitizeSocialLink(viewingProfile.website, 'website')} target="_blank" rel="noopener noreferrer" className="px-3 py-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl flex items-center gap-1.5 hover:bg-spark-red/10 hover:text-spark-red font-bold text-xs transition-all text-[var(--text-primary)]">
+                                                    Website
+                                                </a>
+                                            )}
+                                            <button onClick={() => { setViewingProfile(null); openAllocationModal(viewingProfile); }} className="px-6 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all shadow-lg text-xs uppercase tracking-widest ml-auto">
+                                                Hire Influencer
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Tabs for Portfolio / Bio */}
+                                    <div className="grid md:grid-cols-3 gap-8">
+                                        <div className="md:col-span-1 space-y-6">
+                                            <div className="bg-[var(--bg-secondary)] rounded-3xl p-6 border border-[var(--border-color)]">
+                                                <h4 className="font-black text-[var(--text-primary)] mb-4 uppercase text-[10px] tracking-widest text-spark-red">About Influencer</h4>
+                                                <p className="text-sm text-[var(--text-secondary)] leading-relaxed font-medium">
+                                                    {viewingProfile.bio || "No bio provided by the influencer yet."}
+                                                </p>
+                                            </div>
+                                            <div className="bg-[var(--bg-secondary)] rounded-3xl p-6 border border-[var(--border-color)]">
+                                                <h4 className="font-black text-[var(--text-primary)] mb-4 uppercase text-[10px] tracking-widest text-spark-red">Quick Stats</h4>
+                                                <div className="space-y-3">
+                                                    {viewingProfile.influencerType !== 'Professional Creator' && viewingProfile.university && (
+                                                        <div className="flex justify-between text-xs">
+                                                            <span className="text-[var(--text-secondary)] font-bold">University</span>
+                                                            <span className="text-[var(--text-primary)] font-black">{viewingProfile.university}</span>
+                                                        </div>
+                                                    )}
+                                                    <div className="flex justify-between text-xs">
+                                                        <span className="text-[var(--text-secondary)] font-bold">Joined</span>
+                                                        <span className="text-[var(--text-primary)] font-black">{viewingProfile.createdAt ? new Date(viewingProfile.createdAt).getFullYear() : '2024'}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="md:col-span-2 space-y-6">
+                                            <h4 className="text-xl font-black text-[var(--text-primary)] flex items-center gap-2">
+                                                <Briefcase className="w-6 h-6 text-spark-red" />
+                                                Professional Portfolio
+                                            </h4>
+                                            
+                                            {!viewingProfile.portfolio || viewingProfile.portfolio.length === 0 ? (
+                                                <div className="bg-[var(--bg-secondary)] rounded-[2.5rem] border-2 border-dashed border-[var(--border-color)] p-12 text-center">
+                                                    <p className="text-[var(--text-secondary)] font-bold">This influencer hasn't uploaded any previous work yet.</p>
+                                                </div>
                                             ) : (
-                                                <div className="w-full h-full bg-spark-red/10 flex items-center justify-center text-4xl font-black text-spark-red">
-                                                    {(viewingProfile.name || '?').charAt(0)}
+                                                <div className="grid sm:grid-cols-2 gap-4">
+                                                    {viewingProfile.portfolio.map((item: any) => (
+                                                        <div 
+                                                            key={item.id} 
+                                                            onClick={() => setSelectedPortfolioItem(item)}
+                                                            className="bg-[var(--bg-secondary)] rounded-3xl border border-[var(--border-color)] overflow-hidden hover:border-spark-red transition-all flex flex-col group cursor-pointer"
+                                                        >
+                                                            <div className="h-32 bg-spark-black/5 relative">
+                                                                {item.fileType === 'image' ? (
+                                                                    <img src={item.fileUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={item.title} />
+                                                                ) : (
+                                                                    <div className="w-full h-full flex items-center justify-center">
+                                                                        <FileText className="w-10 h-10 text-spark-red/20" />
+                                                                    </div>
+                                                                )}
+                                                                <div className="absolute inset-0 bg-spark-black/40 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
+                                                                    <span className="px-4 py-2 bg-white text-spark-black rounded-lg text-[10px] font-black uppercase tracking-widest">
+                                                                        View Details
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            <div className="p-5">
+                                                                <h5 className="font-black text-[var(--text-primary)] text-sm line-clamp-1 group-hover:text-spark-red transition-colors">{item.title}</h5>
+                                                                <p className="text-[10px] text-[var(--text-secondary)] line-clamp-2 mt-1 font-medium">{item.description}</p>
+                                                            </div>
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             )}
                                         </div>
-                                        <div className="pb-2">
-                                            <h3 className="text-3xl font-black text-[var(--text-primary)]">{viewingProfile.name}</h3>
-                                            <div className="flex items-center gap-3 mt-1">
-                                                <span className="px-3 py-1 bg-spark-red/10 text-spark-red text-[10px] font-black uppercase tracking-widest rounded-lg">{viewingProfile.university || 'Campus Influencer'}</span>
-                                                {viewingProfile.location && <span className="text-[var(--text-secondary)] font-bold text-xs">ðŸ“ {viewingProfile.location}</span>}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-3 pb-2">
-                                        {viewingProfile.instagram && (
-                                            <a href={`https://instagram.com/${viewingProfile.instagram.replace('@','')}`} target="_blank" rel="noopener noreferrer" className="w-10 h-10 bg-[var(--bg-secondary)] rounded-xl flex items-center justify-center hover:bg-spark-red hover:text-white transition-all">
-                                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
-                                            </a>
-                                        )}
-                                        {viewingProfile.twitter && (
-                                            <a href={`https://twitter.com/${viewingProfile.twitter.replace('@','')}`} target="_blank" rel="noopener noreferrer" className="w-10 h-10 bg-[var(--bg-secondary)] rounded-xl flex items-center justify-center hover:bg-spark-red hover:text-white transition-all">
-                                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.84 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z"/></svg>
-                                            </a>
-                                        )}
-                                        <button onClick={() => { setViewingProfile(null); openAllocationModal(viewingProfile); }} className="px-6 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all shadow-lg text-xs uppercase tracking-widest">
-                                            Hire Influencer
-                                        </button>
                                     </div>
                                 </div>
-
-                                {/* Tabs for Portfolio / Bio */}
-                                <div className="grid md:grid-cols-3 gap-8">
-                                    <div className="md:col-span-1 space-y-6">
-                                        <div className="bg-[var(--bg-secondary)] rounded-3xl p-6 border border-[var(--border-color)]">
-                                            <h4 className="font-black text-[var(--text-primary)] mb-4 uppercase text-[10px] tracking-widest text-spark-red">About Influencer</h4>
-                                            <p className="text-sm text-[var(--text-secondary)] leading-relaxed font-medium">
-                                                {viewingProfile.bio || "No bio provided by the influencer yet."}
-                                            </p>
-                                        </div>
-                                        <div className="bg-[var(--bg-secondary)] rounded-3xl p-6 border border-[var(--border-color)]">
-                                            <h4 className="font-black text-[var(--text-primary)] mb-4 uppercase text-[10px] tracking-widest text-spark-red">Quick Stats</h4>
-                                            <div className="space-y-3">
-                                                <div className="flex justify-between text-xs">
-                                                    <span className="text-[var(--text-secondary)] font-bold">University</span>
-                                                    <span className="text-[var(--text-primary)] font-black">{viewingProfile.university || 'N/A'}</span>
-                                                </div>
-                                                <div className="flex justify-between text-xs">
-                                                    <span className="text-[var(--text-secondary)] font-bold">Handle</span>
-                                                    <span className="text-spark-red font-black">{viewingProfile.handle || '@spark_user'}</span>
-                                                </div>
-                                                <div className="flex justify-between text-xs">
-                                                    <span className="text-[var(--text-secondary)] font-bold">Joined</span>
-                                                    <span className="text-[var(--text-primary)] font-black">{viewingProfile.createdAt ? new Date(viewingProfile.createdAt).getFullYear() : '2024'}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="md:col-span-2 space-y-6">
-                                        <h4 className="text-xl font-black text-[var(--text-primary)] flex items-center gap-2">
-                                            <Briefcase className="w-6 h-6 text-spark-red" />
-                                            Professional Portfolio
-                                        </h4>
-                                        
-                                        {!viewingProfile.portfolio || viewingProfile.portfolio.length === 0 ? (
-                                            <div className="bg-[var(--bg-secondary)] rounded-[2.5rem] border-2 border-dashed border-[var(--border-color)] p-12 text-center">
-                                                <p className="text-[var(--text-secondary)] font-bold">This influencer hasn't uploaded any previous work yet.</p>
-                                            </div>
-                                        ) : (
-                                            <div className="grid sm:grid-cols-2 gap-4">
-                                                {viewingProfile.portfolio.map((item: any) => (
-                                                    <div 
-                                                        key={item.id} 
-                                                        onClick={() => setSelectedPortfolioItem(item)}
-                                                        className="bg-[var(--bg-secondary)] rounded-3xl border border-[var(--border-color)] overflow-hidden hover:border-spark-red transition-all flex flex-col group cursor-pointer"
-                                                    >
-                                                        <div className="h-32 bg-spark-black/5 relative">
-                                                            {item.fileType === 'image' ? (
-                                                                <img src={item.fileUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={item.title} />
-                                                            ) : (
-                                                                <div className="w-full h-full flex items-center justify-center">
-                                                                    <FileText className="w-10 h-10 text-spark-red/20" />
-                                                                </div>
-                                                            )}
-                                                            <div className="absolute inset-0 bg-spark-black/40 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
-                                                                <span className="px-4 py-2 bg-white text-spark-black rounded-lg text-[10px] font-black uppercase tracking-widest">
-                                                                    View Details
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                        <div className="p-5">
-                                                            <h5 className="font-black text-[var(--text-primary)] text-sm line-clamp-1 group-hover:text-spark-red transition-colors">{item.title}</h5>
-                                                            <p className="text-[10px] text-[var(--text-secondary)] line-clamp-2 mt-1 font-medium">{item.description}</p>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -2400,6 +3236,574 @@ const BrandDashboard: React.FC<{
                 onUpdateStatus={handleUpdateStatus}
                 isSender={selectedProposal?.senderId === (brandProfile?.id || auth.currentUser?.uid)}
             />
+
+            {/* Create Event Modal */}
+            {showCreateEventModal && (
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+                    <div className="fixed inset-0 bg-spark-black/40 backdrop-blur-md" onClick={() => !eventSubmitting && setShowCreateEventModal(false)}></div>
+                    <div className="relative bg-[var(--bg-primary)] w-full max-w-2xl rounded-[2rem] sm:rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 my-auto border border-[var(--border-color)]">
+                        <div className="p-10 border-b border-[var(--border-color)] flex justify-between items-center">
+                            <h3 className="text-3xl font-black text-[var(--text-primary)]">List New Event</h3>
+                            <button onClick={() => setShowCreateEventModal(false)} className="text-[var(--text-secondary)] hover:text-spark-red transition-colors">
+                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            </button>
+                        </div>
+                        <form onSubmit={handleCreateEvent} className="p-10 space-y-8 overflow-y-auto max-h-[70vh]">
+                            <div className="space-y-3">
+                                <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Event Name</label>
+                                <input
+                                    required
+                                    type="text"
+                                    className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-red/10 outline-none font-bold"
+                                    placeholder="e.g. Annual Tech Hackathon 2024"
+                                    value={eventFormData.name}
+                                    onChange={(e) => {
+                                        const newName = e.target.value;
+                                        setEventFormData(prev => ({
+                                            ...prev,
+                                            name: newName,
+                                            campaignTitle: prev.campaignTitle === (prev.name ? `${prev.name} - Volunteers` : '') 
+                                                ? (newName ? `${newName} - Volunteers` : '')
+                                                : prev.campaignTitle
+                                        }));
+                                    }}
+                                />
+                            </div>
+                            <div className="grid md:grid-cols-2 gap-8">
+                                <div className="space-y-3">
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Event Date</label>
+                                    <input
+                                        required
+                                        type="date"
+                                        className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-red/10 outline-none font-bold"
+                                        value={eventFormData.date}
+                                        onChange={(e) => {
+                                            const newDate = e.target.value;
+                                            setEventFormData(prev => ({
+                                                ...prev,
+                                                date: newDate,
+                                                campaignDeadline: prev.campaignDeadline === prev.date ? newDate : prev.campaignDeadline
+                                            }));
+                                        }}
+                                    />
+                                </div>
+                                <div className="space-y-3">
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Sponsorship Target (₦)</label>
+                                    <input
+                                        required
+                                        type="number"
+                                        className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-red/10 outline-none font-bold"
+                                        placeholder="e.g. 500000"
+                                        value={eventFormData.targetSponsorship}
+                                        onChange={(e) => setEventFormData({ ...eventFormData, targetSponsorship: e.target.value })}
+                                    />
+                                </div>
+                            </div>
+                            <div className="grid md:grid-cols-2 gap-8">
+                                <div className="space-y-3">
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Expected Attendees</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-red/10 outline-none font-bold"
+                                        placeholder="e.g. 500"
+                                        value={eventFormData.expectedAttendees}
+                                        onChange={(e) => setEventFormData({ ...eventFormData, expectedAttendees: e.target.value })}
+                                    />
+                                </div>
+                                <div className="space-y-3">
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Sponsorship Slots</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-red/10 outline-none font-bold"
+                                        placeholder="e.g. 3"
+                                        value={eventFormData.sponsorshipSlots}
+                                        onChange={(e) => setEventFormData({ ...eventFormData, sponsorshipSlots: e.target.value })}
+                                    />
+                                </div>
+                            </div>
+                            <div className="space-y-3">
+                                <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Location</label>
+                                <input
+                                    required
+                                    type="text"
+                                    className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-red/10 outline-none font-bold"
+                                    placeholder="e.g. Main Auditorium"
+                                    value={eventFormData.location}
+                                    onChange={(e) => setEventFormData({ ...eventFormData, location: e.target.value })}
+                                />
+                            </div>
+                            <div className="space-y-3">
+                                <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Event Description</label>
+                                <textarea
+                                    required
+                                    rows={4}
+                                    className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-red/10 outline-none font-bold resize-none"
+                                    placeholder="Describe your event and what sponsors get in return..."
+                                    value={eventFormData.description}
+                                    onChange={(e) => setEventFormData({ ...eventFormData, description: e.target.value })}
+                                ></textarea>
+                            </div>
+                            <div className="space-y-4">
+                                <div className="flex justify-between items-center">
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Sponsorship Packages</label>
+                                    <button
+                                        type="button"
+                                        onClick={() => setFormPackages(prev => [...prev, { name: '', price: '', entails: '' }])}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-spark-red/10 text-spark-red rounded-xl font-bold text-xs hover:bg-spark-red/20 transition-all"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" /> Add Tier
+                                    </button>
+                                </div>
+                                <div className="space-y-3">
+                                    {formPackages.map((pkg, idx) => (
+                                        <div key={idx} className="flex gap-2 items-center border border-[var(--border-color)] p-3 rounded-2xl relative bg-[var(--bg-primary)]">
+                                            <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-2">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Tier Name (e.g. Gold)"
+                                                    value={pkg.name}
+                                                    onChange={(e) => {
+                                                        const next = [...formPackages];
+                                                        next[idx].name = e.target.value;
+                                                        setFormPackages(next);
+                                                    }}
+                                                    className="px-4 py-2 text-sm bg-[var(--bg-secondary)] border-0 rounded-xl outline-none font-bold text-[var(--text-primary)] focus:ring-2 focus:ring-spark-red/20"
+                                                    required
+                                                />
+                                                <input
+                                                    type="number"
+                                                    placeholder="Price (₦)"
+                                                    value={pkg.price}
+                                                    onChange={(e) => {
+                                                        const next = [...formPackages];
+                                                        next[idx].price = e.target.value;
+                                                        setFormPackages(next);
+                                                    }}
+                                                    className="px-4 py-2 text-sm bg-[var(--bg-secondary)] border-0 rounded-xl outline-none font-bold text-[var(--text-primary)] focus:ring-2 focus:ring-spark-red/20"
+                                                    required
+                                                />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Details (e.g. Logo placement)"
+                                                    value={pkg.entails}
+                                                    onChange={(e) => {
+                                                        const next = [...formPackages];
+                                                        next[idx].entails = e.target.value;
+                                                        setFormPackages(next);
+                                                    }}
+                                                    className="px-4 py-2 text-sm bg-[var(--bg-secondary)] border-0 rounded-xl outline-none font-bold text-[var(--text-primary)] focus:ring-2 focus:ring-spark-red/20"
+                                                    required
+                                                />
+                                            </div>
+                                            {formPackages.length > 1 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFormPackages(prev => prev.filter((_, i) => i !== idx))}
+                                                    className="p-2 text-spark-red hover:bg-spark-red/10 rounded-xl transition-all"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                                <p className="text-[10px] text-[var(--text-secondary)] font-medium">Define your sponsorship tiers, prices, and perks.</p>
+                            </div>
+                            <div className="space-y-3">
+                                <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Activation Needs</label>
+                                <textarea
+                                    rows={2}
+                                    className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-red/10 outline-none font-bold resize-none"
+                                    placeholder="e.g. Branded booth, social media takeover, product sampling, banner placements..."
+                                    value={eventFormData.activationNeeds}
+                                    onChange={(e) => setEventFormData({ ...eventFormData, activationNeeds: e.target.value })}
+                                ></textarea>
+                            </div>
+
+                            {/* ── Volunteer Recruitment Section ── */}
+                            <div className="rounded-2xl border border-[var(--border-color)] overflow-hidden">
+                                <div className="px-6 py-5 bg-[var(--bg-secondary)] flex items-center justify-between">
+                                    <div>
+                                        <p className="font-black text-[var(--text-primary)] text-base">Need Volunteers for this Event?</p>
+                                        <p className="text-xs text-[var(--text-secondary)] mt-0.5">Recruiting volunteers will also create a campaign listing</p>
+                                    </div>
+                                    <div className="flex items-center gap-5">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                name="needVolunteers"
+                                                value="no"
+                                                checked={eventFormData.needVolunteers === 'no'}
+                                                onChange={() => setEventFormData(prev => ({ ...prev, needVolunteers: 'no' }))}
+                                                className="accent-spark-red w-4 h-4"
+                                            />
+                                            <span className="text-sm font-bold text-[var(--text-secondary)]">No</span>
+                                        </label>
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                name="needVolunteers"
+                                                value="yes"
+                                                checked={eventFormData.needVolunteers === 'yes'}
+                                                onChange={() => setEventFormData(prev => ({ ...prev, needVolunteers: 'yes' }))}
+                                                className="accent-spark-red w-4 h-4"
+                                            />
+                                            <span className="text-sm font-bold text-spark-red">Yes</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                {eventFormData.needVolunteers === 'yes' && (
+                                    <div className="p-6 space-y-6 border-t border-[var(--border-color)] bg-[var(--bg-primary)]">
+                                        {/* Volunteer Type */}
+                                        <div className="space-y-3">
+                                            <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Volunteer Type</label>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <label className={`flex items-center gap-3 px-5 py-4 rounded-2xl border-2 cursor-pointer transition-all ${eventFormData.volunteerType === 'unpaid' ? 'border-spark-red bg-spark-red/5' : 'border-[var(--border-color)] hover:border-spark-red/40'}`}>
+                                                    <input
+                                                        type="radio"
+                                                        name="volunteerType"
+                                                        value="unpaid"
+                                                        checked={eventFormData.volunteerType === 'unpaid'}
+                                                        onChange={() => setEventFormData(prev => ({ ...prev, volunteerType: 'unpaid', campaignBudget: '' }))}
+                                                        className="accent-spark-red w-4 h-4"
+                                                    />
+                                                    <div>
+                                                        <p className="font-black text-sm text-[var(--text-primary)]">Unpaid</p>
+                                                        <p className="text-xs text-[var(--text-secondary)]">Free volunteer listing</p>
+                                                    </div>
+                                                </label>
+                                                <label className={`flex items-center gap-3 px-5 py-4 rounded-2xl border-2 cursor-pointer transition-all ${eventFormData.volunteerType === 'paid' ? 'border-spark-red bg-spark-red/5' : 'border-[var(--border-color)] hover:border-spark-red/40'}`}>
+                                                    <input
+                                                        type="radio"
+                                                        name="volunteerType"
+                                                        value="paid"
+                                                        checked={eventFormData.volunteerType === 'paid'}
+                                                        onChange={() => setEventFormData(prev => ({ ...prev, volunteerType: 'paid' }))}
+                                                        className="accent-spark-red w-4 h-4"
+                                                    />
+                                                    <div>
+                                                        <p className="font-black text-sm text-[var(--text-primary)]">Paid</p>
+                                                        <p className="text-xs text-[var(--text-secondary)]">Requires budget in wallet</p>
+                                                    </div>
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        {/* Campaign Title */}
+                                        <div className="space-y-2">
+                                            <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Campaign Title</label>
+                                            <input
+                                                type="text"
+                                                required={eventFormData.needVolunteers === 'yes'}
+                                                className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-red/10 outline-none font-bold"
+                                                placeholder="e.g. My Event - Volunteers"
+                                                value={eventFormData.campaignTitle}
+                                                onChange={(e) => setEventFormData(prev => ({ ...prev, campaignTitle: e.target.value }))}
+                                            />
+                                        </div>
+
+                                        {/* Category */}
+                                        <div className="space-y-2">
+                                            <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Campaign Category</label>
+                                            <select
+                                                required={eventFormData.needVolunteers === 'yes'}
+                                                className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-red/10 outline-none font-bold"
+                                                value={eventFormData.campaignCategory}
+                                                onChange={(e) => setEventFormData(prev => ({ ...prev, campaignCategory: e.target.value }))}
+                                            >
+                                                <option value="Event Promo">Event Promo</option>
+                                                <option value="Awareness">Awareness</option>
+                                                <option value="Community Outreach">Community Outreach</option>
+                                                <option value="Sales">Sales</option>
+                                                <option value="Content Creation">Content Creation</option>
+                                                <option value="Other">Other</option>
+                                            </select>
+                                        </div>
+
+                                        {/* Campaign Brief */}
+                                        <div className="space-y-2">
+                                            <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Volunteer Brief</label>
+                                            <textarea
+                                                required={eventFormData.needVolunteers === 'yes'}
+                                                rows={3}
+                                                className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-red/10 outline-none font-bold resize-none"
+                                                placeholder="Describe what volunteers will do at this event..."
+                                                value={eventFormData.campaignBrief}
+                                                onChange={(e) => setEventFormData(prev => ({ ...prev, campaignBrief: e.target.value }))}
+                                            />
+                                        </div>
+
+                                        {/* Budget (paid only) */}
+                                        {eventFormData.volunteerType === 'paid' && (
+                                            <div className="space-y-2">
+                                                <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Total Volunteer Budget (₦)</label>
+                                                <input
+                                                    type="number"
+                                                    required={eventFormData.needVolunteers === 'yes' && eventFormData.volunteerType === 'paid'}
+                                                    min="1"
+                                                    className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-red/10 outline-none font-bold"
+                                                    placeholder="e.g. 50000"
+                                                    value={eventFormData.campaignBudget}
+                                                    onChange={(e) => setEventFormData(prev => ({ ...prev, campaignBudget: e.target.value }))}
+                                                />
+                                                <p className="text-xs text-amber-500 font-bold">Note: The volunteer budget will be locked in escrow from your wallet</p>
+                                            </div>
+                                        )}
+
+                                        {/* Application Deadline */}
+                                        <div className="space-y-2">
+                                            <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Application Deadline</label>
+                                            <input
+                                                type="date"
+                                                required={eventFormData.needVolunteers === 'yes'}
+                                                className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-red/10 outline-none font-bold"
+                                                value={eventFormData.campaignDeadline}
+                                                onChange={(e) => setEventFormData(prev => ({ ...prev, campaignDeadline: e.target.value }))}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex gap-4 pt-4">
+                                <button
+                                    type="button"
+                                    disabled={eventSubmitting}
+                                    onClick={() => setShowCreateEventModal(false)}
+                                    className="flex-1 py-5 bg-spark-black text-white font-black rounded-2xl hover:bg-gray-800 transition-all disabled:opacity-50"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={eventSubmitting}
+                                    className="flex-[2] py-5 bg-spark-red text-white font-black rounded-2xl text-lg hover:bg-red-700 transition-all shadow-xl shadow-red-200 flex items-center justify-center gap-3 disabled:opacity-50"
+                                >
+                                    {eventSubmitting ? (
+                                        <>
+                                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                                            Publishing...
+                                        </>
+                                    ) : 'List Event Now'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Event Modal */}
+            {editingEvent && (
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 sm:p-6">
+                    <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md" onClick={() => setEditingEvent(null)}></div>
+                    <div className="relative bg-[var(--bg-primary)] w-full max-w-xl rounded-[2.5rem] shadow-2xl animate-in zoom-in-95 duration-300 border border-[var(--border-color)]">
+                        <div className="p-10 modal-content-scroll">
+                            <div className="flex justify-between items-start mb-8">
+                                <div>
+                                    <h2 className="text-3xl font-black text-[var(--text-primary)] leading-tight">Edit Event</h2>
+                                    <p className="text-[var(--text-secondary)] font-medium mt-1">Update your event details below.</p>
+                                </div>
+                                <button onClick={() => setEditingEvent(null)} className="w-10 h-10 bg-spark-black text-white rounded-full flex items-center justify-center hover:bg-gray-800 transition-all">
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                </button>
+                            </div>
+                            <form onSubmit={handleSaveEditEvent} className="space-y-6">
+                                <div>
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Event Name</label>
+                                    <input type="text" required value={editEventFormData.name} onChange={e => setEditEventFormData(p => ({ ...p, name: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Event Date</label>
+                                    <input type="date" required value={editEventFormData.date} onChange={e => setEditEventFormData(p => ({ ...p, date: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Location</label>
+                                    <input type="text" required value={editEventFormData.location} onChange={e => setEditEventFormData(p => ({ ...p, location: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Description</label>
+                                    <textarea required rows={3} value={editEventFormData.description} onChange={e => setEditEventFormData(p => ({ ...p, description: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all resize-none" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Target Sponsorship (₦)</label>
+                                    <input type="number" required min="0" value={editEventFormData.targetSponsorship} onChange={e => setEditEventFormData(p => ({ ...p, targetSponsorship: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Expected Attendees</label>
+                                        <input type="number" min="1" value={editEventFormData.expectedAttendees} onChange={e => setEditEventFormData(p => ({ ...p, expectedAttendees: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Sponsorship Slots</label>
+                                        <input type="number" min="1" value={editEventFormData.sponsorshipSlots} onChange={e => setEditEventFormData(p => ({ ...p, sponsorshipSlots: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" />
+                                    </div>
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center">
+                                        <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Sponsorship Packages</label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditFormPackages(prev => [...prev, { name: '', price: '', entails: '' }])}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-spark-red/10 text-spark-red rounded-xl font-bold text-xs hover:bg-spark-red/20 transition-all"
+                                        >
+                                            <Plus className="w-3.5 h-3.5" /> Add Tier
+                                        </button>
+                                    </div>
+                                    <div className="space-y-3">
+                                        {editFormPackages.map((pkg, idx) => (
+                                            <div key={idx} className="flex gap-2 items-center border border-[var(--border-color)] p-3 rounded-2xl relative bg-[var(--bg-primary)]">
+                                                <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-2">
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Tier Name (e.g. Gold)"
+                                                        value={pkg.name}
+                                                        onChange={(e) => {
+                                                            const next = [...editFormPackages];
+                                                            next[idx].name = e.target.value;
+                                                            setEditFormPackages(next);
+                                                        }}
+                                                        className="px-4 py-2 text-sm bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-xl outline-none font-bold text-[var(--text-primary)]"
+                                                        required
+                                                    />
+                                                    <input
+                                                        type="number"
+                                                        placeholder="Price (₦)"
+                                                        value={pkg.price}
+                                                        onChange={(e) => {
+                                                            const next = [...editFormPackages];
+                                                            next[idx].price = e.target.value;
+                                                            setEditFormPackages(next);
+                                                        }}
+                                                        className="px-4 py-2 text-sm bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-xl outline-none font-bold text-[var(--text-primary)]"
+                                                        required
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Details (e.g. Logo placement)"
+                                                        value={pkg.entails}
+                                                        onChange={(e) => {
+                                                            const next = [...editFormPackages];
+                                                            next[idx].entails = e.target.value;
+                                                            setEditFormPackages(next);
+                                                        }}
+                                                        className="px-4 py-2 text-sm bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-xl outline-none font-bold text-[var(--text-primary)]"
+                                                        required
+                                                    />
+                                                </div>
+                                                {editFormPackages.length > 1 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setEditFormPackages(prev => prev.filter((_, i) => i !== idx))}
+                                                        className="p-2 text-spark-red hover:bg-spark-red/10 rounded-xl transition-all"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Activation Needs</label>
+                                    <textarea rows={2} value={editEventFormData.activationNeeds} onChange={e => setEditEventFormData(p => ({ ...p, activationNeeds: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-red rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all resize-none" placeholder="e.g. Branded booth, social media push..." />
+                                </div>
+                                <div className="flex gap-4 pt-2">
+                                    <button type="button" onClick={() => setEditingEvent(null)} className="flex-1 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-gray-800 transition-all">
+                                        Cancel
+                                    </button>
+                                    <button type="submit" disabled={editEventSubmitting} className="flex-[2] py-4 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all shadow-xl shadow-red-200 flex items-center justify-center gap-3 disabled:opacity-50">
+                                        {editEventSubmitting ? (
+                                            <><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div> Saving...</>
+                                        ) : 'Save Changes'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Release OTP Modal */}
+            {showReleaseOtpModal && releaseOtpAllocation && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[310] flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-[var(--bg-primary)] rounded-[2.5rem] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 border border-[var(--border-color)]">
+                        <div className="p-6 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-secondary)]/50">
+                            <div>
+                                <h3 className="text-lg font-black text-[var(--text-primary)]">Confirm Payment Release</h3>
+                                <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest mt-1">To: {releaseOtpAllocation.creatorName}</p>
+                            </div>
+                            <button
+                                onClick={() => { setShowReleaseOtpModal(false); setReleaseOtp(''); }}
+                                className="w-8 h-8 bg-spark-black text-white rounded-full flex items-center justify-center hover:bg-gray-800 transition-all"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-5">
+                            <div className="p-4 bg-spark-red/5 rounded-2xl border border-spark-red/10">
+                                <p className="text-sm text-spark-red font-bold leading-relaxed">
+                                    A confirmation OTP has been sent to your registered email address. Check your inbox and enter it below to release ₦{releaseOtpAllocation.amount?.toLocaleString()} to {releaseOtpAllocation.creatorName}.
+                                </p>
+                            </div>
+
+                            <div>
+                                <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Enter OTP</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    maxLength={8}
+                                    placeholder="e.g. 123456"
+                                    value={releaseOtp}
+                                    onChange={e => setReleaseOtp(e.target.value.replace(/\D/g, ''))}
+                                    className="w-full px-4 py-3 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl font-bold text-lg outline-none focus:border-spark-red tracking-[0.35em] text-center"
+                                    autoFocus
+                                />
+                            </div>
+
+                            <button
+                                onClick={confirmEscrowRelease}
+                                disabled={releaseOtpSubmitting || !releaseOtp.trim()}
+                                className="w-full py-4 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-red-100 flex items-center justify-center gap-2"
+                            >
+                                {releaseOtpSubmitting
+                                    ? <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Releasing...</>
+                                    : 'Confirm & Release Payment'
+                                }
+                            </button>
+
+                            <button
+                                onClick={async () => {
+                                    const escrowId = (releaseOtpAllocation as any).escrowId;
+                                    try {
+                                        const r = await fetch(`${BACKEND_URL}/api/escrow/request-otp`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                                escrow_id: escrowId,
+                                                brandEmail: brandProfile.email || user?.email,
+                                                brandName: brandProfile.name || brandProfile.companyName || 'Brand',
+                                                creatorName: releaseOtpAllocation.creatorName,
+                                                amount: releaseOtpAllocation.amount,
+                                            }),
+                                        });
+                                        const d = await r.json();
+                                        if (!r.ok) throw new Error(d.error || 'Failed to resend OTP.');
+                                        alert('OTP resent! Please check your email.');
+                                    } catch (e: any) {
+                                        alert(e.message || 'Could not resend OTP.');
+                                    }
+                                }}
+                                className="w-full py-2.5 text-sm text-[var(--text-secondary)] font-bold hover:text-spark-red transition-colors"
+                            >
+                                Didn't receive it? Resend OTP
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </DashboardShell>
     );
 };

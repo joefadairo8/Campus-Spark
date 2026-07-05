@@ -1,7 +1,7 @@
-# Campus Spark - Project Brief
+# ABC-Rally - Project Brief
 
 ## 🚀 Overview
-**Campus Spark** is a multi-role digital ecosystem designed to bridge the gap between **Students**, **Organizations**, and **Brands**. It provides a centralized hub for campus gigs, partnerships, and event management, empowering students to build their portfolios while offering brands and organizations a direct line to campus communities.
+**ABC-Rally** is a multi-role digital ecosystem designed to bridge the gap between **Students**, **Organizations**, and **Brands**. It provides a centralized hub for campus gigs, partnerships, and event management, empowering students to build their portfolios while offering brands and organizations a direct line to campus communities.
 
 ---
 
@@ -66,7 +66,7 @@ The platform caters to four distinct user roles, each with a tailored experience
 
 ## 📂 Project Structure
 ```text
-Campus Spark/
+ABC-Rally/
 ├── components/          # UI Components & Dashboard Pages
 ├── server/              # Backend Express Application
 │   ├── prisma/          # Database Schema (schema.prisma)

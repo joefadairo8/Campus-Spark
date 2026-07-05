@@ -1,15 +1,16 @@
-﻿import React from 'react';
+import React from 'react';
 import { UserRole } from '../types';
+import { Briefcase, Zap, Building2 } from 'lucide-react';
 
 const PortalCard: React.FC<{ 
     title: string; 
     role: UserRole; 
     desc: string; 
-    icon: string; 
+    icon: React.ReactNode; 
     onAction: (page: string) => void 
 }> = ({ title, role, desc, icon, onAction }) => (
     <div className="bg-[var(--bg-primary)] p-10 rounded-[3rem] border border-[var(--border-color)] shadow-sm hover:shadow-2xl transition-all group flex flex-col card-hover">
-        <div className="w-16 h-16 bg-spark-red/5 text-spark-red rounded-2xl flex items-center justify-center text-3xl mb-8 group-hover:scale-110 transition-transform">
+        <div className="w-16 h-16 bg-spark-red/5 text-spark-red rounded-2xl flex items-center justify-center mb-8 group-hover:scale-110 transition-transform">
             {icon}
         </div>
         <h3 className="text-2xl font-fancy font-black text-[var(--text-primary)] mb-4 tracking-tighter">{title}</h3>
@@ -45,21 +46,21 @@ const DashboardPortal: React.FC<{ onNavigate: (page: string) => void }> = ({ onN
                         title="For Brands"
                         role={'Brand'}
                         desc="Access a nationwide directory of talent, manage large-scale campaigns, and track real-time ROI."
-                        icon="ðŸ’¼"
+                        icon={<Briefcase className="w-7 h-7" />}
                         onAction={onNavigate}
                     />
                     <PortalCard 
                         title="For Creators"
                         role={'Creator'}
                         desc="Build your professional profile as a creator, collaborate with brands, and track your growth."
-                        icon="âš¡"
+                        icon={<Zap className="w-7 h-7" />}
                         onAction={onNavigate}
                     />
                     <PortalCard 
                         title="For Associations"
                         role={'Organization'}
                         desc="List your campus Association, secure corporate sponsorships for events, and grow your impact."
-                        icon="ðŸ›ï¸"
+                        icon={<Building2 className="w-7 h-7" />}
                         onAction={onNavigate}
                     />
                 </div>

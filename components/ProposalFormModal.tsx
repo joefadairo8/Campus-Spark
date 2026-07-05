@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface ProposalFormModalProps {
     isOpen: boolean;
@@ -6,9 +6,18 @@ interface ProposalFormModalProps {
     recipientName: string;
     recipientId: string;
     initialMessage?: string;
-    onSubmit: (data: { recipientId: string; message: string; budget?: string; timeline?: string; documentUrl?: string; documentName?: string; }) => Promise<void>;
+    onSubmit: (data: { 
+        recipientId: string; 
+        message: string; 
+        budget?: string; 
+        timeline?: string; 
+        documentUrl?: string; 
+        documentName?: string;
+        packageName?: string;
+    }) => Promise<void>;
     title?: string;
     isSponsorship?: boolean;
+    selectedPackage?: { name: string; price: number; entails: string; } | null;
 }
 
 export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
@@ -19,7 +28,8 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
     initialMessage = '',
     onSubmit,
     title = 'Partnership Proposal',
-    isSponsorship = false
+    isSponsorship = false,
+    selectedPackage = null
 }) => {
     const [message, setMessage] = useState(initialMessage);
     const [budget, setBudget] = useState('');
@@ -27,6 +37,16 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
     const [file, setFile] = useState<File | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
+
+    useEffect(() => {
+        if (isOpen) {
+            setMessage(initialMessage);
+            setBudget(selectedPackage ? selectedPackage.price.toString() : '');
+            setTimeline('');
+            setFile(null);
+            setError('');
+        }
+    }, [isOpen, initialMessage, selectedPackage]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
@@ -50,7 +70,8 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
             return;
         }
 
-        if (isSponsorship && !budget.trim()) {
+        const checkoutBudget = selectedPackage ? selectedPackage.price.toString() : budget.trim();
+        if (isSponsorship && !checkoutBudget) {
             setError('Please enter a sponsorship amount');
             return;
         }
@@ -66,12 +87,9 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
                 try {
                     const formData = new FormData();
                     formData.append('file', file);
-                    formData.append('upload_preset', 'campus-spark');
-                    formData.append('resource_type', 'raw');
+                    formData.append('upload_preset', 'abc-rally');
 
-                    // Use /raw/upload so PDFs and DOCXs are stored as raw files
-                    // and Cloudinary returns a direct download URL (not an inline viewer URL)
-                    const uploadTask = fetch('https://api.cloudinary.com/v1_1/dk9tq3oop/raw/upload', {
+                    const uploadTask = fetch('https://api.cloudinary.com/v1_1/dk9tq3oop/auto/upload', {
                         method: 'POST',
                         body: formData
                     });
@@ -101,8 +119,9 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
             const apiTask = onSubmit({
                 recipientId,
                 message: message.trim(),
-                budget: budget.trim() || undefined,
+                budget: checkoutBudget || undefined,
                 timeline: timeline.trim() || undefined,
+                packageName: selectedPackage?.name || undefined,
                 documentUrl,
                 documentName
             });
@@ -135,13 +154,14 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
                 <button
                     onClick={onClose}
                     disabled={submitting}
+                    type="button"
                     className="absolute top-6 right-6 sm:top-8 sm:right-8 w-12 h-12 bg-[var(--bg-primary)] border border-[var(--border-color)] hover:bg-red-50 rounded-2xl flex items-center justify-center transition-all z-10 disabled:opacity-50"
                 >
                     <span className="text-2xl text-[var(--text-secondary)] hover:text-spark-red">×</span>
                 </button>
 
                 {/* Header */}
-                <div className={`bg-gradient-to-br ${isSponsorship ? 'from-green-600 to-green-800' : 'from-spark-red to-red-600'} p-8 sm:p-12`}>
+                <div className="bg-spark-red p-8 sm:p-12">
                     <h2 className="text-3xl sm:text-4xl font-black text-white mb-2">{title}</h2>
                     <p className="text-white/90 font-bold">{isSponsorship ? 'Directly sponsor' : 'Send a proposal to'} {recipientName}</p>
                 </div>
@@ -170,35 +190,50 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
                         />
                     </div>
 
-                    {/* Budget Field */}
-                    <div className="mb-6">
-                        <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">
-                            Budget (Optional)
-                        </label>
-                        <input
-                            type="text"
-                            value={budget}
-                            onChange={(e) => setBudget(e.target.value)}
-                            placeholder="e.g., â‚¦50,000 - â‚¦100,000"
-                            className="w-full px-4 py-3 border-2 border-[var(--border-color)] bg-[var(--bg-primary)] rounded-2xl focus:border-spark-red focus:outline-none font-bold text-[var(--text-primary)]"
-                            disabled={submitting}
-                        />
-                    </div>
+                    {/* Selected Sponsorship Package Detail Card / Budget Field */}
+                    {selectedPackage ? (
+                        <div className="mb-6 p-5 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl space-y-2 text-left">
+                            <p className="text-[10px] font-black text-spark-red uppercase tracking-widest">Sponsorship Package Selected</p>
+                            <div className="flex justify-between items-center">
+                                <span className="font-black text-base text-[var(--text-primary)]">{selectedPackage.name} Package</span>
+                                <span className="text-xs font-black text-green-700 bg-green-500/10 px-2.5 py-1 rounded-xl">
+                                    ₦{Number(selectedPackage.price).toLocaleString()}
+                                </span>
+                            </div>
+                            <p className="text-xs text-[var(--text-secondary)] font-medium leading-relaxed">{selectedPackage.entails}</p>
+                        </div>
+                    ) : (
+                        <div className="mb-6">
+                            <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">
+                                Budget (Optional)
+                            </label>
+                            <input
+                                type="text"
+                                value={budget}
+                                onChange={(e) => setBudget(e.target.value)}
+                                placeholder="e.g., ₦50,000 - ₦100,000"
+                                className="w-full px-4 py-3 border-2 border-[var(--border-color)] bg-[var(--bg-primary)] rounded-2xl focus:border-spark-red focus:outline-none font-bold text-[var(--text-primary)]"
+                                disabled={submitting}
+                            />
+                        </div>
+                    )}
 
                     {/* Timeline Field */}
-                    <div className="mb-8">
-                        <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">
-                            Timeline (Optional)
-                        </label>
-                        <input
-                            type="text"
-                            value={timeline}
-                            onChange={(e) => setTimeline(e.target.value)}
-                            placeholder="e.g., 3 months, 6 weeks"
-                            className="w-full px-4 py-3 border-2 border-[var(--border-color)] bg-[var(--bg-primary)] rounded-2xl focus:border-spark-red focus:outline-none font-bold text-[var(--text-primary)]"
-                            disabled={submitting}
-                        />
-                    </div>
+                    {!isSponsorship && (
+                        <div className="mb-8">
+                            <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">
+                                Timeline (Optional)
+                            </label>
+                            <input
+                                type="text"
+                                value={timeline}
+                                onChange={(e) => setTimeline(e.target.value)}
+                                placeholder="e.g., 3 months, 6 weeks"
+                                className="w-full px-4 py-3 border-2 border-[var(--border-color)] bg-[var(--bg-primary)] rounded-2xl focus:border-spark-red focus:outline-none font-bold text-[var(--text-primary)]"
+                                disabled={submitting}
+                            />
+                        </div>
+                    )}
 
                     {/* Document Upload Field */}
                     <div className="mb-8">

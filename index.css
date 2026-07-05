@@ -26,10 +26,28 @@ body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  font-size: 15px;
+  font-size: 16px;
   margin: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Global Button Baseline ────────────────────────────────────────────────
+   Ensures every <button> and <a> styled as a button is comfortably readable
+   and tappable. Tailwind's text-xs (10-11px) on buttons is overridden here.
+   Individual components can still use larger sizes — this is just the floor.
+──────────────────────────────────────────────────────────────────────────── */
+button,
+a[class*="rounded"],
+a[class*="px-"],
+a[class*="py-"] {
+  font-size: max(14px, 0.875rem);
+  min-height: 40px;
+}
+
+/* Nav-level text links (not pill buttons) keep their styling */
+nav a {
+  min-height: unset;
 }
 
 /* Global Beautiful Scrollbar */

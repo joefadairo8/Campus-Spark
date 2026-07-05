@@ -1,7 +1,7 @@
 {
-    "name": "campus-spark-server",
+    "name": "abc-rally-server",
     "version": "1.0.0",
-    "description": "Backend for Campus Spark",
+    "description": "Backend for ABC-Rally by Campus Himpact Hub",
     "main": "index.js",
     "type": "module",
     "scripts": {

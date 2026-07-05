@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import DashboardShell from './DashboardShell';
 import { db, auth, collection, query, where, getDocs, addDoc, serverTimestamp, doc, getDoc, limit, apiClient, updateDoc, orderBy } from '../firebase';
 import { UserRole } from '../types';
@@ -11,15 +11,30 @@ import { CreatorProfileModal } from './CreatorProfileModal';
 import { WalletService } from '../WalletService';
 import { notifyTopUp, notifyWithdrawal, notifyProposalReceived, notifyProposalStatus } from '../emailNotifier';
 import { Wallet, TrendingUp, Lock, Plus, Minus, Ticket, Edit, Trash2, Search, Handshake, Building2, FileText, Mail, BarChart3, Target, Smartphone, Lightbulb, Award, GraduationCap, BookOpen, Calendar, Users, Megaphone, Inbox, Timer } from 'lucide-react';
+const parsePackages = (packagesField: any): { name: string; price: number; entails: string; }[] => {
+    if (!packagesField) return [];
+    if (Array.isArray(packagesField)) return packagesField;
+    if (typeof packagesField === 'string') {
+        try {
+            const parsed = JSON.parse(packagesField);
+            if (Array.isArray(parsed)) return parsed;
+        } catch (e) {
+            return [{ name: 'Custom Sponsorship', price: 0, entails: packagesField }];
+        }
+    }
+    return [];
+};
 
 const AssociationDashboard: React.FC<{ 
     onNavigate: (page: string) => void, 
     onLogout: () => void,
     isDarkMode: boolean,
     toggleTheme: () => void,
+    themeMode: 'light' | 'dark' | 'auto',
     user: any
-}> = ({ onNavigate, onLogout, isDarkMode, toggleTheme, user }) => {
-    const [currentView, setCurrentView] = useState('events');
+}> = ({ onNavigate, onLogout, isDarkMode, toggleTheme, themeMode, user }) => {
+    const [currentView, setCurrentView] = useState('overview');
+    const [eventTab, setEventTab] = useState<'explore' | 'my'>('explore');
     const [wallet, setWallet] = useState<any>(null);
     const [transactions, setTransactions] = useState<any[]>([]);
     const [walletLoading, setWalletLoading] = useState(false);
@@ -46,7 +61,17 @@ const AssociationDashboard: React.FC<{
     const [creatorsLoading, setCreatorsLoading] = useState(false);
     const [allEvents, setAllEvents] = useState<any[]>([]);
     const [editingEvent, setEditingEvent] = useState<any>(null);
-    const [editFormData, setEditFormData] = useState({ name: '', date: '', description: '', targetSponsorship: '' });
+    const [editFormData, setEditFormData] = useState({ 
+        name: '', 
+        date: '', 
+        location: '',
+        description: '', 
+        targetSponsorship: '',
+        expectedAttendees: '',
+        sponsorshipSlots: '',
+        sponsorshipPackages: '',
+        activationNeeds: ''
+    });
     const [editSubmitting, setEditSubmitting] = useState(false);
     const [topUpAmount, setTopUpAmount] = useState('10000');
     const [gigs, setGigs] = useState<any[]>([]);
@@ -75,9 +100,31 @@ const AssociationDashboard: React.FC<{
     const [formData, setFormData] = useState({
         name: '',
         date: '',
+        location: '',
         description: '',
-        targetSponsorship: ''
+        targetSponsorship: '',
+        expectedAttendees: '',
+        sponsorshipSlots: '',
+        sponsorshipPackages: '',
+        activationNeeds: '',
+        // Volunteer campaign fields
+        needVolunteers: 'no', // 'no' | 'yes'
+        volunteerType: 'unpaid', // 'paid' | 'unpaid'
+        campaignTitle: '',
+        campaignCategory: 'Event Promo',
+        campaignBrief: '',
+        campaignBudget: '',
+        campaignDeadline: ''
     });
+
+    const [formPackages, setFormPackages] = useState<{ name: string; price: string; entails: string; }[]>([
+        { name: 'Bronze', price: '50000', entails: 'Logo placement on flyer' },
+        { name: 'Silver', price: '150000', entails: 'Logo placement, social mentions & standard event booth' },
+        { name: 'Gold', price: '400000', entails: 'Title sponsor, main stage logo, VIP booths & 5 tickets' }
+    ]);
+    const [editFormPackages, setEditFormPackages] = useState<{ name: string; price: string; entails: string; }[]>([
+        { name: '', price: '', entails: '' }
+    ]);
 
     const fetchWallet = async () => {
         const uid = orgProfile?.id || user?.id || auth.currentUser?.uid;
@@ -111,14 +158,14 @@ const AssociationDashboard: React.FC<{
     };
 
     const sidebarItems = [
-        { id: 'events', label: 'My Events', icon: <Ticket className="w-5 h-5" /> },
-        { id: 'gigs', label: 'Assign Gigs', icon: <Megaphone className="w-5 h-5" /> },
-        { id: 'creators', label: 'Find Creators', icon: <Search className="w-5 h-5" /> },
-        { id: 'wallet', label: 'Finance Hub', icon: <Wallet className="w-5 h-5" /> },
-        { id: 'proposals', label: 'Brand Partnerships', icon: <Handshake className="w-5 h-5" /> },
-        { id: 'brands', label: 'Explore Brands', icon: <Building2 className="w-5 h-5" /> },
-        { id: 'resources', label: 'Resource Hub', icon: <BookOpen className="w-5 h-5" /> },
+        { id: 'overview', label: 'Overview', icon: <BarChart3 className="w-5 h-5" /> },
         { id: 'profile', label: 'Association Profile', icon: <Users className="w-5 h-5" /> },
+        { id: 'events', label: 'Events', icon: <Ticket className="w-5 h-5" /> },
+        { id: 'brands', label: 'Brand Registry', icon: <Building2 className="w-5 h-5" /> },
+        { id: 'proposals', label: 'Proposals', icon: <Handshake className="w-5 h-5" /> },
+        { id: 'hiring', label: 'Creator/Vendor Hiring', icon: <Search className="w-5 h-5" /> },
+        { id: 'reports', label: 'Reports', icon: <FileText className="w-5 h-5" /> },
+        { id: 'wallet', label: 'Wallet', icon: <Wallet className="w-5 h-5" /> },
     ];
 
     const fetchOrgData = async () => {
@@ -244,7 +291,7 @@ const AssociationDashboard: React.FC<{
     }, [currentView, orgProfile?.id, user?.id, auth.currentUser?.uid]);
 
     useEffect(() => {
-        if (currentView === 'creators') {
+        if (currentView === 'creators' || currentView === 'hiring') {
             const fetchCreators = async () => {
                 setCreatorsLoading(true);
                 try {
@@ -283,7 +330,7 @@ const AssociationDashboard: React.FC<{
                 }
             };
             fetchCreators();
-        } else if (currentView === 'campus_events') {
+        } else if (currentView === 'events') {
             const fetchAllEvents = async () => {
                 setLoading(true);
                 try {
@@ -303,9 +350,41 @@ const AssociationDashboard: React.FC<{
         e.preventDefault();
         const user = auth.currentUser;
         if (!user) return;
-        if (!formData.name.trim() || !formData.date || !formData.description.trim() || !formData.targetSponsorship) {
+        if (!formData.name.trim() || !formData.date || !formData.location.trim() || !formData.description.trim() || !formData.targetSponsorship) {
             alert('Please fill in all fields.');
             return;
+        }
+
+        // Volunteer budget checks
+        const isVolunteer = formData.needVolunteers === 'yes';
+        const isPaid = isVolunteer && formData.volunteerType === 'paid';
+        const paidBudget = isPaid ? Number(formData.campaignBudget) : 0;
+
+        if (isVolunteer) {
+            if (!formData.campaignTitle.trim()) {
+                alert("Please provide a volunteer campaign title.");
+                return;
+            }
+            if (!formData.campaignBrief.trim()) {
+                alert("Please provide a volunteer campaign brief.");
+                return;
+            }
+            if (!formData.campaignDeadline) {
+                alert("Please select a volunteer campaign deadline.");
+                return;
+            }
+            if (isPaid) {
+                if (isNaN(paidBudget) || paidBudget <= 0) {
+                    alert("Please specify a valid paid volunteer budget.");
+                    return;
+                }
+                // Verify wallet balance
+                const w = await WalletService.getOrCreateWallet(user.uid);
+                if (w.balance < paidBudget) {
+                    alert(`Insufficient wallet balance for paid volunteers. You need ₦${paidBudget.toLocaleString()} volunteer budget but only have ₦${w.balance.toLocaleString()}.`);
+                    return;
+                }
+            }
         }
 
         setSubmitting(true);
@@ -315,22 +394,75 @@ const AssociationDashboard: React.FC<{
             const payload = {
                 name: formData.name.trim(),
                 date: formData.date,
+                location: formData.location.trim(),
                 description: formData.description.trim(),
                 targetSponsorship: Number(formData.targetSponsorship),
+                expectedAttendees: formData.expectedAttendees ? Number(formData.expectedAttendees) : 0,
+                sponsorshipSlots: formData.sponsorshipSlots ? Number(formData.sponsorshipSlots) : 0,
+                sponsorshipPackages: formPackages.map(pkg => ({ name: pkg.name, price: Number(pkg.price), entails: pkg.entails })),
+                activationNeeds: formData.activationNeeds.trim(),
                 hostName: orgName,
                 hostId: user.uid,
                 hostEmail: user.email,
+                hostRole: 'Organization',
                 university: uni,
                 status: 'published',
                 createdAt: new Date().toISOString()
             };
             const res = await apiClient.post('events', payload);
+            const createdEventId = res.data.id;
+
+            // Create Volunteer Gig if selected
+            if (isVolunteer) {
+                if (isPaid) {
+                    // Lock budget in escrow
+                    await WalletService.lockEscrow(user.uid, paidBudget, `Escrow for volunteer gig: ${formData.campaignTitle}`);
+                    await fetchWallet();
+                }
+
+                await addDoc(collection(db, 'campaigns'), {
+                    title: formData.campaignTitle.trim(),
+                    description: formData.campaignBrief.trim(),
+                    reward: paidBudget,
+                    type: isPaid ? 'paid' : 'volunteer',
+                    hostId: user.uid,
+                    hostName: orgName,
+                    status: 'open',
+                    createdAt: serverTimestamp(),
+                    eventId: createdEventId
+                });
+                alert(isPaid ? 'Event published and paid volunteer campaign launched!' : 'Event published and unpaid volunteer campaign launched!');
+            } else {
+                alert('Event published successfully!');
+            }
             
             setShowCreateModal(false);
-            setFormData({ name: '', date: '', description: '', targetSponsorship: '' });
+            setFormData({ 
+                name: '', 
+                date: '', 
+                location: '',
+                description: '', 
+                targetSponsorship: '',
+                expectedAttendees: '',
+                sponsorshipSlots: '',
+                sponsorshipPackages: '',
+                activationNeeds: '',
+                needVolunteers: 'no',
+                volunteerType: 'unpaid',
+                campaignTitle: '',
+                campaignCategory: 'Event Promo',
+                campaignBrief: '',
+                campaignBudget: '',
+                campaignDeadline: ''
+            });
+            setFormPackages([
+                { name: 'Bronze', price: '50000', entails: 'Logo placement on flyer' },
+                { name: 'Silver', price: '150000', entails: 'Logo placement, social mentions & standard event booth' },
+                { name: 'Gold', price: '400000', entails: 'Title sponsor, main stage logo, VIP booths & 5 tickets' }
+            ]);
             
             // Optimistic update: Add to local state immediately so it doesn't 'vanish' due to latency
-            const newEvent = { id: res.data.id, ...payload };
+            const newEvent = { id: createdEventId, ...payload };
             setMyEvents(prev => [newEvent, ...prev]);
         } catch (err: any) {
             console.error("Error creating event:", err);
@@ -345,9 +477,16 @@ const AssociationDashboard: React.FC<{
         setEditFormData({
             name: event.name,
             date: event.date,
+            location: event.location || '',
             description: event.description,
-            targetSponsorship: String(event.targetSponsorship)
+            targetSponsorship: String(event.targetSponsorship || 0),
+            expectedAttendees: String(event.expectedAttendees || ''),
+            sponsorshipSlots: String(event.sponsorshipSlots || ''),
+            sponsorshipPackages: '',
+            activationNeeds: event.activationNeeds || ''
         });
+        const parsed = parsePackages(event.sponsorshipPackages);
+        setEditFormPackages(parsed.length > 0 ? parsed.map(pkg => ({ name: pkg.name, price: String(pkg.price), entails: pkg.entails })) : [{ name: '', price: '', entails: '' }]);
     };
 
     const handleSaveEdit = async (e: React.FormEvent) => {
@@ -357,7 +496,10 @@ const AssociationDashboard: React.FC<{
         try {
             await apiClient.patch(`events/${editingEvent.id}`, {
                 ...editFormData,
-                targetSponsorship: Number(editFormData.targetSponsorship)
+                targetSponsorship: Number(editFormData.targetSponsorship),
+                expectedAttendees: editFormData.expectedAttendees ? Number(editFormData.expectedAttendees) : 0,
+                sponsorshipSlots: editFormData.sponsorshipSlots ? Number(editFormData.sponsorshipSlots) : 0,
+                sponsorshipPackages: editFormPackages.map(pkg => ({ name: pkg.name, price: Number(pkg.price), entails: pkg.entails }))
             });
             setEditingEvent(null);
             fetchMyEvents();
@@ -399,9 +541,10 @@ const AssociationDashboard: React.FC<{
         }
     };
 
-    const handleUpdateStatus = async (id: string, status: 'accepted' | 'rejected' | 'reviewing') => {
+    const handleUpdateStatus = async (id: string, status: string, counterData?: any) => {
         try {
-            await apiClient.patch(`proposals/${id}`, { status });
+            const payload = counterData ? { status, ...counterData } : { status };
+            await apiClient.patch(`proposals/${id}`, payload);
 
             // Notify the sender of the status change
             const prop = proposals.find(p => p.id === id);
@@ -414,7 +557,6 @@ const AssociationDashboard: React.FC<{
                 );
             }
 
-            alert(`Proposal ${status}!`);
             fetchProposals();
         } catch (error) {
             console.error("Update error:", error);
@@ -476,7 +618,7 @@ const AssociationDashboard: React.FC<{
             if (reward > 0) {
                 const w = await WalletService.getOrCreateWallet(orgId);
                 if (w.balance < reward) {
-                    throw new Error(`Insufficient funds. You need â‚¦${reward.toLocaleString()} but only have â‚¦${w.balance.toLocaleString()}.`);
+                    throw new Error(`Insufficient funds. You need ₦${reward.toLocaleString()} but only have ₦${w.balance.toLocaleString()}.`);
                 }
                 await WalletService.lockEscrow(orgId, reward, `Escrow for gig: ${gigFormData.title}`);
                 await fetchWallet();
@@ -639,6 +781,10 @@ const AssociationDashboard: React.FC<{
             case 'wallet':
                 return (
                     <div className="space-y-10 animate-in slide-in-from-bottom-4 duration-500">
+                        <div>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Association Wallet</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">Monitor incoming brand sponsorships, track organizational expenses, and request payouts.</p>
+                        </div>
                         {walletLoading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-purple"></div></div>
                         ) : (
@@ -748,73 +894,174 @@ const AssociationDashboard: React.FC<{
                     </div>
                 );
             case 'events':
+                const otherEvents = (allEvents || []).filter((e: any) => e.hostId !== (orgProfile?.id || user?.id || auth.currentUser?.uid));
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-                        <div className="flex justify-between items-center">
-                            <h3 className="text-xl font-black">My Campus Events</h3>
-                            <button
-                                onClick={() => setShowCreateModal(true)}
-                                className="bg-spark-purple text-white px-6 py-3 rounded-xl font-black shadow-lg shadow-purple-100 hover:bg-purple-700 transition-all active:scale-95"
-                            >
-                                + List New Event
-                            </button>
-                        </div>
-                        {loading ? (
-                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-purple"></div></div>
-                        ) : myEvents.length === 0 ? (
-                            <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)] animate-in fade-in duration-500">
-                                <div className="w-20 h-20 bg-spark-purple/5 rounded-3xl flex items-center justify-center mx-auto mb-6 text-spark-purple">
-                                    <Ticket className="w-10 h-10" />
-                                </div>
-                                <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">No events listed yet.</h3>
-                                <p className="text-[var(--text-secondary)] font-medium">Create your first event to start attracting brand sponsors.</p>
-                                <button
-                                    onClick={() => setShowCreateModal(true)}
-                                    className="mt-8 px-8 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-purple transition-all"
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 pb-2 border-b border-[var(--border-color)]">
+                            <div>
+                                <h2 className="text-3xl font-black text-[var(--text-primary)]">Events</h2>
+                                <p className="text-[var(--text-secondary)] mt-1 font-medium">Discover campus events or list and manage your own association events.</p>
+                            </div>
+                            
+                            {/* Sub-tabs */}
+                            <div className="flex bg-spark-purple/5 border border-spark-purple/10 p-1 rounded-2xl">
+                                <button 
+                                    onClick={() => setEventTab('explore')}
+                                    className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${eventTab === 'explore' ? 'bg-spark-purple text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-purple'}`}
                                 >
-                                    Get Started
+                                    Explore Events
+                                </button>
+                                <button 
+                                    onClick={() => setEventTab('my')}
+                                    className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${eventTab === 'my' ? 'bg-spark-purple text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-purple'}`}
+                                >
+                                    My Events
                                 </button>
                             </div>
-                        ) : (
-                            <div className="grid md:grid-cols-2 gap-8 animate-in slide-in-from-bottom-4 duration-500">
-                                {myEvents.map(event => (
-                                    <div key={event.id} className="bg-[var(--bg-primary)] p-10 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm group hover:shadow-xl transition-all">
-                                        <div className="flex justify-between items-start mb-8">
-                                            <div>
-                                                <h4 className="text-2xl font-black mb-1 group-hover:text-spark-purple transition-colors text-[var(--text-primary)]">{event.name}</h4>
-                                                <p className="text-sm font-bold text-spark-purple uppercase tracking-widest">{event.date}</p>
-                                            </div>
-                                            <span className="px-4 py-1.5 bg-green-50 text-green-600 rounded-full text-[10px] font-black uppercase tracking-widest">Published</span>
-                                        </div>
-                                        <p className="text-[var(--text-secondary)] text-sm mb-8 line-clamp-2 leading-relaxed">{event.description}</p>
-                                        <div className="flex items-center justify-between mb-8 pb-8 border-b border-[var(--border-color)]">
-                                            <div>
-                                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Target Funding</p>
-                                                <p className="text-xl font-black text-[var(--text-primary)]">â‚¦{Number(event.targetSponsorship).toLocaleString()}</p>
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={() => setSelectedEvent(event)}
-                                            className="w-full py-4 bg-spark-purple text-white font-black rounded-2xl hover:bg-purple-700 transition-all"
-                                        >
-                                            Manage Sponsorships
-                                        </button>
-                                        <div className="flex gap-2 mt-2">
-                                            <button
-                                                onClick={() => handleEditEvent(event)}
-                                                className="flex-1 py-3 bg-spark-black text-white font-black rounded-2xl hover:bg-gray-800 transition-all text-sm flex items-center justify-center gap-2"
-                                            >
-                                                <Edit className="w-4 h-4" /> Edit
-                                            </button>
-                                            <button
-                                                onClick={() => handleDeleteEvent(event.id)}
-                                                className="flex-1 py-3 bg-spark-purple text-white font-black rounded-2xl hover:bg-purple-700 transition-all text-sm flex items-center justify-center gap-2"
-                                            >
-                                                <Trash2 className="w-4 h-4" /> Delete
-                                            </button>
-                                        </div>
+                        </div>
+
+                        {eventTab === 'explore' ? (
+                            <div className="space-y-8 animate-in fade-in duration-300">
+                                {loading ? (
+                                    <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-purple"></div></div>
+                                ) : otherEvents.length === 0 ? (
+                                    <DashboardPlaceholder title="No Events" icon={<Calendar className="w-9 h-9" />} description="There are no upcoming campus events from other hosts at the moment." />
+                                ) : (
+                                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                                        {otherEvents.map(event => {
+                                            const attendance = event.expectedAttendees ? `${event.expectedAttendees.toLocaleString()} expected` : "TBD";
+                                            const slots = event.sponsorshipSlots ? `${event.sponsorshipSlots} slots` : "TBD";
+                                            const activation = event.activationNeeds || "No specific activation details listed.";
+                                            return (
+                                                <div key={event.id} className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] shadow-sm hover:shadow-xl transition-all overflow-hidden flex flex-col group relative">
+                                                    <div className="h-3 bg-spark-purple"></div>
+                                                    <div className="p-8 flex-1 flex flex-col justify-between">
+                                                        <div>
+                                                            <div className="mb-4 flex flex-wrap items-center gap-2">
+                                                                <div className="bg-[var(--bg-primary)] border border-[var(--border-color)] shadow-sm px-3 py-1 rounded-full text-[9px] font-black uppercase text-spark-purple tracking-wider inline-block">
+                                                                    {event.date}
+                                                                </div>
+                                                                <div className="bg-[var(--bg-primary)] border border-[var(--border-color)] shadow-sm px-3 py-1 rounded-full text-[9px] font-black uppercase text-spark-purple tracking-wider inline-block max-w-[150px] truncate">
+                                                                    {event.location || 'Campus'}
+                                                                </div>
+                                                            </div>
+                                                            
+                                                            <h3 className="text-xl font-black mb-1 group-hover:text-spark-purple transition-colors text-[var(--text-primary)]">
+                                                                {event.name}
+                                                            </h3>
+                                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-4">
+                                                                Hosted by: <span className="text-spark-purple">{event.hostName}</span>
+                                                            </p>
+                                                            
+                                                            <p className="text-[var(--text-secondary)] text-xs mb-6 line-clamp-3 leading-relaxed font-medium">
+                                                                {event.description}
+                                                            </p>
+
+                                                            {/* Custom Detail Items */}
+                                                            <div className="space-y-2 mb-6 border-t border-b border-[var(--border-color)] py-4 text-xs font-semibold text-[var(--text-secondary)]">
+                                                                <div className="flex justify-between">
+                                                                    <span>👥 Attendance:</span>
+                                                                    <span className="font-bold text-[var(--text-primary)]">{attendance}</span>
+                                                                </div>
+                                                                <div className="flex justify-between">
+                                                                    <span>🎟️ Slots:</span>
+                                                                    <span className="font-bold text-[var(--text-primary)]">{slots}</span>
+                                                                </div>
+                                                                <div className="space-y-1 mt-2">
+                                                                    <p className="text-[10px] font-black uppercase text-spark-purple tracking-wider">💡 Activation Needs:</p>
+                                                                    <p className="text-xs leading-normal font-medium italic text-[var(--text-secondary)]">{activation}</p>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        <div className="mt-auto pt-2 flex items-center justify-between">
+                                                            <div>
+                                                                <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase tracking-wider mb-0.5">Sponsorship Goal</p>
+                                                                <p className="text-base font-black text-[var(--text-primary)]">₦{Number(event.targetSponsorship || 0).toLocaleString()}</p>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => setSelectedEvent(event)}
+                                                                className="px-5 py-2.5 bg-spark-black text-white font-black text-xs uppercase tracking-widest rounded-xl hover:bg-spark-purple hover:shadow-lg transition-all active:scale-95"
+                                                            >
+                                                                Event Details
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
-                                ))}
+                                )}
+                            </div>
+                        ) : (
+                            <div className="space-y-8 animate-in fade-in duration-300">
+                                <div className="flex justify-between items-center">
+                                    <h3 className="text-xl font-black">My Events</h3>
+                                    <button
+                                        onClick={() => setShowCreateModal(true)}
+                                        className="bg-spark-purple text-white px-6 py-3 rounded-xl font-black shadow-lg shadow-purple-100 hover:bg-purple-700 transition-all active:scale-95"
+                                    >
+                                        + List New Event
+                                    </button>
+                                </div>
+                                {loading ? (
+                                    <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-purple"></div></div>
+                                ) : myEvents.length === 0 ? (
+                                    <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)] animate-in fade-in duration-500">
+                                        <div className="w-20 h-20 bg-spark-purple/5 rounded-3xl flex items-center justify-center mx-auto mb-6 text-spark-purple">
+                                            <Ticket className="w-10 h-10" />
+                                        </div>
+                                        <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">No events listed yet.</h3>
+                                        <p className="text-[var(--text-secondary)] font-medium">Create your first event to start attracting brand sponsors.</p>
+                                        <button
+                                            onClick={() => setShowCreateModal(true)}
+                                            className="mt-8 px-8 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-purple transition-all"
+                                        >
+                                            Get Started
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="grid md:grid-cols-2 gap-8 animate-in slide-in-from-bottom-4 duration-500">
+                                        {myEvents.map(event => (
+                                            <div key={event.id} className="bg-[var(--bg-primary)] p-10 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm group hover:shadow-xl transition-all">
+                                                <div className="flex justify-between items-start mb-8">
+                                                    <div>
+                                                        <h4 className="text-2xl font-black mb-1 group-hover:text-spark-purple transition-colors text-[var(--text-primary)]">{event.name}</h4>
+                                                        <p className="text-sm font-bold text-spark-purple uppercase tracking-widest">{event.date}</p>
+                                                    </div>
+                                                    <span className="px-4 py-1.5 bg-green-50 text-green-600 rounded-full text-[10px] font-black uppercase tracking-widest">Published</span>
+                                                </div>
+                                                <p className="text-[var(--text-secondary)] text-sm mb-8 line-clamp-2 leading-relaxed">{event.description}</p>
+                                                <div className="flex items-center justify-between mb-8 pb-8 border-b border-[var(--border-color)]">
+                                                    <div>
+                                                        <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Target Funding</p>
+                                                        <p className="text-xl font-black text-[var(--text-primary)]">₦{Number(event.targetSponsorship).toLocaleString()}</p>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => setSelectedEvent(event)}
+                                                    className="w-full py-4 bg-spark-purple text-white font-black rounded-2xl hover:bg-purple-700 transition-all"
+                                                >
+                                                    Manage Sponsorships
+                                                </button>
+                                                <div className="flex gap-2 mt-2">
+                                                    <button
+                                                        onClick={() => handleEditEvent(event)}
+                                                        className="flex-1 py-3 bg-spark-black text-white font-black rounded-2xl hover:bg-gray-800 transition-all text-sm flex items-center justify-center gap-2"
+                                                    >
+                                                        <Edit className="w-4 h-4" /> Edit
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeleteEvent(event.id)}
+                                                        className="flex-1 py-3 bg-spark-purple text-white font-black rounded-2xl hover:bg-purple-700 transition-all text-sm flex items-center justify-center gap-2"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" /> Delete
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -928,7 +1175,7 @@ const AssociationDashboard: React.FC<{
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {creators.map(profile => (
                                     <div key={profile.id} className="group bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] overflow-hidden shadow-sm hover:shadow-xl transition-all">
-                                        <div className="h-20 bg-gradient-to-r from-spark-purple/10 to-orange-50"></div>
+                                        <div className="h-20 bg-spark-red/10"></div>
                                         <div className="px-6 pb-6 -mt-8">
                                             <div className="w-16 h-16 rounded-2xl bg-[var(--bg-primary)] border-4 border-[var(--bg-primary)] shadow-lg flex items-center justify-center text-2xl font-black text-spark-purple overflow-hidden mb-3">
                                                 {profile.imageUrl ? <img src={profile.imageUrl} className="w-full h-full object-cover" alt={profile.name} /> : (profile.name || '?').charAt(0)}
@@ -988,6 +1235,10 @@ const AssociationDashboard: React.FC<{
             case 'proposals':
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                        <div>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Sponsorship Proposals</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">Review partnership offers, event sponsorships, and direct collaboration proposals from brands.</p>
+                        </div>
                         {loading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-purple"></div></div>
                         ) : proposals.length === 0 ? (
@@ -1067,7 +1318,11 @@ const AssociationDashboard: React.FC<{
                 );
             case 'brands':
                 return (
-                    <div className="animate-in slide-in-from-bottom-4 duration-500">
+                    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                        <div>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Brand Registry</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">Browse top corporate and local brands looking for event sponsorships and ambassador partnerships.</p>
+                        </div>
                         {loading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-purple"></div></div>
                         ) : brands.length === 0 ? (
@@ -1129,7 +1384,7 @@ const AssociationDashboard: React.FC<{
                 };
                 return (
                     <div className="space-y-10 animate-in slide-in-from-bottom-4 duration-500">
-                        <div className="bg-gradient-to-br from-spark-purple to-purple-500 rounded-[2.5rem] p-10 text-white relative overflow-hidden">
+                        <div className="bg-spark-red rounded-[2.5rem] p-10 text-white relative overflow-hidden">
                             <div className="absolute top-0 right-0 p-10 opacity-10">
                                 <BookOpen className="w-32 h-32" />
                             </div>
@@ -1169,7 +1424,179 @@ const AssociationDashboard: React.FC<{
                     </div>
                 );
             case 'profile':
-                return <ProfileView user={orgProfile} onUpdate={fetchOrgData} />;
+                return (
+                    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                        <div>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Profile Settings</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">Manage your association's metadata, logo, social links, and security settings.</p>
+                        </div>
+                        <ProfileView user={orgProfile} onUpdate={fetchOrgData} />
+                    </div>
+                );
+
+            case 'overview':
+                return (
+                    <div className="space-y-10 animate-in slide-in-from-bottom-4 duration-500">
+                        <div>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Welcome back, {orgProfile?.name || 'Association'}!</h2>
+                            <p className="text-[var(--text-secondary)] font-medium mt-1">Here's what's happening with your association today.</p>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                            {[
+                                { label: 'Active Events', value: myEvents.filter((e: any) => new Date(e.date) >= new Date()).length, icon: <Ticket className="w-6 h-6" />, color: 'text-purple-500 bg-purple-500/10 border-purple-500/20' },
+                                { label: 'Pending Proposals', value: proposals.filter((p: any) => p.status === 'pending').length, icon: <Handshake className="w-6 h-6" />, color: 'text-amber-500 bg-amber-500/10 border-amber-500/20' },
+                                { label: 'Wallet Balance', value: `₦${(wallet?.balance || 0).toLocaleString()}`, icon: <Wallet className="w-6 h-6" />, color: 'text-green-500 bg-green-500/10 border-green-500/20' },
+                                { label: 'Total Proposals', value: proposals.length, icon: <FileText className="w-6 h-6" />, color: 'text-blue-500 bg-blue-500/10 border-blue-500/20' },
+                            ].map((stat, i) => (
+                                <div key={i} className="bg-[var(--bg-primary)] p-6 rounded-[2rem] border border-[var(--border-color)] shadow-sm">
+                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${stat.color} mb-3`}>{stat.icon}</div>
+                                    <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">{stat.label}</p>
+                                    <p className="text-2xl font-black text-[var(--text-primary)] mt-1">{stat.value}</p>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="grid md:grid-cols-2 gap-8">
+                            <div className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)]">
+                                <div className="flex items-center justify-between mb-6">
+                                    <h3 className="text-lg font-black text-[var(--text-primary)]">Upcoming Events</h3>
+                                    <button onClick={() => setCurrentView('events')} className="text-xs font-black text-spark-red uppercase tracking-widest hover:underline">View All →</button>
+                                </div>
+                                {myEvents.filter((e: any) => new Date(e.date) >= new Date()).slice(0, 3).length === 0 ? (
+                                    <p className="text-[var(--text-secondary)] text-sm font-medium">No upcoming events. <button onClick={() => setCurrentView('events')} className="text-spark-red font-black">Create one →</button></p>
+                                ) : myEvents.filter((e: any) => new Date(e.date) >= new Date()).slice(0, 3).map((evt: any) => (
+                                    <div key={evt.id} className="flex items-center gap-4 py-3 border-b border-[var(--border-color)] last:border-0">
+                                        <div className="w-10 h-10 bg-spark-red/10 rounded-xl flex items-center justify-center text-spark-red flex-shrink-0"><Ticket className="w-5 h-5" /></div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-black text-[var(--text-primary)] truncate">{evt.name || evt.title}</p>
+                                            <p className="text-xs text-[var(--text-secondary)] font-medium">{evt.date ? new Date(evt.date).toLocaleDateString('en-NG', { dateStyle: 'medium' }) : 'TBD'}</p>
+                                        </div>
+                                        <span className="text-[10px] font-black px-2 py-1 bg-green-50 text-green-600 rounded-full whitespace-nowrap">₦{Number(evt.targetSponsorship || 0).toLocaleString()} target</span>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)]">
+                                <h3 className="text-lg font-black text-[var(--text-primary)] mb-6">Quick Start Checklist</h3>
+                                <div className="space-y-3">
+                                    {[
+                                        { label: 'Complete your association profile', action: () => setCurrentView('profile') },
+                                        { label: 'Create your first event', action: () => setCurrentView('events') },
+                                        { label: 'Set up sponsorship packages', action: () => setCurrentView('sponsorship_packages') },
+                                        { label: 'Explore brand partnerships', action: () => setCurrentView('proposals') },
+                                        { label: 'Fund your association wallet', action: () => setCurrentView('wallet') },
+                                    ].map((item, i) => (
+                                        <button key={i} onClick={item.action} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-[var(--bg-secondary)] transition-all text-left group">
+                                            <div className="w-6 h-6 rounded-full border-2 border-[var(--border-color)] flex-shrink-0 group-hover:border-spark-red transition-colors" />
+                                            <span className="text-sm font-bold text-[var(--text-primary)] group-hover:text-spark-red transition-colors">{item.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+
+            // Sponsorship Packages tab removed and integrated into event creation flow per user request
+
+            case 'hiring':
+                return (
+                    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                        <div>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Creator & Vendor Hiring</h2>
+                            <p className="text-[var(--text-secondary)] font-medium mt-1">Find campus creators, MCs, ushers, photographers, and vendors for your events.</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            {['All', 'Photographers', 'Videographers', 'MCs/Hosts', 'Graphic Designers', 'Ushers', 'Social Media Creators'].map(cat => (
+                                <button key={cat} className="px-4 py-2 bg-[var(--bg-secondary)] text-[var(--text-primary)] text-xs font-black rounded-full border border-[var(--border-color)] hover:bg-spark-red hover:text-white hover:border-spark-red transition-all uppercase tracking-wider">{cat}</button>
+                            ))}
+                        </div>
+                        {creatorsLoading ? (
+                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
+                        ) : creators.length === 0 ? (
+                            <DashboardPlaceholder title="No Creators Found" icon={<Search className="w-10 h-10" />} description="No creators are currently available. Check back soon or broaden your search criteria." />
+                        ) : (
+                            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {creators.slice(0, 12).map((creator: any) => (
+                                    <div key={creator.id} className="bg-[var(--bg-primary)] p-6 rounded-[2rem] border border-[var(--border-color)] shadow-sm hover:shadow-md transition-all">
+                                        <div className="flex items-start gap-4 mb-4">
+                                            <div className="w-14 h-14 rounded-2xl bg-spark-red/10 flex items-center justify-center text-spark-red font-black text-xl flex-shrink-0 overflow-hidden">
+                                                {creator.imageUrl ? <img src={creator.imageUrl} alt={creator.name} className="w-full h-full object-cover rounded-2xl" /> : creator.name?.charAt(0) || '?'}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <h4 className="font-black text-[var(--text-primary)] truncate">{creator.name}</h4>
+                                                <p className="text-xs font-bold text-spark-red uppercase tracking-widest">{creator.university || 'Campus Creator'}</p>
+                                            </div>
+                                        </div>
+                                        {creator.bio && <p className="text-xs text-[var(--text-secondary)] line-clamp-2 mb-4">{creator.bio}</p>}
+                                        <button
+                                            onClick={() => { setProposalRecipient({ id: creator.id, name: creator.name }); setShowProposalModal(true); }}
+                                            className="w-full py-2.5 bg-spark-black text-white font-black rounded-xl hover:bg-spark-red transition-all text-xs uppercase tracking-wider"
+                                        >
+                                            Send Gig Offer
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                );
+
+            case 'reports':
+                return (
+                    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                        <div>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Reports & Analytics</h2>
+                            <p className="text-[var(--text-secondary)] font-medium mt-1">Generate event summaries, sponsorship acknowledgments, and reach reports.</p>
+                        </div>
+                        <div className="grid md:grid-cols-3 gap-6">
+                            {[
+                                { label: 'Total Events Hosted', value: myEvents.length, sub: 'All time' },
+                                { label: 'Accepted Partnerships', value: proposals.filter((p: any) => p.status === 'accepted' || p.status === 'paid').length, sub: 'Sponsorships secured' },
+                                { label: 'Total Sponsorship Target', value: `₦${myEvents.reduce((acc: number, e: any) => acc + Number(e.targetSponsorship || 0), 0).toLocaleString()}`, sub: 'Across all events' },
+                            ].map((s, i) => (
+                                <div key={i} className="bg-[var(--bg-primary)] p-6 rounded-[2rem] border border-[var(--border-color)]">
+                                    <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">{s.label}</p>
+                                    <p className="text-3xl font-black text-[var(--text-primary)] mt-1">{s.value}</p>
+                                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">{s.sub}</p>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)]">
+                            <h3 className="text-xl font-black text-[var(--text-primary)] mb-6">Event Reports</h3>
+                            {myEvents.length === 0 ? (
+                                <p className="text-[var(--text-secondary)]">No events yet. <button onClick={() => setCurrentView('events')} className="text-spark-red font-black">Create your first event →</button></p>
+                            ) : (
+                                <div className="space-y-4">
+                                    {myEvents.map((evt: any) => (
+                                        <div key={evt.id} className="p-6 rounded-2xl border border-[var(--border-color)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                            <div>
+                                                <h4 className="font-black text-[var(--text-primary)]">{evt.name || evt.title}</h4>
+                                                <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                                                    {evt.date ? new Date(evt.date).toLocaleDateString('en-NG', { dateStyle: 'long' }) : 'Date TBD'} &nbsp;·&nbsp; Target: ₦{Number(evt.targetSponsorship || 0).toLocaleString()}
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    const report = `ABC-RALLY — Event Report\n${'='.repeat(40)}\nEvent: ${evt.name || evt.title}\nDate: ${evt.date ? new Date(evt.date).toLocaleDateString('en-NG', { dateStyle: 'long' }) : 'TBD'}\nLocation: ${evt.location || orgProfile?.university || 'Campus'}\nSponsorship Target: ₦${Number(evt.targetSponsorship || 0).toLocaleString()}\nOrganiser: ${orgProfile?.name || 'Association'}\nGenerated: ${new Date().toLocaleDateString('en-NG', { dateStyle: 'long' })}\n${'='.repeat(40)}\n`;
+                                                    const blob = new Blob([report], { type: 'text/plain' });
+                                                    const url = URL.createObjectURL(blob);
+                                                    const a = document.createElement('a');
+                                                    a.href = url;
+                                                    a.download = `Event-Report-${(evt.name || 'event').replace(/\s+/g, '-')}.txt`;
+                                                    a.click();
+                                                    URL.revokeObjectURL(url);
+                                                }}
+                                                className="px-6 py-2.5 bg-spark-black text-white font-black rounded-xl hover:bg-spark-red transition-all text-xs uppercase tracking-wider whitespace-nowrap flex items-center gap-2"
+                                            >
+                                                <FileText className="w-4 h-4" /> Download Report
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+
             default:
                 return <div>Coming Soon</div>;
         }
@@ -1184,9 +1611,11 @@ const AssociationDashboard: React.FC<{
             sidebarItems={sidebarItems}
             userName={orgProfile?.name || "Association Leader"}
             userSub={orgProfile?.university || "Campus Organizer"}
+            userId={user?.id || user?.uid}
             userImage={orgProfile?.imageUrl}
             isDarkMode={isDarkMode}
             toggleTheme={toggleTheme}
+            themeMode={themeMode}
         >
             {/* Wallet Summary Strip - Always visible for quick access */}
             {/* Wallet Summary Strip removed from landing page per user request */}
@@ -1204,7 +1633,7 @@ const AssociationDashboard: React.FC<{
                         </div>
                         <form onSubmit={handleCreateEvent} className="p-10 space-y-8 overflow-y-auto max-h-[70vh]">
                             <div className="space-y-3">
-                                <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Event Name</label>
+                                <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Event Name *</label>
                                 <input
                                     required
                                     type="text"
@@ -1216,7 +1645,7 @@ const AssociationDashboard: React.FC<{
                             </div>
                             <div className="grid md:grid-cols-2 gap-8">
                                 <div className="space-y-3">
-                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Event Date</label>
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Event Date *</label>
                                     <input
                                         required
                                         type="date"
@@ -1226,7 +1655,7 @@ const AssociationDashboard: React.FC<{
                                     />
                                 </div>
                                 <div className="space-y-3">
-                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Sponsorship Target (â‚¦)</label>
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Sponsorship Target (₦) *</label>
                                     <input
                                         required
                                         type="number"
@@ -1237,8 +1666,43 @@ const AssociationDashboard: React.FC<{
                                     />
                                 </div>
                             </div>
+                            <div className="grid md:grid-cols-2 gap-8">
+                                <div className="space-y-3">
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Expected Attendees</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-purple/10 outline-none font-bold"
+                                        placeholder="e.g. 500"
+                                        value={formData.expectedAttendees}
+                                        onChange={(e) => setFormData({ ...formData, expectedAttendees: e.target.value })}
+                                    />
+                                </div>
+                                <div className="space-y-3">
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Sponsorship Slots</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-purple/10 outline-none font-bold"
+                                        placeholder="e.g. 3"
+                                        value={formData.sponsorshipSlots}
+                                        onChange={(e) => setFormData({ ...formData, sponsorshipSlots: e.target.value })}
+                                    />
+                                </div>
+                            </div>
                             <div className="space-y-3">
-                                <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Event Description</label>
+                                <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Location *</label>
+                                <input
+                                    required
+                                    type="text"
+                                    className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-purple/10 outline-none font-bold"
+                                    placeholder="e.g. Main Auditorium"
+                                    value={formData.location}
+                                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                                />
+                            </div>
+                            <div className="space-y-3">
+                                <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Event Description *</label>
                                 <textarea
                                     required
                                     rows={4}
@@ -1247,6 +1711,198 @@ const AssociationDashboard: React.FC<{
                                     value={formData.description}
                                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                 ></textarea>
+                            </div>
+                            <div className="space-y-4">
+                                <div className="flex justify-between items-center">
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Sponsorship Packages</label>
+                                    <button
+                                        type="button"
+                                        onClick={() => setFormPackages(prev => [...prev, { name: '', price: '', entails: '' }])}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-spark-purple/10 text-spark-purple rounded-xl font-bold text-xs hover:bg-spark-purple/20 transition-all"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" /> Add Tier
+                                    </button>
+                                </div>
+                                <div className="space-y-3">
+                                    {formPackages.map((pkg, idx) => (
+                                        <div key={idx} className="flex gap-2 items-center border border-[var(--border-color)] p-3 rounded-2xl relative bg-[var(--bg-primary)]">
+                                            <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-2">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Tier Name (e.g. Gold)"
+                                                    value={pkg.name}
+                                                    onChange={(e) => {
+                                                        const next = [...formPackages];
+                                                        next[idx].name = e.target.value;
+                                                        setFormPackages(next);
+                                                    }}
+                                                    className="px-4 py-2 text-sm bg-[var(--bg-secondary)] border-0 rounded-xl outline-none font-bold text-[var(--text-primary)] focus:ring-2 focus:ring-spark-purple/20"
+                                                    required
+                                                />
+                                                <input
+                                                    type="number"
+                                                    placeholder="Price (₦)"
+                                                    value={pkg.price}
+                                                    onChange={(e) => {
+                                                        const next = [...formPackages];
+                                                        next[idx].price = e.target.value;
+                                                        setFormPackages(next);
+                                                    }}
+                                                    className="px-4 py-2 text-sm bg-[var(--bg-secondary)] border-0 rounded-xl outline-none font-bold text-[var(--text-primary)] focus:ring-2 focus:ring-spark-purple/20"
+                                                    required
+                                                />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Details (e.g. Logo placement)"
+                                                    value={pkg.entails}
+                                                    onChange={(e) => {
+                                                        const next = [...formPackages];
+                                                        next[idx].entails = e.target.value;
+                                                        setFormPackages(next);
+                                                    }}
+                                                    className="px-4 py-2 text-sm bg-[var(--bg-secondary)] border-0 rounded-xl outline-none font-bold text-[var(--text-primary)] focus:ring-2 focus:ring-spark-purple/20"
+                                                    required
+                                                />
+                                            </div>
+                                            {formPackages.length > 1 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFormPackages(prev => prev.filter((_, i) => i !== idx))}
+                                                    className="p-2 text-spark-red hover:bg-spark-red/10 rounded-xl transition-all"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                                <p className="text-[10px] text-[var(--text-secondary)] font-medium">Define your sponsorship tiers, prices, and perks.</p>
+                            </div>
+                            <div className="space-y-3">
+                                <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Activation Needs</label>
+                                <textarea
+                                    rows={2}
+                                    className="w-full px-6 py-4 bg-[var(--bg-secondary)] border-0 rounded-2xl focus:ring-4 focus:ring-spark-purple/10 outline-none font-bold resize-none"
+                                    placeholder="e.g. Branded booth, social media takeover, banner placements..."
+                                    value={formData.activationNeeds}
+                                    onChange={(e) => setFormData({ ...formData, activationNeeds: e.target.value })}
+                                ></textarea>
+                            </div>
+
+                            {/* ── Volunteer Recruitment Section ── */}
+                            <div className="rounded-2xl border border-[var(--border-color)] overflow-hidden text-left">
+                                <div className="px-6 py-5 bg-[var(--bg-secondary)] flex items-center justify-between">
+                                    <div>
+                                        <p className="font-black text-[var(--text-primary)] text-base">Need Volunteers for this Event?</p>
+                                        <p className="text-xs text-[var(--text-secondary)] mt-0.5">Recruiting volunteers will also create a campaign listing</p>
+                                    </div>
+                                    <div className="flex items-center gap-5">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                name="needVolunteers"
+                                                className="w-4 h-4 text-spark-purple accent-spark-purple"
+                                                checked={formData.needVolunteers === 'no'}
+                                                onChange={() => setFormData(prev => ({ ...prev, needVolunteers: 'no' }))}
+                                            />
+                                            <span className="text-xs font-black text-[var(--text-primary)] uppercase tracking-wider">No</span>
+                                        </label>
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                name="needVolunteers"
+                                                className="w-4 h-4 text-spark-purple accent-spark-purple"
+                                                checked={formData.needVolunteers === 'yes'}
+                                                onChange={() => setFormData(prev => ({ ...prev, needVolunteers: 'yes' }))}
+                                            />
+                                            <span className="text-xs font-black text-[var(--text-primary)] uppercase tracking-wider">Yes</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                {formData.needVolunteers === 'yes' && (
+                                    <div className="p-6 bg-[var(--bg-primary)] border-t border-[var(--border-color)] space-y-6">
+                                        <div className="flex items-center justify-between pb-4 border-b border-[var(--border-color)]">
+                                            <div>
+                                                <p className="font-bold text-[var(--text-primary)] text-sm">Volunteer Reward Type</p>
+                                                <p className="text-xs text-[var(--text-secondary)]">Choose between unpaid experience or paid roles</p>
+                                            </div>
+                                            <div className="flex bg-[var(--bg-secondary)] p-1 rounded-xl">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFormData(prev => ({ ...prev, volunteerType: 'unpaid' }))}
+                                                    className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${
+                                                        formData.volunteerType === 'unpaid'
+                                                            ? 'bg-spark-purple text-white shadow-sm'
+                                                            : 'text-[var(--text-secondary)] hover:text-spark-purple'
+                                                    }`}
+                                                >
+                                                    Unpaid (Exp)
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFormData(prev => ({ ...prev, volunteerType: 'paid' }))}
+                                                    className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${
+                                                        formData.volunteerType === 'paid'
+                                                            ? 'bg-spark-purple text-white shadow-sm'
+                                                            : 'text-[var(--text-secondary)] hover:text-spark-purple'
+                                                    }`}
+                                                >
+                                                    Paid Gig
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            <div className="space-y-2">
+                                                <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Campaign / Gig Title *</label>
+                                                <input
+                                                    type="text"
+                                                    className="w-full px-5 py-3.5 bg-[var(--bg-secondary)] border-0 rounded-2xl outline-none font-bold text-xs focus:ring-4 focus:ring-spark-purple/10 text-[var(--text-primary)]"
+                                                    placeholder="e.g. Event Ushers & Social Media Promoters"
+                                                    value={formData.campaignTitle}
+                                                    onChange={e => setFormData(prev => ({ ...prev, campaignTitle: e.target.value }))}
+                                                />
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Deliverables / Brief Guidelines *</label>
+                                                <textarea
+                                                    rows={3}
+                                                    className="w-full px-5 py-3.5 bg-[var(--bg-secondary)] border-0 rounded-2xl outline-none font-bold text-xs focus:ring-4 focus:ring-spark-purple/10 resize-none text-[var(--text-primary)]"
+                                                    placeholder="List down details of what volunteers/creators will do..."
+                                                    value={formData.campaignBrief}
+                                                    onChange={e => setFormData(prev => ({ ...prev, campaignBrief: e.target.value }))}
+                                                />
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="space-y-2">
+                                                    <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Application Deadline *</label>
+                                                    <input
+                                                        type="date"
+                                                        className="w-full px-5 py-3.5 bg-[var(--bg-secondary)] border-0 rounded-2xl outline-none font-bold text-xs focus:ring-4 focus:ring-spark-purple/10 text-[var(--text-primary)]"
+                                                        value={formData.campaignDeadline}
+                                                        onChange={e => setFormData(prev => ({ ...prev, campaignDeadline: e.target.value }))}
+                                                    />
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Total Reward Budget (₦)</label>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        disabled={formData.volunteerType === 'unpaid'}
+                                                        placeholder={formData.volunteerType === 'unpaid' ? '0 (Experience/Perks)' : 'e.g. 50000'}
+                                                        className="w-full px-5 py-3.5 bg-[var(--bg-secondary)] border-0 rounded-2xl outline-none font-bold text-xs focus:ring-4 focus:ring-spark-purple/10 disabled:opacity-50 text-[var(--text-primary)]"
+                                                        value={formData.volunteerType === 'unpaid' ? '' : formData.campaignBudget}
+                                                        onChange={e => setFormData(prev => ({ ...prev, campaignBudget: e.target.value }))}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="flex gap-4 pt-4">
@@ -1295,13 +1951,14 @@ const AssociationDashboard: React.FC<{
                 isOpen={!!selectedEvent}
                 onClose={() => setSelectedEvent(null)}
                 event={selectedEvent}
+                userRole="Org"
             />
 
             {/* Edit Event Modal */}
             {editingEvent && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
                     <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md" onClick={() => setEditingEvent(null)}></div>
-                    <div className="relative bg-[var(--bg-primary)] w-full max-w-xl rounded-[2.5rem] shadow-2xl animate-in zoom-in-95 duration-300">
+                    <div className="relative bg-[var(--bg-primary)] w-full max-w-xl rounded-[2.5rem] shadow-2xl animate-in zoom-in-95 duration-300 border border-[var(--border-color)]">
                         <div className="p-10 modal-content-scroll">
                             <div className="flex justify-between items-start mb-8">
                                 <div>
@@ -1314,20 +1971,103 @@ const AssociationDashboard: React.FC<{
                             </div>
                             <form onSubmit={handleSaveEdit} className="space-y-6">
                                 <div>
-                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Event Name</label>
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Event Name *</label>
                                     <input type="text" required value={editFormData.name} onChange={e => setEditFormData(p => ({ ...p, name: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-purple rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Event Date</label>
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Event Date *</label>
                                     <input type="date" required value={editFormData.date} onChange={e => setEditFormData(p => ({ ...p, date: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-purple rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Description</label>
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Location *</label>
+                                    <input type="text" required value={editFormData.location} onChange={e => setEditFormData(p => ({ ...p, location: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-purple rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Description *</label>
                                     <textarea required rows={3} value={editFormData.description} onChange={e => setEditFormData(p => ({ ...p, description: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-purple rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all resize-none" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Target Sponsorship (â‚¦)</label>
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Target Sponsorship (₦) *</label>
                                     <input type="number" required min="0" value={editFormData.targetSponsorship} onChange={e => setEditFormData(p => ({ ...p, targetSponsorship: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-purple rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Expected Attendees</label>
+                                        <input type="number" min="1" value={editFormData.expectedAttendees} onChange={e => setEditFormData(p => ({ ...p, expectedAttendees: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-purple rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Sponsorship Slots</label>
+                                        <input type="number" min="1" value={editFormData.sponsorshipSlots} onChange={e => setEditFormData(p => ({ ...p, sponsorshipSlots: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-purple rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" />
+                                    </div>
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center">
+                                        <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Sponsorship Packages</label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditFormPackages(prev => [...prev, { name: '', price: '', entails: '' }])}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-spark-purple/10 text-spark-purple rounded-xl font-bold text-xs hover:bg-spark-purple/20 transition-all"
+                                        >
+                                            <Plus className="w-3.5 h-3.5" /> Add Tier
+                                        </button>
+                                    </div>
+                                    <div className="space-y-3">
+                                        {editFormPackages.map((pkg, idx) => (
+                                            <div key={idx} className="flex gap-2 items-center border border-[var(--border-color)] p-3 rounded-2xl relative bg-[var(--bg-primary)]">
+                                                <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-2">
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Tier Name (e.g. Gold)"
+                                                        value={pkg.name}
+                                                        onChange={(e) => {
+                                                            const next = [...editFormPackages];
+                                                            next[idx].name = e.target.value;
+                                                            setEditFormPackages(next);
+                                                        }}
+                                                        className="px-4 py-2 text-sm bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-purple rounded-xl outline-none font-bold text-[var(--text-primary)]"
+                                                        required
+                                                    />
+                                                    <input
+                                                        type="number"
+                                                        placeholder="Price (₦)"
+                                                        value={pkg.price}
+                                                        onChange={(e) => {
+                                                            const next = [...editFormPackages];
+                                                            next[idx].price = e.target.value;
+                                                            setEditFormPackages(next);
+                                                        }}
+                                                        className="px-4 py-2 text-sm bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-purple rounded-xl outline-none font-bold text-[var(--text-primary)]"
+                                                        required
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Details (e.g. Logo placement)"
+                                                        value={pkg.entails}
+                                                        onChange={(e) => {
+                                                            const next = [...editFormPackages];
+                                                            next[idx].entails = e.target.value;
+                                                            setEditFormPackages(next);
+                                                        }}
+                                                        className="px-4 py-2 text-sm bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-purple rounded-xl outline-none font-bold text-[var(--text-primary)]"
+                                                        required
+                                                    />
+                                                </div>
+                                                {editFormPackages.length > 1 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setEditFormPackages(prev => prev.filter((_, i) => i !== idx))}
+                                                        className="p-2 text-spark-red hover:bg-spark-red/10 rounded-xl transition-all"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Activation Needs</label>
+                                    <textarea rows={2} value={editFormData.activationNeeds} onChange={e => setEditFormData(p => ({ ...p, activationNeeds: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-purple rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all resize-none" placeholder="e.g. Branded booth, social media push..." />
                                 </div>
                                 <div className="flex gap-4 pt-2">
                                     <button type="button" onClick={() => setEditingEvent(null)} className="flex-1 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-gray-800 transition-all">
@@ -1672,7 +2412,7 @@ const AssociationDashboard: React.FC<{
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12"></path></svg>
                         </button>
 
-                        <div className="h-48 bg-gradient-to-br from-spark-purple to-purple-400 relative">
+                        <div className="h-48 bg-spark-red relative">
                             <div className="absolute -bottom-12 left-12">
                                 <div className="w-24 h-24 bg-[var(--bg-primary)] p-2 rounded-3xl shadow-xl ring-4 ring-white flex items-center justify-center text-4xl font-black text-spark-purple">
                                     {selectedBrand.imageUrl ? <img src={selectedBrand.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : (selectedBrand.name || '?').charAt(0)}
@@ -1691,7 +2431,7 @@ const AssociationDashboard: React.FC<{
                             <div className="space-y-6 mb-10">
                                 <div className="p-6 bg-[var(--bg-secondary)] rounded-3xl border border-[var(--border-color)]">
                                     <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2 opacity-60">About this Brand</p>
-                                    <p className="text-[var(--text-primary)] font-bold text-lg">{selectedBrand.bio || `${selectedBrand.name} is a leading partner in the ${selectedBrand.industry || 'Campus Spark'} ecosystem.`}</p>
+                                    <p className="text-[var(--text-primary)] font-bold text-lg">{selectedBrand.bio || `${selectedBrand.name} is a leading partner in the ${selectedBrand.industry || 'ABC-Rally'} ecosystem.`}</p>
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4">

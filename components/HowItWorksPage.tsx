@@ -1,6 +1,6 @@
-﻿
+
 import React, { useState } from 'react';
-import { HOW_IT_WORKS_CONTENT } from '../constants';
+import { HOW_IT_WORKS_CONTENT, APP_ABBREV } from '../constants';
 import { UserType } from '../types';
 
 const HowItWorksPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigate }) => {
@@ -19,7 +19,7 @@ const HowItWorksPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNa
                   <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] bg-spark-red/10 rounded-full blur-[100px]"></div>
                 </div>
                 <h1 className="text-3xl md:text-5xl font-fancy font-black tracking-tighter mb-6 text-[var(--text-primary)]">
-                    How <span className="text-gradient-red italic">Campus Spark</span> Works
+                    How <span className="text-gradient-red italic">{APP_ABBREV}</span> Works
                 </h1>
                 <p className="max-w-2xl mx-auto text-base md:text-lg text-[var(--text-secondary)] font-medium">
                     Simple, transparent, and built for Nigerian creators and brands.

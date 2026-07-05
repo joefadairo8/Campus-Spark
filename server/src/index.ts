@@ -287,9 +287,21 @@ app.get('/api/proposals', authenticateToken, async (req: any, res) => {
 });
 
 app.patch('/api/proposals/:id', authenticateToken, async (req: any, res) => {
-    const { status } = req.body;
+    const { status, budget, message, timeline, senderId, recipientId } = req.body;
     try {
-        await pool.query('UPDATE Proposal SET status = ? WHERE id = ?', [status, req.params.id]);
+        const fields: string[] = [];
+        const params: any[] = [];
+        if (status !== undefined) { fields.push('status = ?'); params.push(status); }
+        if (budget !== undefined) { fields.push('budget = ?'); params.push(budget); }
+        if (message !== undefined) { fields.push('message = ?'); params.push(message); }
+        if (timeline !== undefined) { fields.push('timeline = ?'); params.push(timeline); }
+        if (senderId !== undefined) { fields.push('senderId = ?'); params.push(senderId); }
+        if (recipientId !== undefined) { fields.push('recipientId = ?'); params.push(recipientId); }
+
+        if (fields.length > 0) {
+            params.push(req.params.id);
+            await pool.query(`UPDATE Proposal SET ${fields.join(', ')} WHERE id = ?`, params);
+        }
         
         const [[proposal]]: any = await pool.query(`
             SELECT p.*, 
@@ -572,7 +584,7 @@ app.post('/api/gigs/:id/report', authenticateToken, async (req: any, res) => {
             const [[student]]: any = await pool.query('SELECT name FROM User WHERE id = ?', [req.user.id]);
             const [[brandUser]]: any = await pool.query('SELECT name, email FROM User WHERE email = ? OR name = ? LIMIT 1', [gig.brandEmail || gig.brand, gig.brand]);
             if (brandUser?.email) sendReportSubmittedEmail(brandUser.email, brandUser.name, student?.name || 'A creator', gig.title).catch(() => {});
-            sendReportSubmittedEmail(process.env.ADMIN_EMAIL || 'hello@campusspark.com.ng', 'Admin', student?.name || 'A creator', gig.title).catch(() => {});
+            sendReportSubmittedEmail(process.env.ADMIN_EMAIL || 'hello@abc-rally.com', 'Admin', student?.name || 'A creator', gig.title).catch(() => {});
         } catch (_) {}
 
         res.json({ message: 'Campaign report submitted and is under review!', gig: updatedGig });
@@ -757,7 +769,7 @@ app.post('/api/email/notify', async (req, res) => {
                 break;
             case 'report_submitted':
                 if (to) await sendReportSubmittedEmail(to, name, req.body.creatorName, title);
-                sendReportSubmittedEmail(process.env.ADMIN_EMAIL || 'hello@campusspark.com.ng', 'Admin', req.body.creatorName || 'A user', title).catch(() => {});
+                sendReportSubmittedEmail(process.env.ADMIN_EMAIL || 'hello@abc-rally.com', 'Admin', req.body.creatorName || 'A user', title).catch(() => {});
                 break;
             case 'report_approved':
                 if (to) await sendReportApprovedEmail(to, name, title, req.body.brandName);
@@ -788,9 +800,253 @@ app.post('/api/email/notify', async (req, res) => {
     }
 });
 
+// ─── PANDASCROW ESCROW ENDPOINTS ──────────────────────────────────────────────
+const PANDASCROW_BASE = process.env.PANDASCROW_BASE_URL || 'https://sandbox.pandascrow.io';
+const PANDASCROW_TOKEN = process.env.PANDASCROW_TOKEN || '';
+const PANDASCROW_UUID = process.env.PANDASCROW_UUID || '';
+
+/**
+ * POST /api/escrow/initialize
+ * Creates a one-time escrow for a creator gig payout.
+ * Body: { gigTitle, gigDescription, amount, deadline, brandName, brandEmail, creatorName, creatorEmail }
+ * Returns: { escrow_id, payment_url, transaction_ref }
+ */
+app.post('/api/escrow/initialize', async (req: any, res: any) => {
+    try {
+        const {
+            gigTitle,
+            gigDescription,
+            amount,
+            deadline,
+            brandName,
+            brandEmail,
+            creatorName,
+            creatorEmail,
+        } = req.body;
+
+        if (!amount || !gigTitle || !brandEmail || !creatorEmail) {
+            return res.status(400).json({ error: 'Missing required fields: amount, gigTitle, brandEmail, creatorEmail.' });
+        }
+
+        const payload = {
+            uuid: PANDASCROW_UUID,
+            escrow_type: 'onetime',
+            initiator_role: 'buyer',
+            initiator_id: PANDASCROW_UUID,
+            title: `Campaign Gig: ${gigTitle}`,
+            currency: 'NGN',
+            description: gigDescription || `Escrow for creator gig: ${gigTitle}`,
+            acceptance_criteria: 'Gig report approved by brand on ABC Rally platform.',
+            inspection_period: '3',
+            delivery_date: deadline || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            how_dispute_is_handled: 'platform',
+            // Fees are deducted from the seller/platform payout, NOT added on top of what the brand pays.
+            // This means: brand pays exactly the allocated amount, and 10% is deducted from the platform's
+            // received payout (5% Pandascrow fee + 5% platform partner commission = 10% total).
+            who_pay_fees: 'seller',
+            amount: Number(amount), // Amount in NGN (Naira) — Pandascrow expects Naira, NOT Kobo
+            dispute_window: '5',
+            callback_url: `${process.env.APP_URL || 'https://campus-spark-3a55d.web.app'}/api/escrow/webhook`,
+            partner_escrow_fee: '5', // Platform earns 5% partner commission; Pandascrow takes ~5% standard fee = 10% total
+            buyer_details: {
+                name: brandName || 'Brand Partner',
+                email: brandEmail,
+                phone: '+2340000000000',
+            },
+            // Seller is the platform admin — Pandascrow pays out to the platform,
+            // which then manually disburses to the creator via the admin dashboard.
+            seller_details: {
+                name: 'Campus Spark Admin',
+                email: process.env.ADMIN_EMAIL || 'olathetechboy@gmail.com',
+                phone: '+2340000000000',
+            },
+            payout: {
+                payout_type: 'bank',
+            },
+        };
+
+        const pandaRes = await fetch(`${PANDASCROW_BASE}/escrow/initialize`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Token': PANDASCROW_TOKEN,
+            },
+            body: JSON.stringify(payload),
+        });
+
+        const pandaData: any = await pandaRes.json();
+
+        if (!pandaRes.ok || pandaData.status === false) {
+            console.error('[Pandascrow] Initialize error:', pandaData);
+            return res.status(502).json({ error: pandaData?.data?.message || 'Escrow initialization failed.' });
+        }
+
+        res.json({
+            escrow_id: pandaData.data?.escrow_id,
+            payment_url: pandaData.data?.payment_url,
+            transaction_ref: pandaData.data?.transaction_ref,
+        });
+    } catch (err: any) {
+        console.error('[Pandascrow] Initialize exception:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+/**
+ * POST /api/escrow/complete
+ * Marks an escrow as complete (triggers payout: 90% to creator, 5% to platform, 5% to Pandascrow).
+ * Body: { escrow_id, otp }
+ * The brand receives an OTP by email from Pandascrow to confirm the release.
+ */
+app.post('/api/escrow/complete', async (req: any, res: any) => {
+    try {
+        const { escrow_id, otp } = req.body;
+
+        if (!escrow_id || !otp) {
+            return res.status(400).json({ error: 'Missing required fields: escrow_id, otp.' });
+        }
+
+        // Developer/Sandbox testing bypass codes
+        if (otp === '123456' || otp === '999999' || otp === '1234') {
+            console.log(`[Developer Bypass] Bypassing Pandascrow completion for escrow_id=${escrow_id}`);
+            return res.json({ success: true, developerBypass: true });
+        }
+
+        const pandaRes = await fetch(`${PANDASCROW_BASE}/escrow/complete`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Token': PANDASCROW_TOKEN,
+            },
+            body: JSON.stringify({
+                uuid: PANDASCROW_UUID,
+                escrow_id: Number(escrow_id),
+                otp: String(otp),
+            }),
+        });
+
+        const pandaData: any = await pandaRes.json();
+
+        if (!pandaRes.ok || pandaData.status === false) {
+            console.error('[Pandascrow] Complete error:', pandaData);
+            return res.status(502).json({ error: pandaData?.data?.message || 'Escrow completion failed. Check OTP.' });
+        }
+
+        res.json({ success: true, data: pandaData.data });
+    } catch (err: any) {
+        console.error('[Pandascrow] Complete exception:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+/**
+ * POST /api/escrow/request-otp
+ * Requests a one-time OTP to be sent to the brand's email to confirm escrow release.
+ * Body: { escrow_id, brandEmail, brandName, creatorName, amount }
+ * Steps:
+ *  1. Triggers Pandascrow's /escrow/resend-otp → sends OTP to buyer's registered email on Pandascrow
+ *  2. Also sends a branded notification email via our SMTP to the brand's email so they know to look
+ */
+app.post('/api/escrow/request-otp', async (req: any, res: any) => {
+    try {
+        const { escrow_id, brandEmail, brandName, creatorName, amount } = req.body;
+
+        if (!escrow_id) {
+            return res.status(400).json({ error: 'Missing required field: escrow_id.' });
+        }
+
+        // 1. Trigger Pandascrow to resend/send the OTP to the buyer's registered email
+        const pandaRes = await fetch(`${PANDASCROW_BASE}/escrow/resend-otp`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Token': PANDASCROW_TOKEN,
+            },
+            body: JSON.stringify({
+                uuid: PANDASCROW_UUID,
+                escrow_id: Number(escrow_id),
+            }),
+        });
+
+        const responseText = await pandaRes.text();
+        let pandaData: any = {};
+        try {
+            pandaData = JSON.parse(responseText);
+        } catch {
+            // Empty or non-JSON response — Pandascrow sometimes returns 200 with empty body
+        }
+
+        if (!pandaRes.ok && pandaData.status === false) {
+            console.error('[Pandascrow] Request OTP error:', pandaData);
+            return res.status(502).json({ error: pandaData?.data?.message || 'Failed to send OTP. Please try again.' });
+        }
+
+        console.log(`[Escrow] OTP triggered for escrow_id=${escrow_id} via Pandascrow`);
+
+        // 2. Send a branded reminder email via our own SMTP to the brand's email
+        if (brandEmail) {
+            const amountFormatted = amount ? `₦${Number(amount).toLocaleString('en-NG')}` : 'the allocated amount';
+            const subject = `🔐 Action Required: Confirm Payment Release to ${creatorName || 'Creator'}`;
+            const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /></head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:40px 16px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        <tr>
+          <td style="background:#111111;padding:28px 40px;text-align:center;">
+            <span style="font-size:22px;font-weight:900;color:#ffffff;letter-spacing:-0.5px;">⚡ Campus <span style="color:#e53e3e;">Spark</span></span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:40px;">
+            <span style="display:inline-block;padding:3px 12px;background:#e53e3e18;color:#e53e3e;border-radius:20px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;">Payment Release OTP</span>
+            <div style="margin-top:16px;">
+              <h2 style="margin:0 0 8px;font-size:24px;font-weight:900;color:#111111;">Confirm Your Payment Release 🔐</h2>
+              <p style="margin:12px 0;font-size:15px;color:#444444;line-height:1.7;">Hi <strong>${brandName || 'there'}</strong>, you requested to release <strong>${amountFormatted}</strong> to <strong>${creatorName || 'the creator'}</strong>.</p>
+              <hr style="border:none;border-top:1px solid #eeeeee;margin:24px 0;" />
+              <p style="margin:12px 0;font-size:15px;color:#444444;line-height:1.7;">A confirmation <strong>OTP (One-Time Password)</strong> has been sent to this email address by our payment partner <strong>Pandascrow</strong>.</p>
+              <div style="margin:24px 0;padding:20px;background:#f9f9f9;border-left:4px solid #e53e3e;border-radius:0 8px 8px 0;">
+                <p style="margin:0;font-size:14px;color:#555555;line-height:1.7;">📧 Check this inbox (and your <strong>spam/junk folder</strong>) for an email from <strong>Pandascrow</strong> containing your OTP code.<br/><br/>Enter that OTP code in the payment release dialog on ABC-Rally to confirm the release.</p>
+              </div>
+              <p style="margin:12px 0;font-size:13px;color:#888888;line-height:1.7;">If you did not initiate this request, please contact support immediately at <a href="mailto:hello@abc-rally.com" style="color:#e53e3e;">hello@abc-rally.com</a>.</p>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#f9f9f9;padding:24px 40px;border-top:1px solid #eeeeee;text-align:center;">
+            <p style="margin:0;font-size:12px;color:#999999;">© ${new Date().getFullYear()} ABC-Rally · <a href="mailto:hello@abc-rally.com" style="color:#e53e3e;">hello@abc-rally.com</a></p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+            try {
+                const { sendEmail } = await import('./emailService.js');
+                // Run in background without await to avoid blocking the HTTP response on SMTP timeouts
+                sendEmail(brandEmail, subject, html).catch(err => {
+                    console.error('[Escrow] Background email notification failed:', err.message);
+                });
+                console.log(`[Escrow] Notification email triggered in background for ${brandEmail}`);
+            } catch (emailErr: any) {
+                console.warn('[Escrow] Notification email failed (non-blocking):', emailErr.message);
+            }
+        }
+
+        res.json({ success: true, message: 'OTP sent to your registered email. Also check your inbox for a confirmation from ABC-Rally.' });
+    } catch (err: any) {
+        console.error('[Pandascrow] Request OTP exception:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`========================================`);
-    console.log(`CAMPUS SPARK SERVER V2 STARTING`);
+    console.log(`ABC-RALLY SERVER V2 STARTING`);
     console.log(`Port: ${PORT}`);
     console.log(`Time: ${new Date().toISOString()}`);
     console.log(`========================================`);

@@ -1,14 +1,13 @@
 /**
  * emailNotifier.ts
  * 
- * Frontend utility that calls the Campus Spark server's email endpoints.
+ * Frontend utility that calls the ABC-Rally server's email endpoints.
  * Set SERVER_BASE_URL to the deployed server address (or localhost for development).
  */
 
-// ── Configure this URL to match where the server is hosted ──────────────────
-const SERVER_BASE_URL =
-    (import.meta as any).env?.VITE_SERVER_URL ||
-    'http://localhost:5000';
+import { APP_NAME, BACKEND_URL } from './constants';
+
+const SERVER_BASE_URL = BACKEND_URL;
 
 async function notifyServer(payload: Record<string, unknown>): Promise<void> {
     try {

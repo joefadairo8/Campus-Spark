@@ -1,9 +1,10 @@
-﻿
+
 import React, { useState, useEffect, useRef } from 'react';
-import { SparkIcon } from '../constants';
+import { SparkIcon, APP_ABBREV } from '../constants';
 import { UserRole } from '../types';
 import { apiClient } from '../firebase';
 import NotificationPanel from './NotificationPanel';
+import { ShieldCheck, Lock, EyeOff, CheckCircle2, Scale, Building2, Handshake, AlertTriangle, ShieldAlert } from 'lucide-react';
 
 interface SidebarItem {
     id: string;
@@ -20,11 +21,115 @@ interface DashboardShellProps {
     children: React.ReactNode;
     userName: string;
     userSub: string;
+    userId?: string;
     userImage?: string;
     walletStrip?: React.ReactNode;
     isDarkMode: boolean;
     toggleTheme: () => void;
+    themeMode?: 'light' | 'dark' | 'auto';
 }
+
+const getTrustPopupContent = (role: UserRole) => {
+    switch (role) {
+        case 'Creator':
+            return {
+                title: 'Creator Safety & Payment Protection',
+                gradient: 'from-spark-red/20 via-transparent to-transparent',
+                accentColor: 'text-spark-red border-spark-red/20 bg-spark-red/5',
+                btnColor: 'bg-spark-red text-white shadow-spark-red/10',
+                guidelines: [
+                    {
+                        title: 'Locked Escrow Guarantees',
+                        desc: 'Brands must fund campaigns upfront. Your payment is held securely in escrow and automatically released to your wallet upon task approval.',
+                        icon: <Lock className="w-5 h-5 text-spark-red" />
+                    },
+                    {
+                        title: 'Keep Communications On-Platform',
+                        desc: 'Always use platform chat and contract tools. Off-platform agreements bypass escrow protection and cannot be arbitrated by support.',
+                        icon: <EyeOff className="w-5 h-5 text-spark-red" />
+                    },
+                    {
+                        title: 'Verification & Authenticity',
+                        desc: 'Keep your social profiles and student IDs authentic. Using fake engagement or deceptive metrics leads to immediate suspension.',
+                        icon: <ShieldCheck className="w-5 h-5 text-spark-red" />
+                    }
+                ]
+            };
+        case 'Brand':
+            return {
+                title: 'Brand Campaign & Quality Protection',
+                gradient: 'from-blue-500/20 via-transparent to-transparent',
+                accentColor: 'text-blue-500 border-blue-500/20 bg-blue-500/5',
+                btnColor: 'bg-blue-600 text-white shadow-blue-500/10',
+                guidelines: [
+                    {
+                        title: 'Milestone-Based Escrow',
+                        desc: 'Your campaign budget is securely locked in escrow. Funds are only paid out after you review and approve the creator\'s submitted work.',
+                        icon: <Lock className="w-5 h-5 text-blue-500" />
+                    },
+                    {
+                        title: 'Verified Audience Metrics',
+                        desc: 'All creators undergo strict manual vetting to verify social metrics, follower counts, and school credentials, guaranteeing real Gen-Z reach.',
+                        icon: <CheckCircle2 className="w-5 h-5 text-blue-500" />
+                    },
+                    {
+                        title: 'Arbitration & Safe Refunds',
+                        desc: 'If a creator fails to meet details, timelines, or brief guidelines, our support team mediates disputes and issues swift escrow refunds.',
+                        icon: <Scale className="w-5 h-5 text-blue-500" />
+                    }
+                ]
+            };
+        case 'Organization':
+            return {
+                title: 'Association Trust & Sponsorship Integrity',
+                gradient: 'from-purple-500/20 via-transparent to-transparent',
+                accentColor: 'text-purple-600 border-purple-500/20 bg-purple-50/5',
+                btnColor: 'bg-purple-600 text-white shadow-purple-500/10',
+                guidelines: [
+                    {
+                        title: 'Protected Sponsorship Budgets',
+                        desc: 'Event sponsorship payments are held securely in escrow by brand partners and released directly to your club wallet upon agreed event milestones.',
+                        icon: <Lock className="w-5 h-5 text-purple-600" />
+                    },
+                    {
+                        title: 'Keep Credentials Active',
+                        desc: 'Ensure your official student club registration details and executive list are kept up to date to maintain verification status.',
+                        icon: <Building2 className="w-5 h-5 text-purple-600" />
+                    },
+                    {
+                        title: 'Clear Partner Deliverables',
+                        desc: 'Clearly document sponsorship deliverables (social tags, banner placements, booths) to build trust and lock in recurring brand partnerships.',
+                        icon: <Handshake className="w-5 h-5 text-purple-600" />
+                    }
+                ]
+            };
+        case 'Admin':
+        default:
+            return {
+                title: 'System Governance & Compliance Briefing',
+                gradient: 'from-amber-500/20 via-transparent to-transparent',
+                accentColor: 'text-amber-600 border-amber-500/20 bg-amber-500/5',
+                btnColor: 'bg-amber-600 text-white shadow-amber-500/10',
+                guidelines: [
+                    {
+                        title: 'Neutral Dispute Arbitration',
+                        desc: 'Arbitrate creator-brand conflicts impartially using campaign briefs, chat logs, timeline guidelines, and submitted assets.',
+                        icon: <Scale className="w-5 h-5 text-amber-600" />
+                    },
+                    {
+                        title: 'Escrow Sanitisation & Audit',
+                        desc: 'Regularly monitor platform wallets, transaction lists, and escrow withdrawals to identify financial abnormalities or system exploits.',
+                        icon: <AlertTriangle className="w-5 h-5 text-amber-600" />
+                    },
+                    {
+                        title: 'Rigorous Vetting Process',
+                        desc: 'Carefully verify incoming creator socials, corporate registries, and student association documents to sustain campus security.',
+                        icon: <ShieldAlert className="w-5 h-5 text-amber-600" />
+                    }
+                ]
+            };
+    }
+};
 
 const DashboardShell: React.FC<DashboardShellProps> = ({
     role,
@@ -35,11 +140,35 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
     children,
     userName,
     userSub,
+    userId,
     userImage,
     walletStrip,
     isDarkMode,
-    toggleTheme
+    toggleTheme,
+    themeMode
 }) => {
+    const renderThemeIcon = () => {
+        const activeMode = themeMode || (isDarkMode ? 'dark' : 'light');
+        if (activeMode === 'light') {
+            return (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+            );
+        } else if (activeMode === 'dark') {
+            return (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                </svg>
+            );
+        } else {
+            return (
+                <svg className="w-5 h-5 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+            );
+        }
+    };
     const [notifications, setNotifications] = useState<any[]>([]);
     const [showNotifications, setShowNotifications] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -80,8 +209,79 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
 
     const unreadCount = notifications.filter(n => !n.read).length;
 
+    const [showTrustPopup, setShowTrustPopup] = useState(false);
+
+    useEffect(() => {
+        const keyVal = userId || userName;
+        if (keyVal && keyVal !== "Spark Member" && keyVal !== "Brand Partner" && keyVal !== "Association Leader" && keyVal !== "System Admin") {
+            const popupKey = `seen_trust_safety_${role}_${keyVal}`;
+            const seen = localStorage.getItem(popupKey);
+            if (!seen) {
+                setShowTrustPopup(true);
+            }
+        }
+    }, [role, userId, userName]);
+
+    const handleDismissPopup = () => {
+        const keyVal = userId || userName;
+        if (keyVal) {
+            const popupKey = `seen_trust_safety_${role}_${keyVal}`;
+            localStorage.setItem(popupKey, 'true');
+        }
+        setShowTrustPopup(false);
+    };
+
+    const popupContent = getTrustPopupContent(role);
+
     return (
         <div className="flex h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] font-sans overflow-hidden">
+            {/* Trust & Safety Onboarding Popup */}
+            {showTrustPopup && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-[999] p-4 animate-in fade-in duration-300">
+                    <div className="relative w-full max-w-lg bg-[var(--bg-primary)] border-2 border-[var(--border-color)] rounded-[2.5rem] shadow-2xl p-8 md:p-10 flex flex-col gap-6 overflow-hidden animate-in zoom-in-95 duration-300">
+                        {/* Top decorative gradient glow */}
+                        <div className={`absolute -top-10 -right-10 w-40 h-40 bg-gradient-to-br ${popupContent.gradient} rounded-full blur-2xl -z-10`} />
+
+                        {/* Pulsing Shield Icon Container */}
+                        <div className="flex items-center gap-4">
+                            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 border-2 ${popupContent.accentColor} animate-pulse`}>
+                                <ShieldCheck className="w-8 h-8" />
+                            </div>
+                            <div>
+                                <span className="text-[10px] font-black tracking-widest text-[var(--text-secondary)] uppercase">Safety & Security Briefing</span>
+                                <h3 className="text-xl md:text-2xl font-black tracking-tight text-[var(--text-primary)] mt-0.5">{popupContent.title}</h3>
+                            </div>
+                        </div>
+
+                        <p className="text-[var(--text-secondary)] text-sm font-medium leading-relaxed border-b border-[var(--border-color)] pb-4">
+                            Welcome, <strong className="text-[var(--text-primary)]">{userName}</strong>. To ensure a safe, professional, and secure experience for everyone on ABC-Rally, please review our core platform rules for your role:
+                        </p>
+
+                        {/* Guidelines Checklist */}
+                        <div className="flex flex-col gap-5">
+                            {popupContent.guidelines.map((guideline, i) => (
+                                <div key={i} className="flex gap-4 items-start">
+                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border ${popupContent.accentColor}`}>
+                                        {guideline.icon}
+                                    </div>
+                                    <div>
+                                        <h4 className="text-sm font-black text-[var(--text-primary)] mb-1">{guideline.title}</h4>
+                                        <p className="text-xs font-medium text-[var(--text-secondary)] leading-relaxed">{guideline.desc}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Action Button */}
+                        <button
+                            onClick={handleDismissPopup}
+                            className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center gap-2 mt-4 shadow-lg hover:opacity-95 ${popupContent.btnColor}`}
+                        >
+                            I Understand & Accept
+                        </button>
+                    </div>
+                </div>
+            )}
             {/* Sidebar Overlay for Mobile */}
             {isSidebarOpen && (
                 <div
@@ -90,7 +290,7 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
                 />
             )}
 
-            {/* Sidebar â€” full on desktop, drawer on mobile */}
+            {/* Sidebar — full on desktop, drawer on mobile */}
             <aside className={`fixed lg:static inset-y-0 left-0 flex flex-col flex-shrink-0 z-[130] transition-all duration-300 bg-[var(--bg-primary)] border-r border-[var(--border-color)] 
                 ${isSidebarOpen ? 'w-72 translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0 lg:w-64'}`}>
 
@@ -98,7 +298,7 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
                 <div className="h-20 flex items-center px-6 border-b border-[var(--border-color)]">
                     <div className="flex items-center gap-3 cursor-pointer" onClick={() => (window.location.href = '/')}>
                         <SparkIcon className={`w-7 h-7 flex-shrink-0 ${role === 'Organization' ? 'text-spark-purple' : 'text-spark-red'}`} />
-                        <span className="font-fancy font-black text-[var(--text-primary)] text-base tracking-tighter">Campus Spark</span>
+                        <span className="font-fancy font-black text-[var(--text-primary)] text-base tracking-tighter">{APP_ABBREV}</span>
                     </div>
                 </div>
 
@@ -150,7 +350,7 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
                             {sidebarItems.find(i => i.id === activeView)?.label || 'Dashboard'}
                         </h2>
                     </div>
-                    {/* Wallet Strip â€” rendered only when provided by parent */}
+                    {/* Wallet Strip — rendered only when provided by parent */}
                     {walletStrip && (
                         <div className="flex-1 flex justify-center px-4 order-3 lg:order-2 w-full lg:w-auto pb-1 lg:pb-0">
                             {walletStrip}
@@ -164,15 +364,7 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
                             className="p-2.5 bg-spark-red/5 border border-spark-red/10 rounded-xl text-spark-red hover:bg-spark-red/10 transition-all active:scale-95"
                             aria-label="Toggle Theme"
                         >
-                            {isDarkMode ? (
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                                </svg>
-                            ) : (
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                                </svg>
-                            )}
+                             {renderThemeIcon()}
                         </button>
 
                         {/* Notifications Bell */}

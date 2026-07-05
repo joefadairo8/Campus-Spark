@@ -1,0 +1,219 @@
+import React, { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
+
+const Section: React.FC<{ title: string; children: React.ReactNode; defaultOpen?: boolean }> = ({ title, children, defaultOpen = false }) => {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border border-[var(--border-color)] rounded-2xl overflow-hidden mb-4">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between p-6 text-left bg-[var(--bg-secondary)] hover:bg-spark-red/5 transition-colors"
+      >
+        <span className="font-black text-[var(--text-primary)] text-sm uppercase tracking-wider">{title}</span>
+        <ChevronDown className={`w-5 h-5 text-spark-red transition-transform duration-300 ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="p-6 pt-4 bg-[var(--bg-primary)] text-[var(--text-secondary)] text-sm leading-relaxed font-medium space-y-3">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const TermsOfServicePage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigate }) => {
+  return (
+    <div className="bg-[var(--bg-primary)] min-h-screen text-[var(--text-primary)]">
+      {/* Hero */}
+      <section className="relative py-24 border-b border-[var(--border-color)] overflow-hidden">
+        <div className="absolute inset-0 -z-10">
+          <div className="absolute top-[-10%] right-[-5%] w-[40%] h-[80%] bg-spark-red/5 rounded-full blur-[120px]" />
+        </div>
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="inline-block px-4 py-1.5 mb-6 text-[10px] font-black tracking-[0.2em] text-spark-red uppercase bg-spark-red/5 border border-spark-red/10 rounded-full">
+            Legal
+          </div>
+          <h1 className="text-4xl md:text-5xl font-fancy font-black tracking-tight mb-6">
+            Terms of <span className="text-gradient-red italic">Service</span>
+          </h1>
+          <p className="text-[var(--text-secondary)] font-medium text-base leading-relaxed max-w-2xl">
+            Please read these terms carefully. By registering for or using ABC-Rally, you agree to comply with and be bound by this agreement.
+          </p>
+          <p className="mt-4 text-xs text-[var(--text-secondary)] font-bold uppercase tracking-widest">
+            Last updated: June 2025 &nbsp;·&nbsp; Effective date: June 2025
+          </p>
+        </div>
+      </section>
+
+      {/* Content */}
+      <section className="py-20">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+
+          {/* Intro */}
+          <div className="mb-12 p-8 bg-[var(--bg-secondary)] rounded-[2rem] border border-[var(--border-color)]">
+            <p className="text-[var(--text-secondary)] text-sm leading-relaxed font-medium">
+              Welcome to ABC-Rally. This Terms of Service agreement ("Agreement" or "Terms") is a legal contract between you 
+              ("User", "you", or "your") and ABC-Rally Limited ("ABC-Rally", "we", "our", or "us"). These Terms govern your access to 
+              and use of the ABC-Rally collaboration marketplace website, web application, and related services.
+            </p>
+          </div>
+
+          <Section title="1. Agreement to Terms" defaultOpen>
+            <p>
+              By accessing, browsing, registering for, or using our services, you signify that you have read, understood, and agree 
+              to be bound by these Terms, along with our Privacy Policy. If you do not agree to these Terms, you must immediately stop 
+              using our platform.
+            </p>
+            <p className="mt-2">
+              If you are entering into this Agreement on behalf of a company, organization, or professional association, you represent 
+              and warrant that you have the authority to bind such entity to these Terms.
+            </p>
+          </Section>
+
+          <Section title="2. Account Registration and Eligibility">
+            <p>To register an account and participate on the platform, you must meet the following criteria:</p>
+            <ul className="list-disc pl-5 space-y-2 mt-2">
+              <li><strong className="text-[var(--text-primary)]">Eligibility:</strong> You must be at least 16 years of age (or the minimum legal age in your jurisdiction) and possess the legal capacity to enter into binding agreements.</li>
+              <li><strong className="text-[var(--text-primary)]">Roles:</strong> You must sign up for an account under one of three specified roles: Brands (Sponsors/Advertisers), Creators (Influencers/Ambassadors), or Associations (University Clubs/Societies/NGOs). Only one primary role can be associated with a single email address.</li>
+              <li><strong className="text-[var(--text-primary)]">Accuracy:</strong> You agree to provide true, accurate, current, and complete information during registration and to maintain the accuracy of this data.</li>
+              <li><strong className="text-[var(--text-primary)]">Security:</strong> You are solely responsible for safeguarding your password and credentials. You must immediately notify ABC-Rally of any unauthorized use or security breach of your account.</li>
+            </ul>
+          </Section>
+
+          <Section title="3. Association Verification & Student Bodies">
+            <p>
+              To protect brands and creators, ABC-Rally requires verification for accounts registered as Associations or Student Bodies:
+            </p>
+            <ul className="list-disc pl-5 space-y-2 mt-2">
+              <li>You may be required to upload official documentation, such as university registration letters, faculty authorization, or constitution drafts.</li>
+              <li>ABC-Rally reserves the right to deny verification, suspend unverified student bodies, or contact university administrations to confirm the authenticity of any student leader.</li>
+              <li>You represent that you are authorized to represent the association and commit its influence or events to brand sponsorship contracts.</li>
+            </ul>
+          </Section>
+
+          <Section title="4. Campaigns, Gigs, and Escrow Transactions">
+            <p>
+              ABC-Rally facilitates contracts, campaigns, and gigs between brands, creators, and associations. Our transaction system operates as follows:
+            </p>
+            <ul className="list-disc pl-5 space-y-2 mt-2">
+              <li><strong className="text-[var(--text-primary)]">Campaign Offers:</strong> Brands may set budgets and offer sponsorships or gigs. Creators or associations can apply or negotiate terms through the proposal system.</li>
+              <li><strong className="text-[var(--text-primary)]">Escrow Payment:</strong> Upon contract agreement, the brand funds the budget. The funds are held securely in a digital escrow system powered by Paystack until the deliverables are completed and verified.</li>
+              <li><strong className="text-[var(--text-primary)]">Deliverables & Releases:</strong> Funds are released to the creator or association wallet once the brand approves the completed deliverables, or when a pre-arranged milestone is met.</li>
+              <li><strong className="text-[var(--text-primary)]">Disputes:</strong> If a brand or creator raises a dispute, the funds will remain in escrow until both parties reach an agreement or until ABC-Rally's arbitration team resolves the dispute based on evidence of deliverables.</li>
+            </ul>
+          </Section>
+
+          <Section title="5. Platform Fees and Financial Terms">
+            <p>
+              ABC-Rally charges fees to maintain platform security, escrow services, and continuous operation:
+            </p>
+            <ul className="list-disc pl-5 space-y-2 mt-2">
+              <li><strong className="text-[var(--text-primary)]">Service Fee:</strong> ABC-Rally may charge a percentage fee on transactions processed through the platform. These fees are detailed at the time of campaign creation or payout withdrawal.</li>
+              <li><strong className="text-[var(--text-primary)]">Withdrawals:</strong> Creators and associations can withdraw cleared funds from their wallet to their registered Nigerian bank account. Withdrawals are processed via Paystack and may carry standard network processing fees.</li>
+              <li><strong className="text-[var(--text-primary)]">Taxes:</strong> Users are solely responsible for calculating, reporting, and paying any taxes or statutory levies applicable to their earnings or spendings on ABC-Rally.</li>
+            </ul>
+          </Section>
+
+          <Section title="6. User Conduct and Acceptable Use">
+            <p>You agree not to use the platform to:</p>
+            <ul className="list-disc pl-5 space-y-2 mt-2">
+              <li>Violate any local, state, national, or international laws or regulations.</li>
+              <li>Post false, misleading, defamatory, offensive, or infringing content.</li>
+              <li>Circumvent ABC-Rally's fee structures or escrow system by negotiating payments outside the platform for campaigns initiated on ABC-Rally.</li>
+              <li>Deploy bots, spiders, crawlers, or scrapers to extract data or interact with our system.</li>
+              <li>Harass, abuse, or spam other users with unsolicited marketing or malicious proposals.</li>
+            </ul>
+          </Section>
+
+          <Section title="7. Intellectual Property Rights">
+            <p>
+              Ownership of intellectual property (IP) created during collaborations is determined as follows:
+            </p>
+            <ul className="list-disc pl-5 space-y-2 mt-2">
+              <li><strong className="text-[var(--text-primary)]">User Content:</strong> You retain ownership of all content you upload or submit to the platform. By posting, you grant ABC-Rally a non-exclusive, royalty-free, worldwide license to display your public profile, campaign reviews, and portfolio items to promote the platform.</li>
+              <li><strong className="text-[var(--text-primary)]">Campaign Content:</strong> Unless otherwise agreed in the specific campaign contract, creators grant brands a non-exclusive, worldwide, royalty-free license to use, repost, and feature the promotional content for a period agreed upon in the project scope.</li>
+              <li><strong className="text-[var(--text-primary)]">Platform IP:</strong> ABC-Rally's logos, designs, source code, and assets are the exclusive property of ABC-Rally Limited. You may not copy, reverse-engineer, or redistribute any of our materials without express written authorization.</li>
+            </ul>
+          </Section>
+
+          <Section title="8. Account Termination & Suspension">
+            <p>
+              ABC-Rally reserves the right to suspend, terminate, or restrict access to your account at our sole discretion, without prior notice, if:
+            </p>
+            <ul className="list-disc pl-5 space-y-2 mt-2">
+              <li>You violate these Terms of Service or our community guidelines.</li>
+              <li>You engage in fraudulent, illicit, or abusive actions.</li>
+              <li>Your association is determined to be non-existent or fraudulent.</li>
+              <li>Your account is suspended by a platform administrator. Any remaining funds in your wallet may be held or refunded to the source depending on the nature of the suspension.</li>
+            </ul>
+          </Section>
+
+          <Section title="9. Disclaimer of Warranties">
+            <p>
+              The platform and all services are provided on an "as-is" and "as-available" basis. ABC-Rally makes no warranties, 
+              express or implied, regarding the reliability, availability, accuracy, or safety of the platform. We do not guarantee 
+              that campaigns will yield specific business results, or that creators/associations will perform contracts up to your satisfaction.
+            </p>
+          </Section>
+
+          <Section title="10. Limitation of Liability">
+            <p>
+              To the maximum extent permitted by law, ABC-Rally Limited, its directors, employees, and partners, shall not be liable 
+              for any indirect, incidental, special, consequential, or punitive damages, including loss of profits, data, goodwill, or 
+              other intangible losses arising from your use of or inability to use the platform.
+            </p>
+            <p className="mt-2">
+              In no event shall our total liability for all claims under this Agreement exceed the total fees paid by you to ABC-Rally 
+              in the six (6) months preceding the event giving rise to the claim.
+            </p>
+          </Section>
+
+          <Section title="11. Governing Law & Dispute Resolution">
+            <p>
+              These Terms and any dispute arising out of or in connection with them shall be governed by, and construed in accordance 
+              with, the laws of the Federal Republic of Nigeria, without regard to conflict of law principles.
+            </p>
+            <p className="mt-2">
+              Any dispute, controversy, or claim shall first be sought to be resolved amicably through mutual negotiations. If unresolved, 
+              it shall be referred to and finally resolved by arbitration in Lagos, Nigeria, under the Arbitration and Conciliation Act.
+            </p>
+          </Section>
+
+          <Section title="12. Contact Information">
+            <p>If you have any questions or feedback regarding these Terms, please reach out to us:</p>
+            <div className="mt-3 space-y-1">
+              <p><strong className="text-[var(--text-primary)]">ABC-Rally Limited</strong></p>
+              <p>42, Olowu Street, Ikeja, Lagos, Nigeria</p>
+              <p>Email: <a href="mailto:hello@abc-rally.com" className="text-spark-red font-bold hover:underline">hello@abc-rally.com</a></p>
+              <p>Phone: +234 (0) 906 032 0863</p>
+            </div>
+          </Section>
+
+          {/* CTA */}
+          <div className="mt-16 p-8 bg-[var(--bg-secondary)] rounded-[2rem] border border-[var(--border-color)] text-center">
+            <p className="text-[var(--text-secondary)] text-sm font-medium mb-6">
+              Read our Privacy Policy to understand how we collect and manage your personal data.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <button
+                onClick={() => onNavigate('privacy')}
+                className="px-8 py-3.5 bg-gradient-red text-white font-black rounded-2xl text-sm hover:shadow-xl hover:shadow-spark-red/20 transition-all active:scale-95 uppercase tracking-widest"
+              >
+                View Privacy Policy
+              </button>
+              <button
+                onClick={() => onNavigate('contact')}
+                className="px-8 py-3.5 bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] font-black rounded-2xl text-sm hover:border-spark-red/30 transition-all active:scale-95 uppercase tracking-widest"
+              >
+                Contact Us
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </section>
+    </div>
+  );
+};
+
+export default TermsOfServicePage;

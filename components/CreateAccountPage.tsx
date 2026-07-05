@@ -1,9 +1,10 @@
-﻿
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { auth, db, createUserWithEmailAndPassword, doc, setDoc } from '../firebase';
 import { SparkIcon } from '../constants';
 import { UserRole } from '../types';
 import { notifyWelcome } from '../emailNotifier';
+import { Zap, Briefcase, Building2 } from 'lucide-react';
 
 const ProgressIndicator: React.FC<{ step: number; color: string; shadow: string }> = ({ step, color, shadow }) => (
     <div className="flex items-center justify-center space-x-4 mb-12">
@@ -27,7 +28,7 @@ const RoleCard: React.FC<{
     onClick: () => void;
     title: string;
     description: string;
-    icon: string;
+    icon: React.ReactNode;
     themeColor: string;
     themeBorder: string;
     themeBg: string;
@@ -84,6 +85,14 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
     const [error, setError] = useState('');
     const [selectedRole, setSelectedRole] = useState<UserRole>('Creator');
 
+    useEffect(() => {
+        const preselected = localStorage.getItem('preselectedRole');
+        if (preselected === 'Brand' || preselected === 'Creator' || preselected === 'Organization') {
+            setSelectedRole(preselected as UserRole);
+            localStorage.removeItem('preselectedRole');
+        }
+    }, []);
+
     const [formData, setFormData] = useState({
         email: '',
         password: '',
@@ -91,10 +100,10 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
         name: '',
         industry: '',
         university: '',
-        handle: '',
+        location: '',
         clubType: '',
         companySize: 'Small/Medium (11-50)',
-        influencerType: 'Creator',
+        influencerType: 'Campus Creator',
         orgType: 'Association',
     });
 
@@ -186,9 +195,9 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                     name: formData.name,
                     email: formData.email,
                     role: selectedRole,
+                    location: formData.location,
                     industry: formData.industry,
-                    university: formData.university,
-                    handle: formData.handle,
+                    university: (selectedRole === 'Creator' && formData.influencerType === 'Professional Creator') ? '' : formData.university,
                     clubType: formData.clubType,
                     companySize: formData.companySize,
                     influencerType: selectedRole === 'Creator' ? formData.influencerType : null,
@@ -205,7 +214,7 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                     console.warn('Firestore write failed/timed out, redirecting.');
                 }
 
-                // Send welcome email (non-blocking â€” never delays user)
+                // Send welcome email (non-blocking — never delays user)
                 notifyWelcome(formData.email, formData.name, selectedRole);
 
                 onNavigate(targetPage);
@@ -268,7 +277,7 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                                 onClick={() => setSelectedRole('Creator')}
                                 title="I am a Creator"
                                 description="I want to work with brands and earn from campaigns."
-                                icon="âš¡"
+                                icon={<Zap className="w-7 h-7" />}
                                 themeColor="bg-spark-red"
                                 themeBorder="border-spark-red"
                                 themeBg="bg-red-50/50"
@@ -279,7 +288,7 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                                 onClick={() => setSelectedRole('Brand')}
                                 title="I am a Brand / Agency"
                                 description="I want to reach creators and launch campaigns."
-                                icon="ðŸ’¼"
+                                icon={<Briefcase className="w-7 h-7" />}
                                 themeColor="bg-blue-600"
                                 themeBorder="border-blue-600"
                                 themeBg="bg-blue-50/50"
@@ -290,7 +299,7 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                                 onClick={() => setSelectedRole('Organization')}
                                 title="I am an Association"
                                 description="I want to find sponsors for our vision."
-                                icon="ðŸ›ï¸"
+                                icon={<Building2 className="w-7 h-7" />}
                                 themeColor="bg-purple-600"
                                 themeBorder="border-purple-600"
                                 themeBg="bg-purple-50/50"
@@ -319,8 +328,8 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                              />
                             <InputField id="email" label="Email Address" type="email" placeholder="you@example.com" value={formData.email} focusColor={theme.focus} onChange={handleChange} />
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <InputField id="password" label="Password" type="password" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" value={formData.password} focusColor={theme.focus} onChange={handleChange} />
-                                <InputField id="confirmPassword" label="Confirm" type="password" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" value={formData.confirmPassword} focusColor={theme.focus} onChange={handleChange} />
+                                <InputField id="password" label="Password" type="password" placeholder="••••••••" value={formData.password} focusColor={theme.focus} onChange={handleChange} />
+                                <InputField id="confirmPassword" label="Confirm" type="password" placeholder="••••••••" value={formData.confirmPassword} focusColor={theme.focus} onChange={handleChange} />
                             </div>
 
                             <div className="flex gap-4 pt-4">
@@ -359,26 +368,34 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                                         <label className="block text-sm font-black text-[var(--text-primary)] mb-3 uppercase tracking-widest">Creator Type</label>
                                         <div className="flex gap-4">
                                             <label className="flex-1 cursor-pointer">
-                                                <input type="radio" name="influencerType" value="Creator" checked={formData.influencerType === 'Creator'} onChange={handleChange} className="hidden peer" />
-                                                <div className={`p-4 border-2 border-[var(--border-color)] rounded-2xl peer-checked:${theme.border} peer-checked:${theme.bg} text-center font-bold text-[var(--text-secondary)] peer-checked:${theme.text} transition-all`}>Creator</div>
+                                                <input type="radio" name="influencerType" value="Campus Creator" checked={formData.influencerType === 'Campus Creator'} onChange={handleChange} className="hidden peer" />
+                                                <div className={`p-4 border-2 border-[var(--border-color)] rounded-2xl peer-checked:${theme.border} peer-checked:${theme.bg} text-center font-bold text-[var(--text-secondary)] peer-checked:${theme.text} transition-all`}>Campus Creator</div>
                                             </label>
                                             <label className="flex-1 cursor-pointer">
-                                                <input type="radio" name="influencerType" value="Professional" checked={formData.influencerType === 'Professional'} onChange={handleChange} className="hidden peer" />
-                                                <div className={`p-4 border-2 border-[var(--border-color)] rounded-2xl peer-checked:${theme.border} peer-checked:${theme.bg} text-center font-bold text-[var(--text-secondary)] peer-checked:${theme.text} transition-all`}>Professional</div>
+                                                <input type="radio" name="influencerType" value="Professional Creator" checked={formData.influencerType === 'Professional Creator'} onChange={handleChange} className="hidden peer" />
+                                                <div className={`p-4 border-2 border-[var(--border-color)] rounded-2xl peer-checked:${theme.border} peer-checked:${theme.bg} text-center font-bold text-[var(--text-secondary)] peer-checked:${theme.text} transition-all`}>Professional Creator</div>
                                             </label>
                                         </div>
                                     </div>
-                                    {(formData.influencerType === 'Creator' || formData.influencerType === 'Professional') && (
+                                    {formData.influencerType === 'Campus Creator' ? (
                                         <InputField 
                                             id="university" 
-                                            label={formData.influencerType === 'Creator' ? "Your University" : "Location"} 
-                                            placeholder={formData.influencerType === 'Creator' ? "e.g. University of Lagos" : "e.g. Lagos, Nigeria"} 
+                                            label="Your University" 
+                                            placeholder="e.g. University of Lagos" 
                                             value={formData.university} 
                                             focusColor={theme.focus} 
                                             onChange={handleChange} 
                                         />
+                                    ) : (
+                                        <InputField 
+                                            id="location" 
+                                            label="Location" 
+                                            placeholder="e.g. Lagos, Nigeria" 
+                                            value={formData.location} 
+                                            focusColor={theme.focus} 
+                                            onChange={handleChange} 
+                                        />
                                     )}
-                                    <InputField id="handle" label="Primary Social Handle" placeholder="e.g. @username_spark" value={formData.handle} focusColor={theme.focus} onChange={handleChange} />
                                 </>
                             ) : (
                                 <>
@@ -410,7 +427,7 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                             <div className="flex items-start space-x-3 p-4 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-2xl">
                                 <input type="checkbox" required className={`mt-1 w-5 h-5 ${theme.accent} rounded cursor-pointer`} />
                                 <p className="text-sm text-[var(--text-secondary)] font-medium leading-relaxed">
-                                    I agree to the <a href="#" className={`${theme.text} font-bold underline`}>Terms of Service</a> and <a href="#" className={`${theme.text} font-bold underline`}>Privacy Policy</a> of Campus Spark Nigeria.
+                                    I agree to the <a href="#" className={`${theme.text} font-bold underline`}>Terms of Service</a> and <a href="#" className={`${theme.text} font-bold underline`}>Privacy Policy</a> of ABC-Rally Nigeria.
                                 </p>
                             </div>
 

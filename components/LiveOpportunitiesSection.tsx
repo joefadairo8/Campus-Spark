@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { apiClient } from '../firebase';
 
 const LiveOpportunitiesSection: React.FC<{ onNavigate?: (page: string) => void }> = ({ onNavigate }) => {
@@ -55,9 +55,7 @@ const LiveOpportunitiesSection: React.FC<{ onNavigate?: (page: string) => void }
           location: g.university || 'Campus'
         }));
 
-        const publishedEvents = events.filter((e: any) => 
-          !e.status || (e.status.toLowerCase() !== 'closed' && e.status.toLowerCase() !== 'draft')
-        ).map((e: any) => ({
+        const publishedEvents = events.map((e: any) => ({
           ...e,
           category: 'Event',
           title: e.name,
@@ -82,7 +80,7 @@ const LiveOpportunitiesSection: React.FC<{ onNavigate?: (page: string) => void }
     fetchOpportunities();
   }, []);
   return (
-    <section className="py-24 bg-[var(--bg-primary)] border-y border-[var(--border-color)] relative overflow-hidden">
+    <section id="opportunities" className="py-24 bg-[var(--bg-primary)] border-y border-[var(--border-color)] relative overflow-hidden">
       {/* Background decoration */}
       <div className="absolute top-0 left-0 w-full h-full -z-10 overflow-hidden opacity-50">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-spark-red/5 rounded-full blur-[100px]"></div>
@@ -113,55 +111,153 @@ const LiveOpportunitiesSection: React.FC<{ onNavigate?: (page: string) => void }
               </div>
             ))
           ) : opportunities.length === 0 ? (
-            <div className="col-span-full py-12 text-center bg-[var(--bg-primary)] rounded-3xl border border-dashed border-[var(--border-color)]">
-                <p className="text-[var(--text-secondary)] font-medium">No active opportunities found. Check back later!</p>
-            </div>
+            [
+              {
+                id: 'sample-1',
+                category: 'Campaign',
+                reward: 250000,
+                title: 'Brand Ambassador for Fintech Launch',
+                brandName: 'NeoBank Corp'
+              },
+              {
+                id: 'sample-2',
+                category: 'Gig',
+                reward: 15000,
+                title: 'Content Creator (UGC Video)',
+                brandName: 'Fresh Sips Beverage',
+                deadline: 'Next Week'
+              },
+              {
+                id: 'sample-3',
+                category: 'Event',
+                reward: 500000,
+                title: 'Tech Week 2026 Sponsorship',
+                brandName: 'NANS Association'
+              },
+              {
+                id: 'sample-4',
+                category: 'Campaign',
+                reward: 100000,
+                title: 'Campus Activation Marketing',
+                brandName: 'Energy Drink Co'
+              }
+            ].map((opp) => (
+              <div 
+                key={opp.id} 
+                className="bg-[var(--bg-primary)] rounded-3xl p-6 border border-[var(--border-color)] hover:border-spark-red/30 transition-all group card-hover shadow-sm flex flex-col justify-between h-full min-h-[240px]"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                      opp.category === 'Campaign' ? 'bg-blue-500/10 text-blue-500' : 
+                      opp.category === 'Event' ? 'bg-purple-500/10 text-purple-500' : 'bg-green-500/10 text-green-500'
+                    }`}>
+                      {opp.category}
+                    </span>
+                    <span className="text-spark-red font-black text-sm">
+                      ₦{opp.reward.toLocaleString()}
+                    </span>
+                  </div>
+                  <h3 className="text-base font-bold text-[var(--text-primary)] mb-1 group-hover:text-spark-red transition-colors line-clamp-2">{opp.title}</h3>
+                  <p className="text-[var(--text-secondary)] text-[10px] mb-4 font-semibold uppercase tracking-widest truncate">by {opp.brandName}</p>
+                </div>
+                
+                <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
+                  <div className="mb-3">
+                    {opp.category === 'Campaign' && (
+                      <p className="text-[10px] font-black text-blue-500 uppercase tracking-wider">
+                        Campaign Budget: ₦{opp.reward.toLocaleString()}
+                      </p>
+                    )}
+                    {opp.category === 'Event' && (
+                      <p className="text-[10px] font-black text-purple-500 uppercase tracking-wider">
+                        Sponsorship Target: ₦{opp.reward.toLocaleString()}
+                      </p>
+                    )}
+                    {opp.category === 'Gig' && (
+                      <p className="text-[10px] font-black text-green-500 uppercase tracking-wider">
+                        Gig Deadline: {opp.deadline || 'Ongoing'}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
+                      <span className="text-[10px] text-[var(--text-secondary)] font-black uppercase tracking-widest">Hiring Now</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))
           ) : (
             opportunities.map((opp) => (
               <div 
                 key={opp.id} 
-                className="bg-[var(--bg-primary)] rounded-3xl p-6 border border-[var(--border-color)] hover:border-spark-red/30 transition-all group card-hover shadow-sm"
+                className="bg-[var(--bg-primary)] rounded-3xl p-6 border border-[var(--border-color)] hover:border-spark-red/30 transition-all group card-hover shadow-sm flex flex-col justify-between h-full min-h-[240px]"
               >
-                <div className="flex items-center justify-between mb-6">
-                  <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${
-                    opp.category === 'Campaign' ? 'bg-blue-500/10 text-blue-500' : 
-                    opp.category === 'Sponsorship' ? 'bg-purple-500/10 text-purple-500' : 'bg-green-500/10 text-green-500'
-                  }`}>
-                    {opp.category || 'Campaign'}
-                  </span>
-                  <span className="text-spark-red font-black text-base">â‚¦{(opp.reward || opp.budget || 0).toLocaleString()}</span>
-                </div>
-                <h3 className="text-lg font-bold text-[var(--text-primary)] mb-1 group-hover:text-spark-red transition-colors line-clamp-2">{opp.title}</h3>
-                <p className="text-[var(--text-secondary)] text-[10px] mb-4 font-medium uppercase tracking-widest truncate">by {opp.brandName || opp.company || 'Partner'}</p>
-                
-                <div className="flex items-center justify-between pt-4 border-t border-[var(--border-color)]">
-                  <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
-                    <span className="text-[10px] text-[var(--text-secondary)] font-black uppercase tracking-widest">Hiring Now</span>
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                      opp.category === 'Campaign' ? 'bg-blue-500/10 text-blue-500' : 
+                      opp.category === 'Event' ? 'bg-purple-500/10 text-purple-500' : 'bg-green-500/10 text-green-500'
+                    }`}>
+                      {opp.category || 'Campaign'}
+                    </span>
+                    <span className="text-spark-red font-black text-sm">
+                      ₦{(opp.reward || opp.budget || 0).toLocaleString()}
+                    </span>
                   </div>
+                  <h3 className="text-base font-bold text-[var(--text-primary)] mb-1 group-hover:text-spark-red transition-colors line-clamp-2">{opp.title}</h3>
+                  <p className="text-[var(--text-secondary)] text-[10px] mb-4 font-semibold uppercase tracking-widest truncate">by {opp.brandName || opp.company || 'Partner'}</p>
+                </div>
+                
+                <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
+                  <div className="mb-3">
+                    {opp.category === 'Campaign' && (
+                      <p className="text-[10px] font-black text-blue-500 uppercase tracking-wider">
+                        Campaign Budget: ₦{(opp.reward || opp.budget || 0).toLocaleString()}
+                      </p>
+                    )}
+                    {opp.category === 'Event' && (
+                      <p className="text-[10px] font-black text-purple-500 uppercase tracking-wider">
+                        Sponsorship Target: ₦{(opp.reward || 0).toLocaleString()}
+                      </p>
+                    )}
+                    {opp.category === 'Gig' && (
+                      <p className="text-[10px] font-black text-green-500 uppercase tracking-wider">
+                        Gig Deadline: {opp.deadline || 'Ongoing'}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
+                      <span className="text-[10px] text-[var(--text-secondary)] font-black uppercase tracking-widest">Hiring Now</span>
+                    </div>
                   
-                  {/* TEMP: Admin delete for orphans */}
-                  {(!opp.hostId && !opp.brandId) && (
-                    <button 
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (window.confirm('Are you sure you want to delete this orphaned record?')) {
-                          try {
-                            const coll = opp.category === 'Campaign' ? 'gigs' : 'events';
-                            await apiClient.delete(`${coll}/${opp.id}`);
-                            setOpportunities(prev => prev.filter(item => item.id !== opp.id));
-                            alert('Deleted successfully');
-                          } catch (err) {
-                            alert('Failed to delete. You might not have permission.');
+                    {/* TEMP: Admin delete for orphans */}
+                    {(!opp.hostId && !opp.brandId) && (
+                      <button 
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (window.confirm('Are you sure you want to delete this orphaned record?')) {
+                            try {
+                              const coll = opp.category === 'Campaign' ? 'gigs' : 'events';
+                              await apiClient.delete(`${coll}/${opp.id}`);
+                              setOpportunities(prev => prev.filter(item => item.id !== opp.id));
+                              alert('Deleted successfully');
+                            } catch (err) {
+                              alert('Failed to delete. You might not have permission.');
+                            }
                           }
-                        }
-                      }}
-                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Delete Orphaned Data"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                    </button>
-                  )}
+                        }}
+                        className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Delete Orphaned Data"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))

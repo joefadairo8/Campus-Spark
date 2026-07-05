@@ -1,5 +1,8 @@
-﻿
 import React from 'react';
+import { APP_ABBREV } from '../constants';
+
+// ...
+<h3 className="text-xl font-bold text-[var(--text-primary)]">The {APP_ABBREV} Difference</h3>
 
 const ValueProposition: React.FC = () => {
     return (
@@ -10,7 +13,7 @@ const ValueProposition: React.FC = () => {
                         Unlock the Heartbeat of Nigerian Youth Culture
                     </h2>
                     <p className="mt-4 max-w-2xl mx-auto text-xl text-[var(--text-secondary)]">
-                        Campus Spark is more than a platform; it's a bridge to the nation's future leaders, creators, and consumers.
+                        {APP_ABBREV} is more than a platform; it's a bridge to the nation's future leaders, creators, and consumers.
                     </p>
                 </div>
                 <div className="mt-16 grid bg-[var(--bg-tertiary)] gap-10 md:grid-cols-2 lg:grid-cols-3">
@@ -27,7 +30,7 @@ const ValueProposition: React.FC = () => {
                         </p>
                     </div>
                     <div className="p-8 bg-spark-white rounded-xl shadow-lg hover:shadow-2xl transition-shadow duration-300">
-                        <h3 className="text-xl font-bold text-[var(--text-primary)]">The Campus Spark Difference</h3>
+                        <h3 className="text-xl font-bold text-[var(--text-primary)]">The {APP_ABBREV} Difference</h3>
                         <p className="mt-2 text-[var(--text-secondary)]">
                             We're built for Nigeria, by people who understand the unique dynamics of its campus life. We prioritize verification, security, and creating genuine connections over transactional interactions.
                         </p>

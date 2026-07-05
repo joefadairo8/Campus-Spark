@@ -1,35 +1,65 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 
 /**
- * Returns the Cloudinary URL for downloading a raw document.
- * For raw resource types (PDF, DOCX), fl_attachment is not supported â€”
- * the URL is returned as-is. The <a download> attribute handles the
- * browser download hint.
+ * Returns the Cloudinary URL for downloading a document.
+ * If it is an image resource type (which includes PDFs when uploaded via auto/upload),
+ * we inject fl_attachment to force browser download.
  */
-function getDownloadUrl(url: string, _filename?: string): string {
-    return url || '';
+function getDownloadUrl(url: string, filename?: string): string {
+    if (!url) return '';
+    
+    // Inject fl_attachment parameter for Cloudinary assets to force browser download and set custom filename
+    if (url.includes('res.cloudinary.com') && !url.includes('fl_attachment')) {
+        const uploadType = url.includes('/image/upload/') ? '/image/upload/' : url.includes('/raw/upload/') ? '/raw/upload/' : null;
+        if (uploadType) {
+            const parts = url.split(uploadType);
+            if (parts.length === 2) {
+                let cleanFilename = '';
+                if (filename) {
+                    // Remove extension (Cloudinary appends it automatically)
+                    const nameWithoutExtension = filename.replace(/\.[^/.]+$/, "");
+                    // Clean up special characters to be safe for header
+                    cleanFilename = nameWithoutExtension.replace(/[^a-zA-Z0-9-_]/g, '_');
+                }
+                const attachmentParam = cleanFilename ? `fl_attachment:${cleanFilename}/` : 'fl_attachment/';
+                return `${parts[0]}${uploadType}${attachmentParam}${parts[1]}`;
+            }
+        }
+    }
+    return url;
 }
 
 interface ProposalDetailsModalProps {
     isOpen: boolean;
     onClose: () => void;
     proposal: any;
-    onUpdateStatus: (id: string, status: 'accepted' | 'rejected' | 'reviewing') => Promise<void>;
+    onUpdateStatus: (id: string, status: string, counterData?: { budget?: string; message?: string; senderId?: string; recipientId?: string }) => Promise<void>;
     isSender: boolean;
     onReleaseSponsorship?: (proposal: any) => Promise<void>;
 }
 
 export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOpen, onClose, proposal, onUpdateStatus, isSender, onReleaseSponsorship }) => {
     const [updating, setUpdating] = useState(false);
+    const [showCounterForm, setShowCounterForm] = useState(false);
+    const [counterBudget, setCounterBudget] = useState('');
+    const [counterMessage, setCounterMessage] = useState('');
+
+    React.useEffect(() => {
+        if (proposal) {
+            setCounterBudget(proposal.budget || '');
+            setCounterMessage('');
+            setShowCounterForm(false);
+        }
+    }, [proposal]);
 
     if (!isOpen || !proposal) return null;
 
     const otherParty = (isSender ? proposal.recipient : proposal.sender) || { name: 'Unknown User', role: 'Unknown', email: '' };
 
-    const handleAction = async (status: 'accepted' | 'rejected' | 'reviewing') => {
+    const handleAction = async (status: string, counterData?: any) => {
         setUpdating(true);
         try {
-            await onUpdateStatus(proposal.id, status);
+            await onUpdateStatus(proposal.id, status, counterData);
             onClose();
         } catch (error) {
             console.error("Action failed", error);
@@ -63,12 +93,14 @@ export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOp
                     <div className={`p-4 rounded-2xl flex items-center gap-3 border ${proposal.status === 'accepted' ? 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20' :
                             proposal.status === 'rejected' ? 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20' :
                                 proposal.status === 'reviewing' ? 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20' :
-                                    'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border-yellow-500/20'
+                                    proposal.status === 'countered' ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20' :
+                                        'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border-yellow-500/20'
                         }`}>
                         <div className={`w-2 h-2 rounded-full ${proposal.status === 'accepted' ? 'bg-green-500' :
                                 proposal.status === 'rejected' ? 'bg-red-500' :
                                     proposal.status === 'reviewing' ? 'bg-blue-500' :
-                                        'bg-yellow-500'
+                                        proposal.status === 'countered' ? 'bg-amber-500' :
+                                            'bg-yellow-500'
                             }`}></div>
                         <span className="font-black uppercase text-xs tracking-widest">
                             Current Status: {proposal.status}
@@ -79,7 +111,7 @@ export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOp
                     <div className="grid grid-cols-2 gap-4">
                         <div className="p-5 bg-[var(--bg-primary)] rounded-2xl border border-[var(--border-color)]">
                             <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Proposed Budget</p>
-                            <p className="text-xl font-black text-[var(--text-primary)]">{proposal.budget ? `â‚¦${Number(proposal.budget).toLocaleString()}` : 'Not specificed'}</p>
+                            <p className="text-xl font-black text-[var(--text-primary)]">{proposal.budget ? `₦${Number(proposal.budget).toLocaleString()}` : 'Not specificed'}</p>
                         </div>
                         <div className="p-5 bg-[var(--bg-primary)] rounded-2xl border border-[var(--border-color)]">
                             <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Timeline</p>
@@ -139,11 +171,65 @@ export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOp
                     {isSender ? (
                         <div className="w-full text-center">
                             <p className="text-[var(--text-secondary)] font-bold text-sm">
-                                {proposal.status === 'pending' ? 'Waiting for response...' : `This proposal was ${proposal.status}.`}
+                                {proposal.status === 'pending' || proposal.status === 'countered' || proposal.status === 'reviewing' ? 'Waiting for response...' : `This proposal was ${proposal.status}.`}
                             </p>
                             {proposal.sender?.role?.includes('Influencer') && (
                                 <p className="text-[10px] text-center font-bold text-spark-red mt-4 uppercase tracking-widest bg-spark-red/5 py-2 rounded-xl">Note: A 10% platform service fee applies to this payment.</p>
                             )}
+                        </div>
+                    ) : showCounterForm ? (
+                        <div className="w-full space-y-4 animate-in slide-in-from-bottom duration-300">
+                            <h4 className="text-sm font-black text-[var(--text-primary)] uppercase tracking-wider">Make a Counter Offer</h4>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest block mb-1">Counter Budget (₦)</label>
+                                    <input
+                                        type="number"
+                                        value={counterBudget}
+                                        onChange={(e) => setCounterBudget(e.target.value)}
+                                        className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] font-bold focus:outline-none focus:border-spark-red"
+                                        placeholder="e.g. 50000"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest block mb-1">Message / Negotiation Terms</label>
+                                    <textarea
+                                        value={counterMessage}
+                                        onChange={(e) => setCounterMessage(e.target.value)}
+                                        rows={2}
+                                        className="w-full px-4 py-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] font-bold focus:outline-none focus:border-spark-red resize-none text-xs"
+                                        placeholder="e.g. We can do this if we change deliverables..."
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setShowCounterForm(false)}
+                                    className="px-6 py-3 bg-[var(--bg-tertiary)] text-[var(--text-primary)] font-black rounded-xl hover:bg-[var(--bg-secondary)] transition-all flex-1 border border-[var(--border-color)] text-xs uppercase tracking-wider font-bold"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (!counterBudget) {
+                                            alert("Please enter a counter budget.");
+                                            return;
+                                        }
+                                        handleAction('countered', {
+                                            budget: counterBudget,
+                                            message: counterMessage 
+                                                ? `[Counter Offer: ₦${Number(counterBudget).toLocaleString()}] ${counterMessage}\n\nOriginal Proposal:\n${proposal.message}`
+                                                : `[Counter Offer: ₦${Number(counterBudget).toLocaleString()}]\n\nOriginal Proposal:\n${proposal.message}`,
+                                            senderId: proposal.recipientId, 
+                                            recipientId: proposal.senderId
+                                        });
+                                    }}
+                                    disabled={updating}
+                                    className="px-6 py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all flex-1 text-xs uppercase tracking-wider font-bold"
+                                >
+                                    Submit Counter
+                                </button>
+                            </div>
                         </div>
                     ) : (
                         <div className="flex gap-3 flex-wrap">
@@ -151,9 +237,19 @@ export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOp
                                 <button
                                     onClick={() => handleAction('rejected')}
                                     disabled={updating}
-                                    className="px-6 py-4 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all flex-1 min-w-[140px]"
+                                    className="px-6 py-4 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all flex-1 min-w-[120px] text-xs uppercase tracking-wider font-bold"
                                 >
                                     Decline
+                                </button>
+                            )}
+
+                            {(proposal.status === 'pending' || proposal.status === 'countered' || proposal.status === 'reviewing') && (
+                                <button
+                                    onClick={() => setShowCounterForm(true)}
+                                    disabled={updating}
+                                    className="px-6 py-4 bg-amber-500 text-white font-black rounded-2xl hover:bg-amber-600 transition-all flex-1 min-w-[120px] text-xs uppercase tracking-wider font-bold"
+                                >
+                                    Counter Offer
                                 </button>
                             )}
 
@@ -161,7 +257,7 @@ export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOp
                                 <button
                                     onClick={() => handleAction('reviewing')}
                                     disabled={updating}
-                                    className="px-6 py-4 bg-[var(--bg-tertiary)] text-[var(--text-primary)] font-black rounded-2xl hover:bg-[var(--bg-secondary)] transition-all flex-1 border border-[var(--border-color)] min-w-[140px]"
+                                    className="px-6 py-4 bg-[var(--bg-tertiary)] text-[var(--text-primary)] font-black rounded-2xl hover:bg-[var(--bg-secondary)] transition-all flex-1 border border-[var(--border-color)] min-w-[120px] text-xs uppercase tracking-wider font-bold"
                                 >
                                     Mark as Reviewing
                                 </button>
@@ -171,7 +267,7 @@ export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOp
                                 <button
                                     onClick={() => handleAction('accepted')}
                                     disabled={updating}
-                                    className="px-6 py-4 bg-[var(--text-primary)] text-[var(--bg-primary)] font-black rounded-2xl hover:bg-spark-red hover:text-white transition-all shadow-xl shadow-black/5 flex-1 min-w-[140px]"
+                                    className="px-6 py-4 bg-[var(--text-primary)] text-[var(--bg-primary)] font-black rounded-2xl hover:bg-spark-red hover:text-white transition-all shadow-xl shadow-black/5 flex-1 min-w-[120px] text-xs uppercase tracking-wider font-bold"
                                 >
                                     Accept Proposal
                                 </button>
@@ -182,7 +278,7 @@ export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOp
                                     <button
                                         onClick={() => onReleaseSponsorship(proposal)}
                                         disabled={updating}
-                                        className="w-full px-6 py-4 bg-green-600 text-white font-black rounded-2xl hover:bg-green-700 transition-all shadow-xl shadow-green-100 flex items-center justify-center gap-2"
+                                        className="w-full px-6 py-4 bg-green-600 text-white font-black rounded-2xl hover:bg-green-700 transition-all shadow-xl shadow-green-100 flex items-center justify-center gap-2 text-xs uppercase tracking-wider font-bold"
                                     >
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                         Release Sponsorship Funds

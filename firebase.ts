@@ -6,7 +6,7 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged
 } from 'firebase/auth';
-import { getFirestore, collection as firebaseCollection, doc as firebaseDoc, getDocs as firebaseGetDocs, getDoc as firebaseGetDoc, setDoc as firebaseSetDoc, addDoc as firebaseAddDoc, updateDoc as firebaseUpdateDoc, deleteDoc as firebaseDeleteDoc, query as firebaseQuery, where as firebaseWhere, or as firebaseOr, limit as firebaseLimit, orderBy as firebaseOrderBy, serverTimestamp as firebaseTimestamp, runTransaction, enableIndexedDbPersistence } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection as firebaseCollection, doc as firebaseDoc, getDocs as firebaseGetDocs, getDoc as firebaseGetDoc, setDoc as firebaseSetDoc, addDoc as firebaseAddDoc, updateDoc as firebaseUpdateDoc, deleteDoc as firebaseDeleteDoc, query as firebaseQuery, where as firebaseWhere, or as firebaseOr, limit as firebaseLimit, orderBy as firebaseOrderBy, serverTimestamp as firebaseTimestamp, runTransaction } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getAnalytics } from "firebase/analytics";
 import { 
@@ -30,19 +30,13 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null;
 export const auth = getAuth(app);
+
+// Use modern persistent cache instead of deprecated enableIndexedDbPersistence
+// This fixes the "Unexpected state (ID: b815)" Firestore internal assertion error
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 
-// Enable Offline Persistence
-if (typeof window !== 'undefined') {
-  enableIndexedDbPersistence(db).catch((err) => {
-    if (err.code === 'failed-precondition') {
-      console.warn('Firestore persistence failed: Multiple tabs open.');
-    } else if (err.code === 'unimplemented') {
-      console.warn('Firestore persistence failed: Browser not supported.');
-    }
-  });
-}
+
 
 // Local storage parity for existing components (optional but helpful)
 const setUser = (user: any) => {
@@ -316,7 +310,20 @@ export const apiClient = {
     }
 
     const snapshot = constraints.length > 0 ? await firebaseGetDocs(firebaseQuery(colRef, ...constraints)) : await firebaseGetDocs(colRef);
-    return { data: snapshot.docs.map((d: any) => ({ id: d.id, ...d.data() })) };
+    const results = snapshot.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+
+    if (parts[0] === 'events') {
+      try {
+        const usersSnap = await firebaseGetDocs(firebaseCollection(db, 'users'));
+        const existingUserIds = new Set(usersSnap.docs.map(u => u.id));
+        return { data: results.filter((e: any) => e.hostId && existingUserIds.has(e.hostId)) };
+      } catch (err) {
+        console.error('Error fetching users for event filtering:', err);
+        return { data: results };
+      }
+    }
+
+    return { data: results };
   } catch (err: any) {
     console.error('apiClient.get error:', err);
     if (err.code === 'unavailable') return { data: [] };
@@ -354,7 +361,7 @@ export const apiClient = {
           id: currentUser.uid,
           name: creatorProfile.name || creatorProfile.fullName || currentUser.displayName || 'Unknown Creator',
           email: creatorProfile.email || currentUser.email || '',
-          university: creatorProfile.university || 'Campus Spark'
+          university: creatorProfile.university || 'ABC-Rally'
         },
         status: 'pending',
         createdAt: new Date().toISOString()
@@ -458,7 +465,7 @@ export const apiClient = {
               email: senderProfile.email || currentUser.email || '',
               imageUrl: senderProfile.imageUrl || currentUser.photoURL || ''
             },
-            status: 'pending'
+            status: data.status || 'pending'
           };
           
           if (data.recipientId) {
@@ -605,6 +612,7 @@ export const apiClient = {
             status: 'escrow',
             description: `Locked Payment: ${gigData.title}`,
             relatedUserId: gigData.brandId,
+            campaignId: gigId,
             createdAt: firebaseTimestamp()
           });
 

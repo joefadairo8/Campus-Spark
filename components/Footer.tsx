@@ -1,5 +1,5 @@
-﻿import React from 'react';
-import { NAV_LINKS, SparkIcon } from '../constants';
+import React from 'react';
+import { NAV_LINKS, SparkIcon, APP_NAME, APP_ABBREV } from '../constants';
 
 const SocialIconLink: React.FC<{ href: string; children: React.ReactNode }> = ({ href, children }) => (
     <a href={href} className="text-[var(--text-secondary)] hover:text-spark-red transition-all p-2.5 bg-spark-red/5 border border-spark-red/10 rounded-xl hover:scale-110 active:scale-95">
@@ -16,7 +16,7 @@ const Footer: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigate }
                     <div className="col-span-2 lg:col-span-1">
                          <div className="flex items-center space-x-2">
                             <SparkIcon className="w-8 h-8 text-spark-red" />
-                            <span className="text-xl font-fancy font-black tracking-tighter">Spark</span>
+                            <span className="text-xl font-fancy font-black tracking-tighter">{APP_ABBREV}</span>
                         </div>
                         <p className="mt-8 text-sm text-[var(--text-secondary)] leading-relaxed font-medium">
                           Connecting brands to the heart of youth culture with authenticity and scale.
@@ -45,20 +45,21 @@ const Footer: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigate }
                         <ul className="space-y-4">
                             <li><button onClick={() => onNavigate('about')} className="text-sm text-[var(--text-secondary)] hover:text-spark-red transition-colors font-semibold">About Us</button></li>
                             <li><button onClick={() => onNavigate('blog')} className="text-sm text-[var(--text-secondary)] hover:text-spark-red transition-colors font-semibold">Blog</button></li>
-                            <li><button onClick={() => onNavigate('careers')} className="text-sm text-[var(--text-secondary)] hover:text-spark-red transition-colors font-semibold">Careers</button></li>
-                            <li><button onClick={() => onNavigate('contact')} className="text-sm text-[var(--text-secondary)] hover:text-spark-red transition-colors font-semibold">Contact</button></li>
+                            <li><button onClick={() => onNavigate('contact')} className="text-[var(--text-secondary)] hover:text-spark-red text-sm transition-colors cursor-pointer">Contact Support</button></li>
+                            <li><button onClick={() => onNavigate('help')} className="text-[var(--text-secondary)] hover:text-spark-red text-sm transition-colors cursor-pointer">Help Center</button></li>
+                            <li><button onClick={() => onNavigate('schedule-call')} className="text-[var(--text-secondary)] hover:text-spark-red text-sm transition-colors cursor-pointer">Schedule a Call</button></li>
                         </ul>
                     </div>
                     <div>
                         <h3 className="text-[10px] font-black text-spark-red tracking-[0.3em] uppercase mb-8">Legal</h3>
                         <ul className="space-y-4">
-                            <li><a href="#" className="text-sm text-[var(--text-secondary)] hover:text-spark-red transition-colors font-semibold">Privacy Policy</a></li>
-                            <li><a href="#" className="text-sm text-[var(--text-secondary)] hover:text-spark-red transition-colors font-semibold">Terms of Service</a></li>
+                            <li><button onClick={() => onNavigate('privacy')} className="text-sm text-[var(--text-secondary)] hover:text-spark-red transition-colors font-semibold">Privacy Policy</button></li>
+                            <li><button onClick={() => onNavigate('terms')} className="text-sm text-[var(--text-secondary)] hover:text-spark-red transition-colors font-semibold">Terms of Service</button></li>
                         </ul>
                     </div>
                 </div>
                 <div className="mt-24 pt-12 border-t border-[var(--border-color)] flex flex-col md:flex-row items-center justify-between gap-8">
-                    <p className="text-xs text-[var(--text-secondary)] md:order-1 font-bold tracking-wider">&copy; {new Date().getFullYear()} CAMPUS SPARK. ALL RIGHTS RESERVED.</p>
+                    <p className="text-xs text-[var(--text-secondary)] md:order-1 font-bold tracking-wider">&copy; {new Date().getFullYear()} {APP_NAME}. ALL RIGHTS RESERVED.</p>
                     <div className="flex space-x-4 md:order-2">
                        <SocialIconLink href="#">
                            <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24"><path fillRule="evenodd" d="M22 12c0-5.523-4.477-10-10-10S2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.878v-6.987h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.988C18.343 21.128 22 16.991 22 12z" clipRule="evenodd" /></svg>

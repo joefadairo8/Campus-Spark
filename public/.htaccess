@@ -1,0 +1,22 @@
+# SPA (Single Page Application) routing for Apache / cPanel
+# ─────────────────────────────────────────────────────────────
+# This file mirrors the Firebase hosting "**" → "/index.html" rewrite.
+# Without it, any URL that isn't a real file on disk returns a 404.
+#
+# How it works:
+#   1. RewriteEngine on — enable the rewrite module
+#   2. Skip real files and directories (assets, images, etc.)
+#   3. Everything else → serve /index.html and let the React router decide
+#
+# After editing, rebuild (npm run build) and re-upload dist/ to cPanel.
+
+Options -MultiViews
+RewriteEngine On
+
+# If the request is for a real file (e.g. /assets/index.js), serve it directly
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Otherwise, serve index.html and let the front-end router handle the path
+RewriteRule ^ /index.html [L]

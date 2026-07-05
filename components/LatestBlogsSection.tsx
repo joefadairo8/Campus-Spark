@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { db, collection, query, where, getDocs, orderBy, limit } from '../firebase';
 import { FileText, Calendar, ArrowRight } from 'lucide-react';
 
@@ -48,7 +48,7 @@ const LatestBlogsSection: React.FC<{ onNavigate: (page: string) => void }> = ({ 
                             <FileText className="w-4 h-4" /> The Spark Blog
                         </div>
                         <h2 className="text-4xl md:text-5xl font-black text-[var(--text-primary)] tracking-tighter">
-                            Latest from our <span className="text-transparent bg-clip-text bg-gradient-to-r from-spark-red to-orange-500">Newsroom</span>
+                            Latest from our <span className="text-spark-red italic">Newsroom</span>
                         </h2>
                     </div>
                     <button 

@@ -200,7 +200,7 @@ const LoginPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigat
                                 id="password"
                                 label="Password"
                                 type="password"
-                                placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                                placeholder="••••••••"
                                 value={formData.password}
                                 focusColor={theme.focus}
                                 onChange={handleChange}

@@ -90,6 +90,8 @@ export interface User {
   handle?: string;
   clubType?: string;
   companySize?: string;
+  coverPhotoUrl?: string;
+  influencerType?: string;
   portfolio?: PortfolioItem[];
   createdAt: string;
 }

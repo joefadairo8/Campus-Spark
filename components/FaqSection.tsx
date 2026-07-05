@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { FAQ_ITEMS } from '../constants';
 import { FaqItem } from '../types';
 
@@ -40,7 +40,7 @@ const FaqSection: React.FC = () => {
                         Got <span className="text-gradient-red italic">Questions?</span>
                     </h2>
                     <p className="max-w-xl mx-auto text-base text-[var(--text-secondary)] font-medium">
-                        Everything you need to know about Spark.
+                        Everything you need to know about ABC-Rally — for Associations, Brands, and Creators.
                     </p>
                 </div>
                 <div className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] p-2 shadow-sm">

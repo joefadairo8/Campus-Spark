@@ -24,19 +24,37 @@ export interface Wallet {
 export interface CampaignAllocation {
     id?: string;
     campaignId: string;
+    campaignTitle?: string;
     brandId: string;
+    brandName?: string;
     creatorId: string;
     creatorName: string;
     creatorUniversity?: string;
     creatorEmail?: string;
     amount: number;
     status: 'selected' | 'in_progress' | 'submitted' | 'approved' | 'paid' | 'rejected';
+    // Escrow fields (optional — absent on legacy allocations)
+    escrowId?: string | number;
+    escrowPaymentUrl?: string;
+    escrowRef?: string;
+    // Submission report (set when creator submits work)
+    submission?: {
+        text?: string;
+        link?: string;
+        imageUrl?: string;
+        submittedAt?: any;
+        revisionNote?: string;
+    };
     createdAt: any;
     updatedAt?: any;
 }
 
 export const REVENUE_WALLET_ID = 'PLATFORM_REVENUE_HUB';
 export const LISTING_FEE = 20000;
+// 10% total deducted from creator earnings at payout time.
+// Breakdown: ~5% goes to Pandascrow as their escrow/processing fee,
+//            ~5% stays as platform (Campus Spark) revenue.
+// The brand pays exactly the allocated amount — no extra charges on checkout.
 export const SERVICE_FEE_PCT = 0.1;
 
 export const WalletService = {
@@ -134,7 +152,7 @@ export const WalletService = {
      * Consistently release payment for a specific allocation after report approval.
      * Enforces that a report must exist and be in a valid state.
      */
-    async releaseAllocationPayment(brandId: string, allocationId: string, gigTitle: string) {
+    async releaseAllocationPayment(brandId: string, allocationId: string, gigTitle: string, options?: { escrowRelease?: boolean }) {
         return await fsRunTransaction(db, async (transaction) => {
             const allocRef = fsDoc(db, 'campaignAllocations', allocationId);
             const allocSnap = await transaction.get(allocRef);
@@ -142,13 +160,18 @@ export const WalletService = {
             if (!allocSnap.exists()) throw new Error('Allocation record not found.');
             const allocData = allocSnap.data() as CampaignAllocation;
             
-            if (allocData.status !== 'approved' && allocData.status !== 'submitted') {
-                throw new Error('Payment can only be released for approved or submitted reports.');
+            // For escrow-based releases (OTP confirmed by brand), bypass the status/submission guards.
+            // The OTP confirmation itself is the brand's approval.
+            if (!options?.escrowRelease) {
+                if (allocData.status !== 'approved' && allocData.status !== 'submitted') {
+                    throw new Error('Payment can only be released for approved or submitted reports.');
+                }
+                
+                if (!allocData.submission || (!allocData.submission.text && !allocData.submission.link)) {
+                    throw new Error('No valid campaign report found. A report must be submitted before payment release.');
+                }
             }
-            
-            if (!allocData.submission || (!allocData.submission.text && !allocData.submission.link)) {
-                throw new Error('No valid campaign report found. A report must be submitted before payment release.');
-            }
+
 
             const creatorId = allocData.creatorId;
             const amount = allocData.amount;

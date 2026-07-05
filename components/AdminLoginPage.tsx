@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { auth, db, signInWithEmailAndPassword, doc, getDoc } from '../firebase';
 import { Shield, Lock, User, ArrowRight, Loader2, AlertCircle, ChevronLeft } from 'lucide-react';
 
@@ -55,7 +55,7 @@ const AdminLoginPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNa
                 <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-white/5 rounded-full blur-[120px]"></div>
                 {/* Grid Overlay */}
                 <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20"></div>
-                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/50 to-black"></div>
+                <div className="absolute inset-0 bg-spark-black/80"></div>
             </div>
 
             <div className="w-full max-w-lg relative z-10">
@@ -106,7 +106,7 @@ const AdminLoginPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNa
                                         value={formData.password}
                                         onChange={handleChange}
                                         className="w-full pl-14 pr-6 py-5 bg-white/5 border border-white/10 rounded-2xl text-white font-bold outline-none focus:border-spark-red/50 focus:ring-4 focus:ring-spark-red/5 transition-all"
-                                        placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                                        placeholder="••••••••••••"
                                     />
                                 </div>
                             </div>

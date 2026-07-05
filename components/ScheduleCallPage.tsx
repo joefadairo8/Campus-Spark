@@ -1,5 +1,6 @@
-﻿import React, { useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { PhoneCall, ArrowLeft, Building2, CheckCircle2 } from 'lucide-react';
+import { APP_ABBREV } from '../constants';
 
 const ScheduleCallPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigate }) => {
     useEffect(() => {
@@ -38,10 +39,10 @@ const ScheduleCallPage: React.FC<{ onNavigate: (page: string) => void }> = ({ on
                             <PhoneCall className="w-4 h-4" /> Discovery Call
                         </div>
                         <h1 className="text-4xl md:text-5xl lg:text-6xl font-black text-[var(--text-primary)] mb-6 leading-tight">
-                            Let's Discuss Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-spark-red to-orange-500">Campus Strategy</span>
+                            Let's Discuss Your <span className="text-spark-red italic">Campus Strategy</span>
                         </h1>
                         <p className="text-lg text-[var(--text-secondary)] mb-10 leading-relaxed font-medium">
-                            Book a 30-minute introductory meeting with our partnerships team to learn how Campus Spark can help you scale your brand across universities.
+                            Book a 30-minute introductory meeting with our partnerships team to learn how {APP_ABBREV} can help you scale your brand across universities.
                         </p>
 
                         <div className="space-y-6 bg-[var(--bg-secondary)] p-8 rounded-[2rem] border border-[var(--border-color)]">

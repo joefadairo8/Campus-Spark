@@ -2,11 +2,71 @@
 import React from 'react';
 import { NavLink, Feature, HowItWorksContent, Testimonial, FaqItem, UserType, Opportunity } from './types';
 
-export const SparkIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M13 10V3L4 14h7v7l9-11h-7z" />
-    </svg>
-);
+import * as LucideIcons from 'lucide-react';
+import { useState, useEffect } from 'react';
+
+// Global observer store for branding settings
+export const globalBrandingSettings = {
+    title: 'ABC‑Rally by Campus Himpact Hub',
+    abbrev: 'ABC‑Rally',
+    favicon: '/vite.svg',
+    logoType: 'icon',
+    logoValue: 'Megaphone',
+    landingImage: '',
+    listeners: [] as (() => void)[],
+
+    subscribe(listener: () => void) {
+        this.listeners.push(listener);
+        return () => {
+            this.listeners = this.listeners.filter(l => l !== listener);
+        };
+    },
+
+    update(settings: { title?: string; abbrev?: string; favicon?: string; logoType?: string; logoValue?: string; landingImage?: string }) {
+        Object.assign(this, settings);
+        this.listeners.forEach(l => l());
+    }
+};
+
+export const DynamicText: React.FC<{ type: 'name' | 'abbrev' }> = ({ type }) => {
+    const [value, setValue] = useState(type === 'name' ? globalBrandingSettings.title : globalBrandingSettings.abbrev);
+
+    useEffect(() => {
+        const unsubscribe = globalBrandingSettings.subscribe(() => {
+            setValue(type === 'name' ? globalBrandingSettings.title : globalBrandingSettings.abbrev);
+        });
+        return unsubscribe;
+    }, [type]);
+
+    return <>{value}</>;
+};
+
+export const APP_NAME = <DynamicText type="name" />;
+export const APP_ABBREV = <DynamicText type="abbrev" />;
+
+export const getRawAppName = () => globalBrandingSettings.title;
+export const getRawAppAbbrev = () => globalBrandingSettings.abbrev;
+
+export const BACKEND_URL = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
+
+export const SparkIcon = ({ className }: { className?: string }) => {
+    const [logoType, setLogoType] = useState(globalBrandingSettings.logoType);
+    const [logoValue, setLogoValue] = useState(globalBrandingSettings.logoValue);
+
+    useEffect(() => {
+        const unsubscribe = globalBrandingSettings.subscribe(() => {
+            setLogoType(globalBrandingSettings.logoType);
+            setLogoValue(globalBrandingSettings.logoValue);
+        });
+        return unsubscribe;
+    }, []);
+
+    if (logoType === 'image') {
+        return <img src={logoValue} className={className} alt={globalBrandingSettings.abbrev as any} />;
+    }
+    const IconComponent = (LucideIcons as any)[logoValue] || LucideIcons.Megaphone;
+    return <IconComponent className={className} />;
+};
 
 export const CheckCircleIcon = ({ className }: { className?: string }) => (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -23,11 +83,13 @@ const UsersIcon = ({ className }: { className?: string }) => (
 );
 
 export const NAV_LINKS: NavLink[] = [
-    { label: 'About Us', href: 'about' },
-    { label: 'For Brands', href: 'for-brands' },
-    { label: 'For Creators', href: 'for-creators' },
-    { label: 'Opportunities', href: 'careers' },
-    { label: 'Blog', href: 'blog' },
+    { label: 'About', href: 'about' },
+    { label: 'Associations', href: 'for-associations' },
+    { label: 'Brands', href: 'for-brands' },
+    { label: 'Creators', href: 'for-creators' },
+    { label: 'Opportunities', href: 'opportunities' },
+    { label: 'Events', href: 'events' },
+    { label: 'Pricing', href: 'pricing' },
     { label: 'Contact', href: 'contact' },
 ];
 
@@ -80,7 +142,7 @@ export const PARTNER_LOGOS = [
 
 export const TESTIMONIALS: Testimonial[] = [
     {
-        quote: "Campus Spark bridged the gap between us and the Gen-Z market in Lagos. The ROI on our creator program was 4x compared to traditional ads.",
+        quote: "ABC-Rally bridged the gap between us and the Gen-Z market in Lagos. The ROI on our creator program was 4x compared to traditional ads.",
         name: "Damilola Ade",
         title: "Growth Lead, FinTech X",
     },
@@ -97,8 +159,67 @@ export const TESTIMONIALS: Testimonial[] = [
 ];
 
 export const FAQ_ITEMS: FaqItem[] = [
-    { question: "How do I get verified?", answer: "Users are verified using university emails or valid ID cards. Associations must provide proof of registration." },
-    { question: "Is it really free for creators?", answer: "Yes, 100%. We only charge brands a service fee when they hire creators or sponsor events." },
+    // Platform & Getting Started
+    {
+        question: "What exactly is ABC-Rally and who is it for?",
+        answer: "ABC-Rally is Nigeria's campus marketing platform connecting three types of users — Associations (A), Brands (B), and Creators (C). Associations are student clubs and campus bodies looking for sponsorship. Brands are companies wanting to reach the Gen-Z campus market. Creators are students with social followings who earn money promoting brands on campus."
+    },
+    {
+        question: "Is ABC-Rally only for Nigerian universities?",
+        answer: "Currently, yes — ABC-Rally focuses on Nigerian campuses. We support all 36 states and over 100 universities. We are actively planning expansion to other African countries in 2026."
+    },
+    {
+        question: "Is it free to sign up and create an account?",
+        answer: "Yes, creating an account is completely free for everyone — Creators, Brands, and Associations. Creators pay nothing at all. Brands and Associations pay small fees only when they want to actively post campaigns or list events."
+    },
+    // Creators
+    {
+        question: "How do Creators earn money on ABC-Rally?",
+        answer: "Creators apply to paid brand campaigns directly from the marketplace. When accepted, the brand locks the agreed payment in escrow before you begin. Once you submit your deliverables (Instagram posts, reels, tweets, etc.) and the brand approves them, the money is immediately released to your ABC-Rally wallet. You can withdraw to your Nigerian bank account within 24–48 hours."
+    },
+    {
+        question: "Is it really free for Creators?",
+        answer: "100% free. Creators pay zero platform fees to join, apply for campaigns, or receive payments. We only charge brands when they hire creators, so all your earnings go directly to you."
+    },
+    {
+        question: "How do I get verified as a Creator?",
+        answer: "Verification uses your university email address or a valid student ID. Once submitted, our team reviews it within 48 hours. Verified creators appear with a badge and rank higher in brand search results, which significantly increases your chances of being hired."
+    },
+    // Brands
+    {
+        question: "Is it free for Brands to post campaigns?",
+        answer: "There is a flat ₦20,000 listing fee per campaign or gig posted by brands. This helps maintain a high-quality, serious marketplace. Event sponsorship listings — for associations and brands seeking sponsors — are posted for free. The campaign budget itself is held securely in escrow and only released to the creator when you approve the completed work."
+    },
+    {
+        question: "What does the escrow system mean for Brands?",
+        answer: "When you hire a creator, you pre-fund their payment into a secure escrow account. The money leaves your wallet immediately but the creator cannot access it until they deliver what was agreed. If a creator doesn't deliver, your funds are protected. This eliminates the risk of paying for work that never gets done."
+    },
+    {
+        question: "How do I find the right Creators for my campaign?",
+        answer: "Use the Talent Directory to search and filter creators by university, state, niche (tech, fashion, lifestyle, etc.), audience size, and completion rate. You can view full profiles, past campaign history, and ratings before sending a proposal."
+    },
+    // Associations
+    {
+        question: "How can our Association get corporate sponsorship through ABC-Rally?",
+        answer: "Create a free Association profile, then list your upcoming event in the Events module. Set sponsorship packages (Gold, Silver, Bronze) with their benefits and pricing. Brands browsing the platform can discover your event and send you a proposal directly. You negotiate, agree, and the funds are transferred through the platform."
+    },
+    {
+        question: "What types of associations can join?",
+        answer: "Any registered campus group can join — academic associations, tech clubs, cultural bodies, sports unions, entrepreneurship clubs, religious fellowships, and more. You just need a school email and evidence of registration to get verified."
+    },
+    // Payments & Safety
+    {
+        question: "What payment methods are supported?",
+        answer: "We use Paystack as our payment processor, which supports all major Nigerian bank cards, bank transfers, and USSD. Withdrawals go directly to any Nigerian bank account. All transactions are encrypted and PCI-DSS compliant."
+    },
+    {
+        question: "What happens if there is a dispute between a Brand and a Creator?",
+        answer: "If a brand rejects submitted work, they must provide a written reason and the creator gets an opportunity to revise. If both parties still cannot agree, our support team mediates the dispute based on the original campaign brief and submitted evidence. Funds remain locked in escrow throughout the dispute process — no one can withdraw them until it is resolved."
+    },
+    {
+        question: "How long do withdrawals take?",
+        answer: "Wallet withdrawals to Nigerian bank accounts are typically processed within 24–48 business hours. Most banks receive the transfer on the same day during business hours. International transfers are not currently supported."
+    },
 ];
 
 // Mock data for campus campaigns and gigs - REMOVED for production readiness

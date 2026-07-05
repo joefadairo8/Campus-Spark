@@ -169,6 +169,22 @@ service cloud.firestore {
       allow write: if isAuth();
       allow delete: if isAuth();
     }
+
+    // ─────────────────────────────────────────────────────
+    // SITE SETTINGS, PAST EVENTS, TESTIMONIALS
+    // ─────────────────────────────────────────────────────
+    match /site_settings/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /past_events/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /testimonials/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
   }
 }
 // Force rules deployment v2
