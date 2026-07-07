@@ -2289,7 +2289,7 @@ const BrandDashboard: React.FC<{
                         <div className="flex justify-between items-center">
                             <div>
                                 <h3 className="text-2xl font-black text-[var(--text-primary)]">My Campaigns</h3>
-                                <p className="text-[var(--text-secondary)] mt-1">Create, manage, and track your brand campaigns, creator gigs, and influencer marketing projects. <span className="text-green-500 font-bold">Free to list — no listing fee.</span></p>
+                                <p className="text-[var(--text-secondary)] mt-1">Create, manage, and track your brand campaigns, creator gigs, and influencer marketing projects. <span className="text-amber-500 font-bold">₦20,000 listing fee per campaign.</span></p>
                             </div>
                             <button onClick={() => setShowCampaignModal(true)} className="bg-spark-red text-white px-6 py-3 rounded-xl font-black shadow-lg shadow-red-100 hover:bg-red-700 transition-all active:scale-95">
                                 + New Campaign
