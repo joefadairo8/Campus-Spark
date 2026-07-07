@@ -308,8 +308,9 @@ const EventsPage: React.FC<{ onNavigate: (page: string) => void, user?: any }> =
               Event Sponsorship Marketplace
             </div>
             
-            <h1 className="text-3xl md:text-5xl lg:text-6xl font-fancy font-black tracking-tighter leading-[1.05] text-[var(--text-primary)] mb-6 animate-in slide-in-from-bottom-4 duration-700">
-              Discover Events, Sponsorships <span className="bg-gradient-red text-transparent bg-clip-text">&amp; Brand Activations</span>
+            <h1 className="text-3xl md:text-5xl lg:text-6xl font-fancy font-black tracking-tighter leading-[1.1] text-[var(--text-primary)] mb-6 animate-in slide-in-from-bottom-4 duration-700">
+              Discover Events, Sponsorships<br />
+              <span className="text-gradient-red italic">&amp; Brand Activations</span>
             </h1>
             
             <p className="text-base md:text-lg text-[var(--text-secondary)] mb-4 leading-relaxed max-w-3xl mx-auto font-bold animate-in slide-in-from-bottom-4 duration-700 delay-100">
