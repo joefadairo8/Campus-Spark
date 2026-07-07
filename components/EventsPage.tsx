@@ -304,22 +304,20 @@ const EventsPage: React.FC<{ onNavigate: (page: string) => void, user?: any }> =
         
         <div className="max-w-7xl mx-auto px-6 lg:px-8 relative z-10 text-center">
           <div className="max-w-4xl mx-auto">
-            <div className="inline-flex items-center gap-2 px-4 py-2 mb-8 text-[11px] font-black tracking-[0.2em] text-spark-red uppercase bg-spark-red/5 border border-spark-red/10 rounded-full">
-              <Sparkles className="w-3 h-3 text-spark-red" />
+            <div className="inline-block px-4 py-1.5 mb-6 text-[10px] font-black tracking-[0.2em] text-spark-red uppercase bg-spark-red/5 rounded-xl border border-spark-red/10 animate-in fade-in duration-700">
               Event Sponsorship Marketplace
             </div>
             
-            <h1 className="text-4xl md:text-6xl font-fancy font-black mb-8 leading-tight tracking-tight text-[var(--text-primary)]">
-              Discover Events, Sponsorships and <br className="hidden md:inline" />
-              <span className="text-gradient-red italic">Brand Activation</span> Opportunities
+            <h1 className="text-3xl md:text-5xl lg:text-6xl font-fancy font-black tracking-tighter leading-[1.05] text-[var(--text-primary)] mb-6 animate-in slide-in-from-bottom-4 duration-700">
+              Discover Events, Sponsorships <span className="bg-gradient-red text-transparent bg-clip-text">&amp; Brand Activations</span>
             </h1>
             
-            <p className="text-base md:text-lg text-[var(--text-secondary)] mb-6 leading-relaxed max-w-3xl mx-auto font-medium">
-              ABC-Rally helps brands, associations, creators and event teams connect around real events. Explore upcoming conferences, community programs, professional gatherings, youth events, product activations and association programs that need sponsors, creators, vendors or brand partners.
+            <p className="text-base md:text-lg text-[var(--text-secondary)] mb-4 leading-relaxed max-w-3xl mx-auto font-bold animate-in slide-in-from-bottom-4 duration-700 delay-100">
+              ABC-Rally helps brands, associations, creators and event teams connect around real events. Explore conferences, youth activations, and campus programs that need sponsors, creators, or vendors.
             </p>
             
-            <p className="text-base md:text-lg text-[var(--text-secondary)] mb-10 leading-relaxed max-w-3xl mx-auto font-medium">
-              For brands, this is where you find events with ready audiences. For associations, this is where you list your event and attract sponsors. For creators and event professionals, this is where you discover event-based gigs and activation tasks.
+            <p className="text-sm text-[var(--text-secondary)] mb-10 leading-relaxed max-w-3xl mx-auto font-medium animate-in slide-in-from-bottom-4 duration-700 delay-150">
+              For brands, find events with target audiences. For associations, list your events to secure sponsorship. For creators and event talents, discover event-based gigs and ambassador roles.
             </p>
             
             <div className="flex flex-wrap items-center justify-center gap-4">
