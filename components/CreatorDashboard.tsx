@@ -1279,7 +1279,7 @@ const CreatorDashboard: React.FC<{
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                     <div>
                         <h2 className="text-3xl sm:text-4xl font-black text-[var(--text-primary)]">Welcome, {userProfile?.name || 'Creator'}!</h2>
-                        <p className="text-[var(--text-secondary)] font-medium mt-1">Here's your creator overview for today.</p>
+                        <p className="text-[var(--text-secondary)] font-medium mt-1">Quick summary of your profile, gigs, applications, and earnings.</p>
                     </div>
                     {userProfile?.nicheCategory && (
                         <span className="px-4 py-2 bg-spark-red/10 text-spark-red border border-spark-red/20 rounded-full text-xs font-black uppercase tracking-wider">
@@ -1444,7 +1444,7 @@ const CreatorDashboard: React.FC<{
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-[var(--border-color)] pb-4">
                     <div>
                         <h2 className="text-3xl font-black text-[var(--text-primary)]">Profile & Portfolio</h2>
-                        <p className="text-[var(--text-secondary)] mt-1 font-medium">Manage your personal brand specs and showcase evidence of past campaigns.</p>
+                        <p className="text-[var(--text-secondary)] mt-1 font-medium">Update your bio, skills, content samples, social links, and creator profile.</p>
                     </div>
                     <div className="flex gap-2 bg-[var(--bg-secondary)] p-1 rounded-xl border border-[var(--border-color)]">
                         <button 
@@ -1514,7 +1514,7 @@ const CreatorDashboard: React.FC<{
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                     <div>
                         <h2 className="text-3xl font-black text-[var(--text-primary)]">Campus Opportunities</h2>
-                        <p className="text-[var(--text-secondary)] font-medium mt-1">Discover paid content creator gigs, brand ambassador roles, and event volunteer opportunities.</p>
+                        <p className="text-[var(--text-secondary)] font-medium mt-1">Discover paid creator gigs, campaigns, activations, and event tasks.</p>
                     </div>
                     <button 
                         onClick={() => alert("Search alert saved! You'll receive email notifications when new matching gigs are posted.")}
@@ -1694,7 +1694,7 @@ const CreatorDashboard: React.FC<{
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                     <div>
                         <h2 className="text-3xl font-black text-[var(--text-primary)]">Brands & Student Associations</h2>
-                        <p className="text-[var(--text-secondary)] font-medium mt-1">Discover and pitch collaboration proposals directly to top Gen-Z brands and student associations on campus.</p>
+                        <p className="text-[var(--text-secondary)] font-medium mt-1">Discover and pitch collaboration proposals directly to top Gen-Z brands and associations, and youth communities you can work with.</p>
                     </div>
                 </div>
 
@@ -1766,7 +1766,7 @@ const CreatorDashboard: React.FC<{
             <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                 <div>
                     <h2 className="text-3xl font-black text-[var(--text-primary)]">My Applications</h2>
-                    <p className="text-[var(--text-secondary)] font-medium mt-1">Review the evaluation progress of pitches you submitted for campus campaigns.</p>
+                    <p className="text-[var(--text-secondary)] font-medium mt-1">Track gigs and opportunities you have applied for.</p>
                 </div>
 
                 {myApplications.length === 0 ? (
@@ -1982,7 +1982,7 @@ const CreatorDashboard: React.FC<{
             <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                 <div>
                     <h2 className="text-3xl font-black text-[var(--text-primary)]">Active Gigs</h2>
-                    <p className="text-[var(--text-secondary)] font-medium mt-1">Manage execution guidelines, download brand guidelines, and submit campaign deliverables.</p>
+                    <p className="text-[var(--text-secondary)] font-medium mt-1">Manage accepted gigs, tasks, deadlines, and delivery updates.</p>
                 </div>
 
                 {activeCampaigns.length === 0 ? (
@@ -2234,7 +2234,7 @@ const CreatorDashboard: React.FC<{
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-[var(--border-color)] pb-4">
                     <div>
                         <h2 className="text-3xl font-black text-[var(--text-primary)]">Collaboration Hub</h2>
-                        <p className="text-[var(--text-secondary)] mt-1 font-medium">Coordinate invitations, create team-up gigs, and calculate payment splits with co-creators.</p>
+                        <p className="text-[var(--text-secondary)] mt-1 font-medium">Manage invitations, create team-up gigs, and calculate payment splits with co-creators.</p>
                     </div>
                     <div className="flex gap-2 bg-[var(--bg-secondary)] p-1 rounded-xl border border-[var(--border-color)]">
                         <button 
@@ -2442,7 +2442,7 @@ const CreatorDashboard: React.FC<{
             <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                 <div>
                     <h2 className="text-3xl font-black text-[var(--text-primary)]">Ratings & Reviews</h2>
-                    <p className="text-[var(--text-secondary)] font-medium mt-1">Review feedback and 5-star ratings received from brand managers on completed gigs.</p>
+                    <p className="text-[var(--text-secondary)] font-medium mt-1">Review feedback, and ratings from completed collaborations.</p>
                 </div>
 
                 <div className="grid lg:grid-cols-3 gap-8">

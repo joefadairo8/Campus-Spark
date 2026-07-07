@@ -1373,7 +1373,7 @@ const BrandDashboard: React.FC<{
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                         <div>
                             <h2 className="text-4xl font-black text-[var(--text-primary)]">Welcome back, {brandProfile?.name || 'Partner'}</h2>
-                            <p className="text-[var(--text-secondary)] mt-1">Here is a quick overview of your brand campaigns and collaborations.</p>
+                            <p className="text-[var(--text-secondary)] mt-1">Here is a quick overview of your brand campaigns, creator gigs, sponsorships, and ongoing collaborations.</p>
                         </div>
                         
                         {/* Stats Grid */}
@@ -1479,7 +1479,7 @@ const BrandDashboard: React.FC<{
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                             <div>
                                 <h2 className="text-4xl font-black text-[var(--text-primary)]">Association Directory</h2>
-                                <p className="text-[var(--text-secondary)] mt-1">Connect with campus student associations, organizations, and brand partners.</p>
+                                <p className="text-[var(--text-secondary)] mt-1">Connect with student associations, youth communities, and professional bodies for direct collaboration.</p>
                             </div>
                             <div className="relative w-full md:w-96 group">
                                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-secondary)] group-focus-within:text-spark-red transition-colors" />
@@ -1563,7 +1563,7 @@ const BrandDashboard: React.FC<{
                     <div className="space-y-6">
                         <div>
                             <h2 className="text-3xl font-black text-[var(--text-primary)]">Creator Directory</h2>
-                            <p className="text-[var(--text-secondary)] mt-1">Browse and discover verified campus content creators, micro-influencers, and campus ambassadors.</p>
+                            <p className="text-[var(--text-secondary)] mt-1">Browse and discover verified creators, micro-influencers, and activation talents that match your campaign goals.</p>
                         </div>
                         {/* â”€â”€ Active Campaign Overview Panel â”€â”€ */}
 
@@ -1655,7 +1655,7 @@ const BrandDashboard: React.FC<{
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 pb-2 border-b border-[var(--border-color)]">
                             <div>
                                 <h2 className="text-3xl font-black text-[var(--text-primary)]">Events</h2>
-                                <p className="text-[var(--text-secondary)] mt-1">Sponsor upcoming student events or list and manage your own hosted events.</p>
+                                <p className="text-[var(--text-secondary)] mt-1">Sponsor upcoming events, list and manage your own brand-hosted events.</p>
                             </div>
                             
                             {/* Sub-tabs */}
@@ -1827,7 +1827,7 @@ const BrandDashboard: React.FC<{
                     <div className="space-y-10 animate-in slide-in-from-bottom-4 duration-500">
                         <div>
                             <h2 className="text-3xl font-black text-[var(--text-primary)]">Brand Wallet</h2>
-                            <p className="text-[var(--text-secondary)] mt-1">Manage your available funds, deposits, campaign costs, and active escrow payouts.</p>
+                            <p className="text-[var(--text-secondary)] mt-1">Manage campaign budgets, sponsorship payments, transaction records, invoices, and pending payment activities from one secure place.</p>
                         </div>
                         {walletLoading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
@@ -2019,7 +2019,7 @@ const BrandDashboard: React.FC<{
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                         <div>
                             <h2 className="text-3xl font-black text-[var(--text-primary)]">Partnership Proposals</h2>
-                            <p className="text-[var(--text-secondary)] mt-1">Track collaboration pitches, custom offers, and negotiations with campus creators and student associations.</p>
+                            <p className="text-[var(--text-secondary)] mt-1">Track collaboration pitches, custom offers, sponsorship requests, and negotiations with creators and associations.</p>
                         </div>
                         {loading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
@@ -2289,7 +2289,7 @@ const BrandDashboard: React.FC<{
                         <div className="flex justify-between items-center">
                             <div>
                                 <h3 className="text-2xl font-black text-[var(--text-primary)]">My Campaigns</h3>
-                                <p className="text-[var(--text-secondary)] mt-1">Create and manage your influencer marketing campaigns. <span className="text-green-500 font-bold">Free to list — no listing fee.</span></p>
+                                <p className="text-[var(--text-secondary)] mt-1">Create, manage, and track your brand campaigns, creator gigs, and influencer marketing projects. <span className="text-green-500 font-bold">Free to list — no listing fee.</span></p>
                             </div>
                             <button onClick={() => setShowCampaignModal(true)} className="bg-spark-red text-white px-6 py-3 rounded-xl font-black shadow-lg shadow-red-100 hover:bg-red-700 transition-all active:scale-95">
                                 + New Campaign
@@ -2334,7 +2334,7 @@ const BrandDashboard: React.FC<{
                                             </div>
 
                                             <div className="flex gap-3">
-                                                <button onClick={() => openCampaignDetail(c)} className="flex-1 py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all text-sm">View Detail</button>
+                                                <button onClick={() => openCampaignDetail(c)} className="flex-1 py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all text-sm">View Details</button>
                                                 <button onClick={() => fetchApplicants(c)} className="flex-1 py-3 bg-spark-black text-white font-black rounded-xl hover:bg-gray-800 transition-all text-sm flex items-center justify-center gap-2">
                                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                                                     Applicants
@@ -2724,7 +2724,7 @@ const BrandDashboard: React.FC<{
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                         <div>
                             <h2 className="text-3xl font-black text-[var(--text-primary)]">Profile Settings</h2>
-                            <p className="text-[var(--text-secondary)] mt-1">Manage your brand's metadata, logo, social links, and security settings.</p>
+                            <p className="text-[var(--text-secondary)] mt-1">Update your brand information, company details, and public brand profile.</p>
                         </div>
                         <ProfileView user={brandProfile} onUpdate={fetchBrandData} />
                     </div>

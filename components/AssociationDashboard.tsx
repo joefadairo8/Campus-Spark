@@ -161,9 +161,10 @@ const AssociationDashboard: React.FC<{
         { id: 'overview', label: 'Overview', icon: <BarChart3 className="w-5 h-5" /> },
         { id: 'profile', label: 'Association Profile', icon: <Users className="w-5 h-5" /> },
         { id: 'events', label: 'Events', icon: <Ticket className="w-5 h-5" /> },
-        { id: 'brands', label: 'Brand Registry', icon: <Building2 className="w-5 h-5" /> },
+        { id: 'sponsorships', label: 'Sponsorships', icon: <Award className="w-5 h-5" /> },
+        { id: 'brands', label: 'Brand Directory', icon: <Building2 className="w-5 h-5" /> },
         { id: 'proposals', label: 'Proposals', icon: <Handshake className="w-5 h-5" /> },
-        { id: 'hiring', label: 'Creator/Vendor Hiring', icon: <Search className="w-5 h-5" /> },
+        { id: 'hiring', label: 'Hire Creators/Vendors', icon: <Search className="w-5 h-5" /> },
         { id: 'reports', label: 'Reports', icon: <FileText className="w-5 h-5" /> },
         { id: 'wallet', label: 'Wallet', icon: <Wallet className="w-5 h-5" /> },
     ];
@@ -782,8 +783,8 @@ const AssociationDashboard: React.FC<{
                 return (
                     <div className="space-y-10 animate-in slide-in-from-bottom-4 duration-500">
                         <div>
-                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Association Wallet</h2>
-                            <p className="text-[var(--text-secondary)] mt-1">Monitor incoming brand sponsorships, track organizational expenses, and request payouts.</p>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Wallet</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">Track incoming sponsorship payments, pending funds, request payouts, withdrawals, and transaction records.</p>
                         </div>
                         {walletLoading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-purple"></div></div>
@@ -900,7 +901,7 @@ const AssociationDashboard: React.FC<{
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 pb-2 border-b border-[var(--border-color)]">
                             <div>
                                 <h2 className="text-3xl font-black text-[var(--text-primary)]">Events</h2>
-                                <p className="text-[var(--text-secondary)] mt-1 font-medium">Discover campus events or list and manage your own association events.</p>
+                                <p className="text-[var(--text-secondary)] mt-1 font-medium">Discover upcoming events, Create, manage, and promote your association events and programs.</p>
                             </div>
                             
                             {/* Sub-tabs */}
@@ -1236,8 +1237,8 @@ const AssociationDashboard: React.FC<{
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                         <div>
-                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Sponsorship Proposals</h2>
-                            <p className="text-[var(--text-secondary)] mt-1">Review partnership offers, event sponsorships, and direct collaboration proposals from brands.</p>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Proposals</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">Track sponsorship requests, partnership proposals, and brand responses.</p>
                         </div>
                         {loading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-purple"></div></div>
@@ -1320,8 +1321,8 @@ const AssociationDashboard: React.FC<{
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                         <div>
-                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Brand Registry</h2>
-                            <p className="text-[var(--text-secondary)] mt-1">Browse top corporate and local brands looking for event sponsorships and ambassador partnerships.</p>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Brand Directory</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">Find brands open to partnerships, sponsorships, and activations.</p>
                         </div>
                         {loading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-purple"></div></div>
@@ -1423,12 +1424,31 @@ const AssociationDashboard: React.FC<{
                         </div>
                     </div>
                 );
+            case 'sponsorships':
+                return (
+                    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                        <div>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Sponsorships</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">Create sponsorship packages, invite brands, and track sponsorship interest.</p>
+                        </div>
+                        <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)]">
+                            <div className="w-20 h-20 bg-spark-purple/5 rounded-3xl flex items-center justify-center mx-auto mb-6 text-spark-purple">
+                                <Award className="w-10 h-10" />
+                            </div>
+                            <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">Sponsorship Packages</h3>
+                            <p className="text-[var(--text-secondary)] font-medium mb-6">Set up your sponsorship tiers and invite brands directly from your events listing.</p>
+                            <button onClick={() => setCurrentView('events')} className="px-8 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-purple transition-all">
+                                Go to Events
+                            </button>
+                        </div>
+                    </div>
+                );
             case 'profile':
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                         <div>
-                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Profile Settings</h2>
-                            <p className="text-[var(--text-secondary)] mt-1">Manage your association's metadata, logo, social links, and security settings.</p>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Association Profile</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">Update your association details, contact person, audience, and verification.</p>
                         </div>
                         <ProfileView user={orgProfile} onUpdate={fetchOrgData} />
                     </div>
@@ -1439,7 +1459,7 @@ const AssociationDashboard: React.FC<{
                     <div className="space-y-10 animate-in slide-in-from-bottom-4 duration-500">
                         <div>
                             <h2 className="text-3xl font-black text-[var(--text-primary)]">Welcome back, {orgProfile?.name || 'Association'}!</h2>
-                            <p className="text-[var(--text-secondary)] font-medium mt-1">Here's what's happening with your association today.</p>
+                            <p className="text-[var(--text-secondary)] font-medium mt-1">Quick summary of your events, proposals, sponsorships, and collaborations.</p>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                             {[
@@ -1501,8 +1521,8 @@ const AssociationDashboard: React.FC<{
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                         <div>
-                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Creator & Vendor Hiring</h2>
-                            <p className="text-[var(--text-secondary)] font-medium mt-1">Find campus creators, MCs, ushers, photographers, and vendors for your events.</p>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Hire Creators/Vendors</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">Hire creators, media teams, and talents that match your event needs.</p>
                         </div>
                         <div className="flex flex-wrap gap-2">
                             {['All', 'Photographers', 'Videographers', 'MCs/Hosts', 'Graphic Designers', 'Ushers', 'Social Media Creators'].map(cat => (
@@ -1544,8 +1564,8 @@ const AssociationDashboard: React.FC<{
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                         <div>
-                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Reports & Analytics</h2>
-                            <p className="text-[var(--text-secondary)] font-medium mt-1">Generate event summaries, sponsorship acknowledgments, and reach reports.</p>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Reports</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">generate your event reports, sponsorship updates, and campaign performance records.</p>
                         </div>
                         <div className="grid md:grid-cols-3 gap-6">
                             {[
@@ -1597,6 +1617,7 @@ const AssociationDashboard: React.FC<{
                     </div>
                 );
 
+
             default:
                 return <div>Coming Soon</div>;
         }
@@ -1604,7 +1625,7 @@ const AssociationDashboard: React.FC<{
 
     return (
         <DashboardShell
-            role={'Organization'}
+            role={'Association'}
             activeView={currentView}
             onViewChange={setCurrentView}
             onLogout={onLogout}
