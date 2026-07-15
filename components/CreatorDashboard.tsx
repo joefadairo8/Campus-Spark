@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import DashboardShell from './DashboardShell';
-import { db, auth, collection, query, where, getDocs, limit, doc, getDoc, apiClient, orderBy, updateDoc } from '../firebase';
+import { db, auth, collection, query, where, getDocs, limit, doc, getDoc, apiClient, orderBy, updateDoc, addDoc } from '../firebase';
 import { UserRole } from '../types';
 import ProfileView from './ProfileView';
 import DashboardPlaceholder from './DashboardPlaceholder';
-import { notifyWithdrawal, notifyReportSubmitted, notifyProposalReceived, notifyProposalStatus } from '../emailNotifier';
+import { notifyWithdrawal, notifyReportSubmitted, notifyProposalReceived, notifyProposalStatus, notifyRatingRequest } from '../emailNotifier';
 import { ProposalFormModal } from './ProposalFormModal';
 import { ProposalDetailsModal } from './ProposalDetailsModal';
 import { EventDetailsModal } from './EventDetailsModal';
 import { WalletService } from '../WalletService';
 import { CreatorProfileModal } from './CreatorProfileModal';
-import { Search, Zap, Rocket, Mail, Wallet, Clock, TrendingUp, ArrowUpRight, ArrowDownLeft, Briefcase, Plus, Trash2, ExternalLink, FileText, Image as ImageIcon, Download, Star, Award, Shield, User, Sparkles, AlertCircle, CheckCircle, Circle, UserCheck, HelpCircle, Send, MessageSquare, Building2 } from 'lucide-react';
+import { Search, Zap, Rocket, Mail, Wallet, Clock, TrendingUp, ArrowUpRight, ArrowDownLeft, Briefcase, Plus, Trash2, ExternalLink, FileText, Image as ImageIcon, Download, Star, Award, Shield, User, Sparkles, AlertCircle, CheckCircle, Circle, UserCheck, HelpCircle, Send, MessageSquare, Building2, Instagram, Twitter, Scale } from 'lucide-react';
+import { DisputesPanel } from './DisputesPanel';
 
 const isTransactionActive = (trans: any, myCampaigns: any[]) => {
     if (trans.status !== 'escrow') return true;
@@ -60,6 +61,7 @@ const CreatorDashboard: React.FC<{
     const [userProfile, setUserProfile] = useState<any>(null);
     const [selectedBrand, setSelectedBrand] = useState<any>(null);
     const [proposals, setProposals] = useState<any[]>([]);
+    const [proposalTab, setProposalTab] = useState<'incoming' | 'outgoing'>('incoming');
     const [proposing, setProposing] = useState(false);
     const [showProposalModal, setShowProposalModal] = useState(false);
     const [proposalRecipient, setProposalRecipient] = useState<{ id: string, name: string } | null>(null);
@@ -96,6 +98,7 @@ const CreatorDashboard: React.FC<{
     const [portfolioSubmitting, setPortfolioSubmitting] = useState(false);
 
     // New Dashboard States
+    const [preSelectedDisputeEntity, setPreSelectedDisputeEntity] = useState<any>(null);
     const [profileSubTab, setProfileSubTab] = useState<'profile' | 'portfolio'>('profile');
     const [collabSubTab, setCollabSubTab] = useState<'invitations' | 'network' | 'splits'>('invitations');
     const [searchQuery, setSearchQuery] = useState('');
@@ -104,6 +107,7 @@ const CreatorDashboard: React.FC<{
     const [selectedLocation, setSelectedLocation] = useState('All');
     const [ratingRequestCampaignId, setRatingRequestCampaignId] = useState('');
     const [ratingRequestSubmitting, setRatingRequestSubmitting] = useState(false);
+    const [testimonials, setTestimonials] = useState<any[]>([]);
     const [splitTotal, setSplitTotal] = useState('');
     const [splitShares, setSplitShares] = useState<Array<{ name: string; percentage: number }>>([
         { name: 'Me (Lead)', percentage: 60 },
@@ -127,6 +131,7 @@ const CreatorDashboard: React.FC<{
         { id: 'partners', label: 'Brands & Associations', icon: <Building2 className="w-5 h-5" /> },
         { id: 'collaboration', label: 'Collaboration', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> },
         { id: 'ratings_reviews', label: 'Ratings & Reviews', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"></path></svg> },
+        { id: 'disputes', label: 'Disputes & Mediation', icon: <Scale className="w-5 h-5" /> },
     ];
 
     const tabs = [
@@ -193,6 +198,21 @@ const CreatorDashboard: React.FC<{
         }
     };
 
+    const fetchTestimonials = async () => {
+        if (!userProfile?.id) return;
+        try {
+            const q = query(
+                collection(db, 'ratingRequests'),
+                where('creatorId', '==', userProfile.id),
+                where('status', '==', 'submitted')
+            );
+            const snap = await getDocs(q);
+            setTestimonials(snap.docs.map(docVal => ({ id: docVal.id, ...docVal.data() })));
+        } catch (err) {
+            console.warn('[CreatorDashboard] Error fetching testimonials:', err);
+        }
+    };
+
     useEffect(() => {
         if (user) {
             fetchUserData();
@@ -204,6 +224,7 @@ const CreatorDashboard: React.FC<{
             fetchProposals();
             fetchMyApplications();
             fetchMyCampaigns();
+            fetchTestimonials();
         }
     }, [userProfile?.id, currentSection, activeTab]);
 
@@ -948,7 +969,7 @@ const CreatorDashboard: React.FC<{
                                     <div key={p.id} className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
                                         <div className="flex items-center space-x-6">
                                             <div className="w-16 h-16 bg-[var(--bg-secondary)] rounded-2xl flex items-center justify-center text-2xl font-black text-spark-red shadow-inner">
-                                                {otherParty.imageUrl ? <img src={otherParty.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : (displayName.charAt(0))}
+                                                {otherParty.imageUrl ? <img src={otherParty.imageUrl} alt={displayName} className="w-full h-full object-cover rounded-2xl" /> : (displayName.charAt(0))}
                                             </div>
                                             <div>
                                                 <h4 className="text-xl font-black text-[var(--text-primary)]">{displayName}</h4>
@@ -1727,7 +1748,7 @@ const CreatorDashboard: React.FC<{
                                     <div className="space-y-4">
                                         <div className="flex items-center space-x-4">
                                             <div className="w-14 h-14 bg-[var(--bg-secondary)] rounded-2xl flex items-center justify-center text-xl font-black text-spark-red shadow-inner flex-shrink-0">
-                                                {partner.imageUrl ? <img src={partner.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : (displayName.charAt(0))}
+                                                {partner.imageUrl ? <img src={partner.imageUrl} alt={displayName} className="w-full h-full object-cover rounded-2xl" /> : (displayName.charAt(0))}
                                             </div>
                                             <div>
                                                 <h3 className="text-lg font-black text-[var(--text-primary)] leading-tight">{displayName}</h3>
@@ -1819,6 +1840,20 @@ const CreatorDashboard: React.FC<{
                                         <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3">
                                             <AlertCircle className="w-5 h-5 text-red-600" />
                                             <p className="text-xs text-red-800 font-medium">This application was not selected. Check the opportunities page for other listings.</p>
+                                        </div>
+                                    ) : app.status === 'paid' ? (
+                                        <div className="space-y-4">
+                                            <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-2xl flex items-center gap-3">
+                                                <CheckCircle className="w-5 h-5 text-green-600" />
+                                                <p className="text-xs text-green-800 dark:text-green-400 font-medium">This gig is complete and your payment has been processed.</p>
+                                            </div>
+                                            <button
+                                                onClick={() => setCurrentSection('ratings_reviews')}
+                                                className="w-full py-3.5 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all text-xs uppercase tracking-widest flex items-center justify-center gap-2"
+                                            >
+                                                <Star className="w-4 h-4" />
+                                                Request Rating &amp; Review
+                                            </button>
                                         </div>
                                     ) : (
                                         <div className="space-y-4">
@@ -1974,6 +2009,31 @@ const CreatorDashboard: React.FC<{
                             )}
                         </div>
                     </div>
+
+                    {/* Raise Dispute button */}
+                    <div className="pt-4 border-t border-[var(--border-color)] flex justify-end">
+                        <button
+                            onClick={() => {
+                                setPreSelectedDisputeEntity({
+                                    id: selectedCampaign.id,
+                                    title: selectedCampaign.campaignTitle || selectedCampaign.campaign?.title || 'Active Campaign',
+                                    type: 'campaign_allocation',
+                                    amount: selectedCampaign.amount || 0,
+                                    counterpartyId: selectedCampaign.brandId || '',
+                                    counterpartyName: selectedCampaign.brandName || 'Verified Brand',
+                                    counterpartyEmail: '',
+                                    counterpartyRole: 'Brand',
+                                    escrowId: selectedCampaign.escrowId || null,
+                                    escrowRef: selectedCampaign.escrowRef || null,
+                                    escrowPaymentUrl: selectedCampaign.escrowPaymentUrl || null
+                                });
+                                setCurrentSection('disputes');
+                            }}
+                            className="flex items-center gap-2 px-5 py-2.5 border border-spark-red/40 text-spark-red text-xs font-black uppercase tracking-wider rounded-xl hover:bg-spark-red/10 transition-all cursor-pointer"
+                        >
+                            <Scale className="w-4 h-4" /> Raise a Dispute
+                        </button>
+                    </div>
                 </div>
             );
         }
@@ -2085,11 +2145,12 @@ const CreatorDashboard: React.FC<{
                     </div>
                 </div>
 
-                <div className="grid md:grid-cols-3 gap-8">
+                <div className="grid md:grid-cols-4 gap-8">
                     {[
                         { label: 'Available Balance', value: `₦${(wallet?.balance || 0).toLocaleString()}`, icon: <Wallet className="w-6 h-6" />, color: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' },
                         { label: 'Locked Funds (Escrow)', value: `₦${calculatedEscrow.toLocaleString()}`, icon: <Clock className="w-6 h-6" />, color: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border border-yellow-500/20' },
-                        { label: 'Total Earnings', value: `₦${totalEarnings.toLocaleString()}`, icon: <TrendingUp className="w-6 h-6" />, color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' }
+                        { label: 'Pending Payouts', value: `₦${myCampaigns.filter(c => ['approved', 'submitted'].includes(c.status)).reduce((sum, c) => sum + (c.amount || 0), 0).toLocaleString()}`, icon: <TrendingUp className="w-6 h-6" />, color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' },
+                        { label: 'Total Earnings', value: `₦${totalEarnings.toLocaleString()}`, icon: <TrendingUp className="w-6 h-6" />, color: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/20' }
                     ].map((stat, i) => (
                         <div key={i} className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm">
                             <div className={`w-12 h-12 ${stat.color} rounded-2xl flex items-center justify-center text-xl mb-4`}>{stat.icon}</div>
@@ -2272,102 +2333,169 @@ const CreatorDashboard: React.FC<{
 
                 {collabSubTab === 'invitations' && (
                     <div className="space-y-6">
-                        {proposals.length === 0 ? (
-                            <div className="bg-[var(--bg-primary)] p-12 rounded-[3rem] border border-[var(--border-color)] text-center shadow-sm">
-                                <Mail className="w-10 h-10 text-spark-red mx-auto mb-4" />
-                                <h3 className="text-xl font-black text-[var(--text-primary)] mb-2">No Campaign Offers</h3>
-                                <p className="text-[var(--text-secondary)] font-medium">When brands send you direct campaign offers or partnership invites, they will appear here.</p>
-                            </div>
-                        ) : (
-                            <div className="grid gap-6">
-                                {proposals.map((p) => {
-                                    const isSender = p.senderId === (userProfile?.id || auth.currentUser?.uid);
-                                    const isDirectOffer = p.status === 'pending' && !isSender;
-                                    const otherParty = (isSender ? p.recipient : p.sender) || { name: 'Unknown User', role: 'Unknown', email: '' };
-                                    const displayName = otherParty.name !== 'Unknown User' ? otherParty.name : (otherParty.email || 'Unknown User');
-                                    return (
-                                        <div key={p.id} className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
-                                            <div className="flex items-center space-x-6">
-                                                <div className="w-16 h-16 bg-[var(--bg-secondary)] rounded-2xl flex items-center justify-center text-2xl font-black text-spark-red shadow-inner flex-shrink-0">
-                                                    {otherParty.imageUrl ? <img src={otherParty.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : (displayName.charAt(0))}
-                                                </div>
-                                                <div>
-                                                    <h4 className="text-xl font-black text-[var(--text-primary)]">{displayName}</h4>
-                                                    <p className="text-xs text-spark-red font-black uppercase tracking-widest">{otherParty.role}</p>
-                                                    <div className="flex gap-2 mt-1">
-                                                        <p className="text-[10px] text-[var(--text-secondary)] font-bold uppercase tracking-wider">{new Date(p.createdAt).toLocaleDateString()}</p>
-                                                        {p.budget && <span className="text-[10px] bg-green-50 text-green-600 px-2 rounded-full font-bold">Offer: {p.budget}</span>}
+                        <div className="flex bg-spark-red/5 border border-spark-red/10 p-1 rounded-2xl max-w-xs">
+                            <button 
+                                onClick={() => setProposalTab('incoming')}
+                                className={`flex-1 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${proposalTab === 'incoming' ? 'bg-spark-red text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-red'}`}
+                            >
+                                Incoming
+                            </button>
+                            <button 
+                                onClick={() => setProposalTab('outgoing')}
+                                className={`flex-1 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${proposalTab === 'outgoing' ? 'bg-spark-red text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-red'}`}
+                            >
+                                Outgoing
+                            </button>
+                        </div>
+
+                        {(() => {
+                            const filteredProposals = proposals.filter((p) => {
+                                const isSender = p.senderId === (userProfile?.id || auth.currentUser?.uid);
+                                return proposalTab === 'incoming' ? !isSender : isSender;
+                            });
+
+                            return filteredProposals.length === 0 ? (
+                                <div className="bg-[var(--bg-primary)] p-12 rounded-[3rem] border border-[var(--border-color)] text-center shadow-sm">
+                                    <Mail className="w-10 h-10 text-spark-red mx-auto mb-4" />
+                                    <h3 className="text-xl font-black text-[var(--text-primary)] mb-2">
+                                        {proposalTab === 'incoming' ? "No Incoming Offers" : "No Outgoing Pitches"}
+                                    </h3>
+                                    <p className="text-[var(--text-secondary)] font-medium">
+                                        {proposalTab === 'incoming' ? "When brands or associations send you direct campaign offers, they will appear here." : "When you submit collaboration proposals, they will appear here."}
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="grid gap-6">
+                                    {filteredProposals.map((p) => {
+                                        const isSender = p.senderId === (userProfile?.id || auth.currentUser?.uid);
+                                        const isDirectOffer = p.status === 'pending' && !isSender;
+                                        const otherParty = (isSender ? p.recipient : p.sender) || { name: 'Unknown User', role: 'Unknown', email: '' };
+                                        const displayName = otherParty.name !== 'Unknown User' ? otherParty.name : (otherParty.email || 'Unknown User');
+                                        return (
+                                            <div key={p.id} className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
+                                                <div className="flex items-center space-x-6">
+                                                    <div className="w-16 h-16 bg-[var(--bg-secondary)] rounded-2xl flex items-center justify-center text-2xl font-black text-spark-red shadow-inner flex-shrink-0">
+                                                        {otherParty.imageUrl ? <img src={otherParty.imageUrl} alt={displayName} className="w-full h-full object-cover rounded-2xl" /> : (displayName.charAt(0))}
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="text-xl font-black text-[var(--text-primary)]">{displayName}</h4>
+                                                        <p className="text-xs text-spark-red font-black uppercase tracking-widest">{otherParty.role}</p>
+                                                        <div className="flex gap-2 mt-1">
+                                                            <p className="text-[10px] text-[var(--text-secondary)] font-bold uppercase tracking-wider">{new Date(p.createdAt).toLocaleDateString()}</p>
+                                                            {p.budget && <span className="text-[10px] bg-green-50 text-green-600 px-2 rounded-full font-bold">Offer: {p.budget}</span>}
+                                                        </div>
                                                     </div>
                                                 </div>
+                                                <div className="flex items-center space-x-4">
+                                                    {isDirectOffer ? (
+                                                        <div className="flex gap-3">
+                                                            <button
+                                                                onClick={() => setSelectedProposal(p)}
+                                                                className="px-6 py-3 bg-[var(--bg-secondary)] text-[var(--text-primary)] rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[var(--bg-tertiary)] transition-all border border-[var(--border-color)]"
+                                                            >
+                                                                View
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleUpdateStatus(p.id, 'accepted')}
+                                                                className="px-6 py-3 bg-spark-red text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition-all shadow-sm"
+                                                            >
+                                                                Accept
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleUpdateStatus(p.id, 'rejected')}
+                                                                className="px-6 py-3 bg-spark-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-800 transition-all border border-transparent shadow-sm"
+                                                            >
+                                                                Reject
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            <button
+                                                                onClick={() => setSelectedProposal(p)}
+                                                                className="px-6 py-2 bg-[var(--text-primary)] text-[var(--bg-primary)] rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-spark-red hover:text-white transition-all border border-transparent"
+                                                            >
+                                                                View Details
+                                                            </button>
+                                                            <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${p.status === 'accepted' ? 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20' :
+                                                                p.status === 'rejected' ? 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20' :
+                                                                    'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20'
+                                                                }`}>
+                                                                {p.status}
+                                                            </span>
+                                                        </>
+                                                    )}
+                                                </div>
                                             </div>
-                                            <div className="flex items-center space-x-4">
-                                                {isDirectOffer ? (
-                                                    <div className="flex gap-3">
-                                                        <button
-                                                            onClick={() => setSelectedProposal(p)}
-                                                            className="px-6 py-3 bg-[var(--bg-secondary)] text-[var(--text-primary)] rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[var(--bg-tertiary)] transition-all border border-[var(--border-color)]"
-                                                        >
-                                                            View
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleUpdateStatus(p.id, 'accepted')}
-                                                            className="px-6 py-3 bg-spark-red text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition-all shadow-sm"
-                                                        >
-                                                            Accept
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleUpdateStatus(p.id, 'rejected')}
-                                                            className="px-6 py-3 bg-spark-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-800 transition-all border border-transparent shadow-sm"
-                                                        >
-                                                            Reject
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <>
-                                                        <button
-                                                            onClick={() => setSelectedProposal(p)}
-                                                            className="px-6 py-2 bg-[var(--text-primary)] text-[var(--bg-primary)] rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-spark-red hover:text-white transition-all border border-transparent"
-                                                        >
-                                                            View Details
-                                                        </button>
-                                                        <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${p.status === 'accepted' ? 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20' :
-                                                            p.status === 'rejected' ? 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20' :
-                                                                'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20'
-                                                            }`}>
-                                                            {p.status}
-                                                        </span>
-                                                    </>
-                                                )}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
+                                        );
+                                    })}
+                                </div>
+                            );
+                        })()}
                     </div>
                 )}
 
                 {collabSubTab === 'network' && (
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {data.map(member => (
-                            <div key={member.id} className="group bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] overflow-hidden shadow-sm hover:shadow-xl transition-all p-6 text-center">
-                                <div className="w-20 h-20 rounded-3xl bg-[var(--bg-secondary)] border border-[var(--border-color)] mx-auto mb-4 flex items-center justify-center text-3xl font-black text-spark-red overflow-hidden">
-                                    {member.imageUrl ? <img src={member.imageUrl} className="w-full h-full object-cover" alt={member.name} /> : (member.name || '?').charAt(0)}
+                        {data.map(member => {
+                            const isProfessional = (member.role || '').toLowerCase().includes('professional') || (member.role || '').toLowerCase().includes('influencer');
+                            return (
+                                <div key={member.id} className="bg-[var(--bg-primary)] p-6 rounded-[2rem] border border-[var(--border-color)] shadow-sm hover:shadow-xl hover:border-spark-red/20 transition-all flex flex-col justify-between text-left group">
+                                    <div>
+                                        <div className="flex justify-between items-center mb-4">
+                                            <span className="px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest bg-spark-red/5 text-spark-red">
+                                                {isProfessional ? 'Professional' : 'Student'}
+                                            </span>
+                                            {member.rating && (
+                                                <div className="flex items-center gap-1 text-xs text-amber-500 font-bold">
+                                                    <span>★</span>
+                                                    <span>{member.rating}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="flex items-start gap-4 mb-4">
+                                            <div className="w-14 h-14 rounded-2xl bg-spark-red/10 flex items-center justify-center text-spark-red font-black text-xl flex-shrink-0 overflow-hidden">
+                                                {member.imageUrl ? <img src={member.imageUrl} alt={member.name} className="w-full h-full object-cover rounded-2xl" /> : member.name?.charAt(0) || '?'}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <h4 className="font-black text-[var(--text-primary)] truncate">{member.name}</h4>
+                                                <p className="text-xs font-bold text-spark-red uppercase tracking-widest truncate">📍 {member.university || member.location || 'Campus'}</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Social Handles */}
+                                        <div className="flex gap-2 mb-4 justify-start">
+                                            {member.instagram && (
+                                                <a href={member.instagram.startsWith('http') ? member.instagram : `https://instagram.com/${member.instagram.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-[var(--bg-secondary)] hover:bg-spark-red/10 text-[var(--text-secondary)] hover:text-spark-red rounded-xl transition-all">
+                                                    <Instagram className="w-4 h-4" />
+                                                </a>
+                                            )}
+                                            {member.tiktok && (
+                                                <a href={member.tiktok.startsWith('http') ? member.tiktok : `https://tiktok.com/@${member.tiktok.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-[var(--bg-secondary)] hover:bg-spark-red/10 text-[var(--text-secondary)] hover:text-spark-red rounded-xl transition-all">
+                                                    <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.17-2.89-.7-4.06-1.66-.27-.23-.52-.48-.75-.75-.01 2.91-.02 5.82-.02 8.74-.08 2.37-1.12 4.74-3.05 6.13-2.14 1.58-5.11 2.05-7.58 1.25-2.82-.87-5.06-3.47-5.26-6.47-.36-4.22 2.91-8.23 7.15-8.43.19-.01.37 0 .56-.01V8.33c-1.92.21-3.79 1.48-4.57 3.25-.97 2.12-.55 4.8 1.01 6.55 1.55 1.76 4.14 2.38 6.27 1.59 1.83-.66 3.14-2.49 3.23-4.47.08-2.73.04-5.46.05-8.19-.01 0-.01 0-.02 0-.07-.94-.48-1.89-1.17-2.54-.74-.74-1.78-1.15-2.83-1.18V.02z"/></svg>
+                                                </a>
+                                            )}
+                                            {member.twitter && (
+                                                <a href={member.twitter.startsWith('http') ? member.twitter : `https://twitter.com/${member.twitter.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-[var(--bg-secondary)] hover:bg-spark-red/10 text-[var(--text-secondary)] hover:text-spark-red rounded-xl transition-all">
+                                                    <Twitter className="w-4 h-4" />
+                                                </a>
+                                            )}
+                                        </div>
+
+                                        {member.bio && <p className="text-xs text-[var(--text-secondary)] line-clamp-2 mb-4 leading-relaxed">{member.bio}</p>}
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            setProposalRecipient({ id: member.id, name: member.name, isCreator: true });
+                                            setProposalInitialMessage(`Hey ${member.name}, I'd love to collaborate on a campaign together!`);
+                                            setShowProposalModal(true);
+                                        }}
+                                        className="w-full py-3 bg-spark-black text-white font-black rounded-xl hover:bg-spark-red transition-all text-xs uppercase tracking-wider text-center"
+                                    >
+                                        Collaborate
+                                    </button>
                                 </div>
-                                <h3 className="font-black text-lg text-[var(--text-primary)] truncate">{member.name}</h3>
-                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-4 truncate">{member.university || 'Campus Creator'}</p>
-                                <button
-                                    onClick={() => {
-                                        setProposalRecipient({ id: member.id, name: member.name });
-                                        setProposalInitialMessage(`Hey ${member.name}, I'd love to collaborate on a campaign together!`);
-                                        setShowProposalModal(true);
-                                    }}
-                                    className="w-full py-2.5 bg-spark-black text-white font-black rounded-xl hover:bg-spark-red transition-all text-xs"
-                                >
-                                    Collaborate
-                                </button>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
 
@@ -2437,6 +2565,9 @@ const CreatorDashboard: React.FC<{
 
     const renderRatingsReviews = () => {
         const completedCampaigns = myCampaigns.filter(c => c.status === 'paid');
+        const avgScore = testimonials.length > 0
+            ? (testimonials.reduce((sum, t) => sum + (Number(t.stars) || 5), 0) / testimonials.length).toFixed(1)
+            : (userProfile?.rating || '0.0');
 
         return (
             <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
@@ -2449,38 +2580,42 @@ const CreatorDashboard: React.FC<{
                     <div className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm space-y-6 self-start text-center">
                         <div>
                             <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Average Performance Score</p>
-                            <h3 className="text-6xl font-black text-[var(--text-primary)] mt-3">4.9</h3>
+                            <h3 className="text-6xl font-black text-[var(--text-primary)] mt-3">{avgScore}</h3>
                         </div>
                         <div className="flex justify-center gap-1 text-yellow-500">
-                            {[1, 2, 3, 4, 5].map(i => (
+                            {Array.from({ length: Math.round(Number(avgScore)) }).map((_, i) => (
                                 <Star key={i} className="w-6 h-6 fill-yellow-500" />
                             ))}
                         </div>
-                        <p className="text-xs text-[var(--text-secondary)] font-medium">Based on 6 brand reviews & recommendations on ABC-Rally.</p>
+                        <p className="text-xs text-[var(--text-secondary)] font-medium">Based on {testimonials.length} reviews & recommendations on ABC-Rally.</p>
                     </div>
 
                     <div className="lg:col-span-2 space-y-6">
                         <div className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm">
                             <h3 className="text-xl font-black text-[var(--text-primary)] mb-6">Recent Brand Testimonials</h3>
                             <div className="space-y-6">
-                                {[
-                                    { text: "Outstanding content quality! Delivers exactly on the brief parameters, very high student engagement.", brand: "Red Bull Campus Rep", stars: 5, date: "May 2026" },
-                                    { text: "Incredibly professional and rapid turnaround time. Our student target acquisition goals were exceeded.", brand: "Pepsi Brand Ambassador Manager", stars: 5, date: "April 2026" },
-                                    { text: "Fantastic creator to collaborate with. Will definitely book again for campus events.", brand: "Association of Tech Students Leaders", stars: 4, date: "March 2026" }
-                                ].map((test, idx) => (
-                                    <div key={idx} className="p-6 bg-[var(--bg-secondary)] rounded-2xl border border-[var(--border-color)] space-y-3">
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-xs font-black text-spark-red uppercase tracking-wider">{test.brand}</span>
-                                            <span className="text-[10px] text-[var(--text-secondary)] font-bold">{test.date}</span>
-                                        </div>
-                                        <div className="flex gap-0.5 text-yellow-500">
-                                            {Array.from({ length: test.stars }).map((_, i) => (
-                                                <Star key={i} className="w-4.5 h-4.5 fill-yellow-500 text-yellow-500" />
-                                            ))}
-                                        </div>
-                                        <p className="text-sm text-[var(--text-primary)] font-medium italic">"{test.text}"</p>
+                                {testimonials.length === 0 ? (
+                                    <div className="p-6 bg-[var(--bg-secondary)] rounded-2xl border border-[var(--border-color)] text-center text-xs text-[var(--text-secondary)] italic">
+                                        No reviews or testimonials received yet. Send rating requests to your brand partners.
                                     </div>
-                                ))}
+                                ) : (
+                                    testimonials.map((test, idx) => (
+                                        <div key={test.id || idx} className="p-6 bg-[var(--bg-secondary)] rounded-2xl border border-[var(--border-color)] space-y-3">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-xs font-black text-spark-red uppercase tracking-wider">{test.campaignTitle || 'Completed Collaboration'}</span>
+                                                <span className="text-[10px] text-[var(--text-secondary)] font-bold">
+                                                    {test.updatedAt ? new Date(test.updatedAt).toLocaleDateString() : ''}
+                                                </span>
+                                            </div>
+                                            <div className="flex gap-0.5 text-yellow-500">
+                                                {Array.from({ length: Number(test.stars) || 5 }).map((_, i) => (
+                                                    <Star key={i} className="w-4.5 h-4.5 fill-yellow-500 text-yellow-500" />
+                                                ))}
+                                            </div>
+                                            <p className="text-sm text-[var(--text-primary)] font-medium italic">"{test.reviewText}"</p>
+                                        </div>
+                                    ))
+                                )}
                             </div>
                         </div>
 
@@ -2495,11 +2630,49 @@ const CreatorDashboard: React.FC<{
                                     e.preventDefault();
                                     if (!ratingRequestCampaignId) return;
                                     setRatingRequestSubmitting(true);
-                                    setTimeout(() => {
-                                        setRatingRequestSubmitting(false);
-                                        setRatingRequestCampaignId('');
+                                    try {
+                                        const selectedCamp = completedCampaigns.find(c => c.id === ratingRequestCampaignId);
+                                        if (!selectedCamp) {
+                                            alert('Invalid campaign selected.');
+                                            return;
+                                        }
+
+                                        const newRequest = {
+                                            creatorId: userProfile.id,
+                                            creatorName: userProfile.name || 'Campus Creator',
+                                            campaignId: selectedCamp.campaignId,
+                                            campaignTitle: selectedCamp.campaignTitle || selectedCamp.campaign?.title || 'Completed Gig',
+                                            brandId: selectedCamp.brandId,
+                                            status: 'pending',
+                                            createdAt: new Date().toISOString()
+                                        };
+
+                                        await addDoc(collection(db, 'ratingRequests'), newRequest);
+
+                                        try {
+                                            const brandDoc = await getDoc(doc(db, 'users', selectedCamp.brandId));
+                                            if (brandDoc.exists() && brandDoc.data().email) {
+                                                const brandEmail = brandDoc.data().email;
+                                                const brandName = brandDoc.data().name || 'Brand Manager';
+                                                notifyRatingRequest(
+                                                    brandEmail,
+                                                    brandName,
+                                                    userProfile.name || 'Campus Creator',
+                                                    newRequest.campaignTitle
+                                                );
+                                            }
+                                        } catch (emailErr) {
+                                            console.warn('[CreatorDashboard] Email notify rating request error:', emailErr);
+                                        }
+
                                         alert("Review request sent successfully! The brand manager will be notified.");
-                                    }, 1000);
+                                        setRatingRequestCampaignId('');
+                                    } catch (err: any) {
+                                        console.error('Rating request error:', err);
+                                        alert('Failed to send rating request: ' + err.message);
+                                    } finally {
+                                        setRatingRequestSubmitting(false);
+                                    }
                                 }}
                                 className="flex flex-col sm:flex-row gap-4"
                             >
@@ -2515,7 +2688,7 @@ const CreatorDashboard: React.FC<{
                                             <option key={camp.id} value={camp.id}>{camp.campaignTitle || 'Completed Gig'}</option>
                                         ))
                                     ) : (
-                                        <option value="mock-1">Red Bull Campus Tour Promotion</option>
+                                        <option value="">No completed campaigns found</option>
                                     )}
                                 </select>
                                 <button 
@@ -2553,6 +2726,17 @@ const CreatorDashboard: React.FC<{
                 return renderPartners();
             case 'ratings_reviews':
                 return renderRatingsReviews();
+            case 'disputes':
+                return (
+                    <DisputesPanel
+                        userRole="Creator"
+                        userId={user?.id || user?.uid}
+                        userProfile={userProfile}
+                        onNavigate={onNavigate}
+                        preSelectedEntity={preSelectedDisputeEntity}
+                        onClearPreSelected={() => setPreSelectedDisputeEntity(null)}
+                    />
+                );
             default:
                 return renderOverview();
         }
@@ -2702,6 +2886,7 @@ const CreatorDashboard: React.FC<{
                     recipientId={proposalRecipient.id}
                     initialMessage={proposalInitialMessage}
                     onSubmit={handleSendProposal}
+                    isCreatorCollab={!!proposalRecipient.isCreator}
                 />
             )}
 

@@ -71,3 +71,7 @@ export function notifyReportApproved(creatorEmail: string, creatorName: string, 
 export function notifyReportRejected(creatorEmail: string, creatorName: string, gigTitle: string, brandName: string): void {
     notifyServer({ type: 'report_rejected', to: creatorEmail, name: creatorName, title: gigTitle, brandName });
 }
+
+export function notifyRatingRequest(brandEmail: string, brandName: string, creatorName: string, gigTitle: string): void {
+    notifyServer({ type: 'rating_request', to: brandEmail, name: brandName, creatorName, title: gigTitle });
+}

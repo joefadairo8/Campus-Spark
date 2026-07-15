@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import DashboardShell from './DashboardShell';
-import { db, auth, collection, query, where, getDocs, limit, doc, getDoc, apiClient, orderBy } from '../firebase';
+import { db, auth, collection, query, where, getDocs, limit, doc, getDoc, apiClient, orderBy, logEvent, updateDoc, addDoc } from '../firebase';
 import { UserRole } from '../types';
 import { STATES, UNIVERSITIES, BACKEND_URL } from '../constants';
 import ProfileView from './ProfileView';
@@ -11,7 +11,8 @@ import { ProposalDetailsModal } from './ProposalDetailsModal';
 import { EventDetailsModal } from './EventDetailsModal';
 import { CreatorProfileModal } from './CreatorProfileModal';
 import { WalletService, CampaignAllocation } from '../WalletService';
-import { Calendar, Wallet, BarChart3, Lock, Plus, Minus, Mail, Users, Megaphone, Inbox, TrendingUp, ArrowUpRight, ArrowDownLeft, Activity, Handshake, Building2, Search, Briefcase, FileText, Download, Edit, Trash2, User } from 'lucide-react';
+import { Calendar, Wallet, BarChart3, Lock, Plus, Minus, Mail, Users, Megaphone, Inbox, TrendingUp, ArrowUpRight, ArrowDownLeft, Activity, Handshake, Building2, Search, Briefcase, FileText, Download, Edit, Trash2, User, Award, Instagram, Twitter, Scale } from 'lucide-react';
+import { DisputesPanel } from './DisputesPanel';
 
 const parsePackages = (packagesField: any): { name: string; price: number; entails: string; }[] => {
     if (!packagesField) return [];
@@ -36,6 +37,7 @@ const BrandDashboard: React.FC<{
     user: any
 }> = ({ onNavigate, onLogout, isDarkMode, toggleTheme, themeMode, user }) => {
     const [currentView, setCurrentView] = useState('overview');
+    const [preSelectedDisputeEntity, setPreSelectedDisputeEntity] = useState<any>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [eventTab, setEventTab] = useState<'explore' | 'my'>('explore');
     const [checklist, setChecklist] = useState<Record<string, boolean>>(() => {
@@ -70,6 +72,8 @@ const BrandDashboard: React.FC<{
     const [creators, setCreators] = useState<any[]>([]);
     const [brandProfile, setBrandProfile] = useState<any>(null);
     const [proposals, setProposals] = useState<any[]>([]);
+    const [proposalTab, setProposalTab] = useState<'incoming' | 'outgoing'>('incoming');
+    const [creatorTypeTab, setCreatorTypeTab] = useState<'all' | 'professional' | 'student'>('all');
     const [selectedCreator, setSelectedCreator] = useState<any>(null);
     const [proposing, setProposing] = useState(false);
     const [showProposalModal, setShowProposalModal] = useState(false);
@@ -94,6 +98,12 @@ const BrandDashboard: React.FC<{
     });
     const [campaignSubmitting, setCampaignSubmitting] = useState(false);
     const [selectedCampaign, setSelectedCampaign] = useState<any>(null);
+    const [ratingRequests, setRatingRequests] = useState<any[]>([]);
+    const [showReviewModal, setShowReviewModal] = useState(false);
+    const [selectedReviewRequest, setSelectedReviewRequest] = useState<any>(null);
+    const [ratingStars, setRatingStars] = useState(5);
+    const [reviewText, setReviewText] = useState('');
+    const [reviewSubmitting, setReviewSubmitting] = useState(false);
     const [editingGig, setEditingGig] = useState<any>(null);
     const [topUpAmount, setTopUpAmount] = useState('5000');
     const [myEvents, setMyEvents] = useState<any[]>([]);
@@ -167,7 +177,7 @@ const BrandDashboard: React.FC<{
     const [allocationForm, setAllocationForm] = useState({ campaignId: '', amount: '' });
     const [allocationSubmitting, setAllocationSubmitting] = useState(false);
     const [showCreateInModal, setShowCreateInModal] = useState(false);
-    const [inlineCreateForm, setInlineCreateForm] = useState({ title: '', brief: '', budget: '', deadline: '', category: 'Awareness' });
+    const [inlineCreateForm, setInlineCreateForm] = useState({ title: '', brief: '', budget: '', deadline: '', category: 'Awareness', location: '' });
     const [inlineCreateSubmitting, setInlineCreateSubmitting] = useState(false);
     const [selectedCampaignDetail, setSelectedCampaignDetail] = useState<any>(null);
     const [detailAllocations, setDetailAllocations] = useState<CampaignAllocation[]>([]);
@@ -371,7 +381,11 @@ const BrandDashboard: React.FC<{
             brief: gig.description,
             budget: String(gig.reward),
             deadline: gig.deadline || '',
-            category: gig.category || 'Awareness'
+            category: gig.category || 'Awareness',
+            objective: gig.objective || '',
+            audience: gig.audience || '',
+            location: gig.location || '',
+            deliverables: gig.deliverables || ''
         });
         setShowCampaignModal(true);
     };
@@ -733,6 +747,7 @@ const BrandDashboard: React.FC<{
                                 proposal.eventName || proposal.message?.substring(0, 40) || 'Event Sponsorship'
                             );
                             await apiClient.patch(`proposals/${proposal.id}`, { status: 'paid' });
+                            logEvent('pay_sponsorship', { proposalId: proposal.id, amount: amount, recipientId: proposal.senderId });
                             alert(`✅ Sponsorship of ₦${amount.toLocaleString()} paid successfully!`);
                             await fetchProposals();
                         } catch (err: any) {
@@ -856,6 +871,7 @@ const BrandDashboard: React.FC<{
                 reward: inlineCreateForm.budget, // Keep legacy field in sync
                 deadline: inlineCreateForm.deadline,
                 category: inlineCreateForm.category,
+                location: inlineCreateForm.location || '',
                 status: 'open',
                 brandId: brandProfile.id,
                 brandEmail: brandProfile.email || user.email,
@@ -871,9 +887,10 @@ const BrandDashboard: React.FC<{
             
             // 4. Add to local state & select it for allocation
             await fetchCampaigns();
+            logEvent('create_campaign', { campaignId: newCampaign.id, budget: amount, category: inlineCreateForm.category });
             setAllocationForm({ ...allocationForm, campaignId: newCampaign.id });
             setShowCreateInModal(false);
-            setInlineCreateForm({ title: '', brief: '', budget: '', deadline: '', category: 'Awareness' });
+            setInlineCreateForm({ title: '', brief: '', budget: '', deadline: '', category: 'Awareness', location: '' });
             alert("Campaign launched successfully!");
         } catch (err: any) {
             console.error("Create error:", err);
@@ -889,9 +906,11 @@ const BrandDashboard: React.FC<{
         { id: 'directory', label: 'Creator Directory', icon: <Users className="w-5 h-5" /> },
         { id: 'associations', label: 'Association Directory', icon: <Building2 className="w-5 h-5" /> },
         { id: 'proposals', label: 'Offers & Proposals', icon: <Inbox className="w-5 h-5" /> },
+        { id: 'sponsorships', label: 'Sponsorships', icon: <Award className="w-5 h-5" /> },
         { id: 'events', label: 'Events', icon: <Calendar className="w-5 h-5" /> },
         { id: 'wallet', label: 'Wallet & Billing', icon: <Wallet className="w-5 h-5" /> },
         { id: 'analytics', label: 'Analytics', icon: <BarChart3 className="w-5 h-5" /> },
+        { id: 'disputes', label: 'Disputes & Mediation', icon: <Scale className="w-5 h-5" /> },
         { id: 'profile', label: 'Company Profile', icon: <User className="w-5 h-5" /> },
     ];
 
@@ -1126,6 +1145,64 @@ const BrandDashboard: React.FC<{
         }
     };
 
+    const fetchRatingRequests = async () => {
+        if (!brandProfile?.id) return;
+        try {
+            const q = query(
+                collection(db, 'ratingRequests'),
+                where('brandId', '==', brandProfile.id),
+                where('status', '==', 'pending')
+            );
+            const snap = await getDocs(q);
+            setRatingRequests(snap.docs.map(docVal => ({ id: docVal.id, ...docVal.data() })));
+        } catch (err) {
+            console.warn('[BrandDashboard] Error fetching rating requests:', err);
+        }
+    };
+
+    const handleSubmittingReview = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedReviewRequest || reviewSubmitting) return;
+        setReviewSubmitting(true);
+        try {
+            const requestRef = doc(db, 'ratingRequests', selectedReviewRequest.id);
+            await updateDoc(requestRef, {
+                status: 'submitted',
+                stars: ratingStars,
+                reviewText: reviewText.trim(),
+                updatedAt: new Date().toISOString()
+            });
+
+            const creatorId = selectedReviewRequest.creatorId;
+            const q = query(
+                collection(db, 'ratingRequests'),
+                where('creatorId', '==', creatorId),
+                where('status', '==', 'submitted')
+            );
+            const snap = await getDocs(q);
+            const submittedReviews = snap.docs.map(docVal => docVal.data());
+            
+            const allStars = [...submittedReviews.map(r => Number(r.stars) || 5), ratingStars];
+            const avgRating = Number((allStars.reduce((sum, s) => sum + s, 0) / allStars.length).toFixed(1));
+            
+            const creatorRef = doc(db, 'users', creatorId);
+            await updateDoc(creatorRef, {
+                rating: avgRating
+            });
+
+            alert('Review submitted successfully!');
+            setShowReviewModal(false);
+            setReviewText('');
+            setRatingStars(5);
+            await fetchRatingRequests();
+        } catch (err: any) {
+            console.error('Error submitting review:', err);
+            alert('Failed to submit review: ' + err.message);
+        } finally {
+            setReviewSubmitting(false);
+        }
+    };
+
     useEffect(() => {
         if (user) {
             fetchBrandData();
@@ -1139,6 +1216,7 @@ const BrandDashboard: React.FC<{
             syncWalletStrip(brandProfile.id);
             fetchCampaigns();
             fetchAllAllocations(brandProfile.id);
+            fetchRatingRequests();
         }
     }, [brandProfile?.id, fetchCampaigns]);
 
@@ -1310,6 +1388,7 @@ const BrandDashboard: React.FC<{
 
             // Non-sponsored / non-budget proposals — just send the message
             await apiClient.post('proposals', { ...data, sponsorshipPackageName: data.packageName || null });
+            logEvent('send_proposal', { recipientId: data.recipientId, isSponsorship: !!eventBeingSponsored });
             alert("Partnership proposal sent successfully!");
             setShowProposalModal(false);
             setProposalRecipient(null);
@@ -1348,6 +1427,10 @@ const BrandDashboard: React.FC<{
     const filteredCreators = creators.filter((creator) => {
         const matchesSearch = creator.name.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesUni = selectedUni === 'All' || creator.university === selectedUni;
+        const roleLower = (creator.role || '').toLowerCase();
+        const isProfessional = roleLower.includes('professional') || roleLower.includes('influencer');
+        if (creatorTypeTab === 'professional') return matchesSearch && matchesUni && isProfessional;
+        if (creatorTypeTab === 'student') return matchesSearch && matchesUni && !isProfessional;
         return matchesSearch && matchesUni;
     });
 
@@ -1469,6 +1552,37 @@ const BrandDashboard: React.FC<{
                                         )}
                                     </div>
                                 </div>
+
+                                {/* Review Requests Card */}
+                                {ratingRequests.length > 0 && (
+                                    <div className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] p-8 shadow-sm animate-in fade-in duration-300">
+                                        <div className="flex justify-between items-center mb-6">
+                                            <h3 className="text-lg font-black text-[var(--text-primary)]">Pending Review Requests</h3>
+                                            <span className="text-[10px] font-black text-spark-red bg-spark-red/5 px-2.5 py-1 rounded-full">{ratingRequests.length}</span>
+                                        </div>
+                                        <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
+                                            {ratingRequests.map((req) => (
+                                                <div key={req.id} className="p-4 rounded-xl border border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-secondary)]">
+                                                    <div>
+                                                        <p className="font-black text-sm text-[var(--text-primary)]">{req.creatorName}</p>
+                                                        <p className="text-[10px] text-[var(--text-secondary)] font-bold uppercase tracking-wider">{req.campaignTitle}</p>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => {
+                                                            setSelectedReviewRequest(req);
+                                                            setReviewText('');
+                                                            setRatingStars(5);
+                                                            setShowReviewModal(true);
+                                                        }}
+                                                        className="px-4 py-2 bg-spark-red text-white text-[10px] font-black uppercase tracking-wider rounded-lg hover:bg-red-700 transition-all cursor-pointer"
+                                                    >
+                                                        Rate
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -1507,6 +1621,7 @@ const BrandDashboard: React.FC<{
                                     const size = partner.membershipSize || partner.audienceSize || "1,200+ Members";
                                     const locationStr = partner.university || partner.location || "Campus Main Gate";
                                     const type = partner.role === 'Organization' ? 'Student Organization' : 'Campus Association';
+                                    const niche = partner.nicheCategory || partner.category || partner.focus || "General";
                                     const packageSummary = "Bronze, Silver, Gold Packages Available";
                                     return (
                                         <div key={partner.id} className="group bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between">
@@ -1514,7 +1629,7 @@ const BrandDashboard: React.FC<{
                                                 <div className="h-24 bg-spark-red/5 transition-colors" />
                                                 <div className="px-8 pb-4 -mt-12">
                                                     <div className="w-20 h-20 bg-[var(--bg-primary)] border-4 border-[var(--bg-primary)] rounded-[1.5rem] shadow-lg flex items-center justify-center text-3xl font-black text-spark-red mb-4 overflow-hidden">
-                                                        {partner.imageUrl ? <img src={partner.imageUrl} className="w-full h-full object-cover" /> : partner.name?.charAt(0)}
+                                                        {partner.imageUrl ? <img src={partner.imageUrl} alt={partner.name || 'Association Logo'} className="w-full h-full object-cover" /> : partner.name?.charAt(0)}
                                                     </div>
                                                     <h3 className="text-xl font-black text-[var(--text-primary)] mb-1 group-hover:text-spark-red transition-colors">{partner.name}</h3>
                                                     <p className="text-[10px] font-black text-spark-red uppercase tracking-widest mb-4">{type}</p>
@@ -1527,6 +1642,10 @@ const BrandDashboard: React.FC<{
                                                         <div className="flex items-center gap-2">
                                                             <span className="font-bold text-spark-red">👥 Size:</span>
                                                             <span>{size}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-bold text-spark-red">🎯 Niche:</span>
+                                                            <span className="text-[11px] font-black text-[var(--text-primary)]">{niche}</span>
                                                         </div>
                                                         <div className="flex items-center gap-2">
                                                             <span className="font-bold text-spark-red">📦 Packages:</span>
@@ -1561,31 +1680,55 @@ const BrandDashboard: React.FC<{
             case 'directory':
                 return (
                     <div className="space-y-6">
-                        <div>
-                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Creator Directory</h2>
-                            <p className="text-[var(--text-secondary)] mt-1">Browse and discover verified creators, micro-influencers, and activation talents that match your campaign goals.</p>
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                            <div>
+                                <h2 className="text-3xl font-black text-[var(--text-primary)]">Creator Directory</h2>
+                                <p className="text-[var(--text-secondary)] mt-1">Browse and discover verified creators, micro-influencers, and activation talents that match your campaign goals.</p>
+                            </div>
+                            <div className="flex bg-spark-red/5 border border-spark-red/10 p-1 rounded-2xl max-w-xs w-full md:w-auto">
+                                <button 
+                                    onClick={() => setCreatorTypeTab('all')}
+                                    className={`flex-1 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${creatorTypeTab === 'all' ? 'bg-spark-red text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-red'}`}
+                                >
+                                    All
+                                </button>
+                                <button 
+                                    onClick={() => setCreatorTypeTab('professional')}
+                                    className={`flex-1 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${creatorTypeTab === 'professional' ? 'bg-spark-red text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-red'}`}
+                                >
+                                    Professional
+                                </button>
+                                <button 
+                                    onClick={() => setCreatorTypeTab('student')}
+                                    className={`flex-1 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${creatorTypeTab === 'student' ? 'bg-spark-red text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-red'}`}
+                                >
+                                    Student
+                                </button>
+                            </div>
                         </div>
-                        {/* â”€â”€ Active Campaign Overview Panel â”€â”€ */}
 
-
-
-                        {/* â”€â”€ Search Bar â”€â”€ */}
+                        {/* Search Bar */}
                         <div className="bg-[var(--bg-primary)] p-6 rounded-[2rem] shadow-sm border border-[var(--border-color)] flex flex-col xl:flex-row gap-6 items-center">
                             <div className="relative flex-1 w-full">
                                 <input
                                     type="text"
-                                    placeholder="Search campus creators..."
-                                    className="w-full pl-12 pr-4 py-4 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-2xl outline-none font-medium text-[var(--text-primary)]"
+                                    placeholder="Search creators..."
+                                    className="w-full pl-12 pr-4 py-4 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-2xl outline-none font-medium text-[var(--text-primary)] focus:border-spark-red transition-all"
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                 />
-                                <svg className="absolute left-4 top-4.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                                <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                             </div>
                         </div>
 
-                        {/* â”€â”€ Talent Grid â”€â”€ */}
+                        {/* Talent Grid */}
                         {loading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
+                        ) : filteredCreators.length === 0 ? (
+                            <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)]">
+                                <h3 className="text-xl font-black text-[var(--text-primary)] mb-2">No Talent Found</h3>
+                                <p className="text-[var(--text-secondary)]">Try adjusting your filters or search terms.</p>
+                            </div>
                         ) : (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
                                 {filteredCreators.map(creator => {
@@ -1594,37 +1737,57 @@ const BrandDashboard: React.FC<{
                                         available: { label: 'Available', cls: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' },
                                         in_campaign: { label: 'Active', cls: 'bg-spark-red/10 text-spark-red border border-spark-red/20' },
                                     }[status];
-                                    const rating = creator.rating || "4.8";
-                                    const category = creator.category || "Social Media Influencer";
+                                    const rating = creator.rating || null;
+                                    const category = creator.nicheCategory || creator.category || "Social Media Influencer";
                                     const location = creator.location || creator.university || "Main Campus";
-                                    const audienceSize = creator.audienceSize || "12.5k followers";
-                                    const pricing = creator.pricing || "₦20k - ₦50k / post";
+                                    const roleLower = (creator.role || '').toLowerCase();
+                                    const isProfessional = roleLower.includes('professional') || roleLower.includes('influencer');
+
                                     return (
                                         <div key={creator.id} className={`group bg-[var(--bg-primary)] rounded-[2rem] border overflow-hidden shadow-sm hover:shadow-xl transition-all p-6 flex flex-col justify-between ${status === 'in_campaign' ? 'border-spark-red/30 ring-1 ring-spark-red/10' : 'border-[var(--border-color)]'}`}>
                                             <div>
                                                 <div className="flex justify-between items-center mb-4">
                                                     <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${statusConfig.cls}`}>{statusConfig.label}</span>
-                                                    <div className="flex items-center gap-1 text-xs text-amber-500 font-bold">
-                                                        <span>★</span>
-                                                        <span>{rating}</span>
-                                                    </div>
+                                                    <span className="px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest bg-spark-red/5 text-spark-red">
+                                                        {isProfessional ? 'Professional' : 'Student'}
+                                                    </span>
                                                 </div>
-                                                <div className="w-16 h-16 rounded-2xl bg-spark-red text-white flex items-center justify-center font-black text-2xl mx-auto mb-4 overflow-hidden">
-                                                    {creator.imageUrl ? <img src={creator.imageUrl} className="w-full h-full object-cover" /> : (creator.name || '?').charAt(0)}
+                                                <div className="w-16 h-16 rounded-2xl bg-spark-red text-white flex items-center justify-center font-black text-2xl mx-auto mb-4 overflow-hidden shadow-md">
+                                                    {creator.imageUrl ? <img src={creator.imageUrl} alt={creator.name || 'Creator Avatar'} className="w-full h-full object-cover" /> : (creator.name || '?').charAt(0)}
                                                 </div>
                                                 <h3 className="font-black text-lg line-clamp-1 text-[var(--text-primary)] text-center">{creator.name}</h3>
                                                 <p className="text-[10px] text-spark-red font-black uppercase tracking-widest mb-3 text-center">{category}</p>
                                                 
-                                                <div className="space-y-1.5 mb-6 text-xs text-[var(--text-secondary)] font-medium">
+                                                {rating && (
+                                                    <div className="flex items-center gap-1 text-xs text-amber-500 font-bold justify-center mb-3">
+                                                        <span>★</span>
+                                                        <span>{rating}</span>
+                                                    </div>
+                                                )}
+
+                                                <div className="space-y-1.5 mb-6 text-xs text-[var(--text-secondary)] font-medium text-center">
                                                     <p className="flex items-center gap-1.5 justify-center">
-                                                        <span>📍</span> {location}
+                                                        <span>📍 Location:</span> {location}
                                                     </p>
-                                                    <p className="flex items-center gap-1.5 justify-center font-bold text-[var(--text-primary)]">
-                                                        <span>📊 Reach:</span> {audienceSize}
-                                                    </p>
-                                                    <p className="flex items-center gap-1.5 justify-center text-green-600 font-black">
-                                                        <span>💰 Rate:</span> {pricing}
-                                                    </p>
+                                                </div>
+
+                                                {/* Social Handles */}
+                                                <div className="flex justify-center gap-3 mb-6">
+                                                    {creator.instagram && (
+                                                        <a href={creator.instagram.startsWith('http') ? creator.instagram : `https://instagram.com/${creator.instagram.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-[var(--bg-secondary)] hover:bg-spark-red/10 text-[var(--text-secondary)] hover:text-spark-red rounded-xl transition-all">
+                                                            <Instagram className="w-4 h-4" />
+                                                        </a>
+                                                    )}
+                                                    {creator.tiktok && (
+                                                        <a href={creator.tiktok.startsWith('http') ? creator.tiktok : `https://tiktok.com/@${creator.tiktok.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-[var(--bg-secondary)] hover:bg-spark-red/10 text-[var(--text-secondary)] hover:text-spark-red rounded-xl transition-all">
+                                                            <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.17-2.89-.7-4.06-1.66-.27-.23-.52-.48-.75-.75-.01 2.91-.02 5.82-.02 8.74-.08 2.37-1.12 4.74-3.05 6.13-2.14 1.58-5.11 2.05-7.58 1.25-2.82-.87-5.06-3.47-5.26-6.47-.36-4.22 2.91-8.23 7.15-8.43.19-.01.37 0 .56-.01V8.33c-1.92.21-3.79 1.48-4.57 3.25-.97 2.12-.55 4.8 1.01 6.55 1.55 1.76 4.14 2.38 6.27 1.59 1.83-.66 3.14-2.49 3.23-4.47.08-2.73.04-5.46.05-8.19-.01 0-.01 0-.02 0-.07-.94-.48-1.89-1.17-2.54-.74-.74-1.78-1.15-2.83-1.18V.02z"/></svg>
+                                                        </a>
+                                                    )}
+                                                    {creator.twitter && (
+                                                        <a href={creator.twitter.startsWith('http') ? creator.twitter : `https://twitter.com/${creator.twitter.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-[var(--bg-secondary)] hover:bg-spark-red/10 text-[var(--text-secondary)] hover:text-spark-red rounded-xl transition-all">
+                                                            <Twitter className="w-4 h-4" />
+                                                        </a>
+                                                    )}
                                                 </div>
                                             </div>
                                             
@@ -1972,20 +2135,18 @@ const BrandDashboard: React.FC<{
                                                         {trans.status === 'completed' && (
                                                             <button 
                                                                 onClick={() => {
-                                                                    alert(`Downloading Invoice for transaction ${trans.id || trans.reference || 'INV-001'}...\nDescription: ${trans.description}\nAmount: ₦${Number(trans.amount).toLocaleString()}`);
-                                                                    const invoiceText = `INVOICE\n====================\nInvoice Reference: ${trans.id || trans.reference || 'INV-' + Date.now()}\nDescription: ${trans.description}\nAmount: NGN ${Number(trans.amount).toLocaleString()}\nStatus: ${trans.status.toUpperCase()}\nDate: ${new Date().toLocaleDateString()}\nThank you for partnering with ABC-Rally!`;
-                                                                    const blob = new Blob([invoiceText], { type: 'text/plain;charset=utf-8' });
+                                                                    const ref = trans.id || trans.reference || ('INV-' + Date.now());
+                                                                    const dateStr = new Date().toLocaleDateString('en-NG', { year: 'numeric', month: 'long', day: 'numeric' });
+                                                                    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${ref}</title><style>body{font-family:Arial,sans-serif;max-width:600px;margin:40px auto;color:#111;padding:20px}.header{background:#e53e3e;color:white;padding:32px;border-radius:12px;margin-bottom:24px}h1{margin:0;font-size:28px}h2{margin:4px 0 0;font-size:14px;opacity:.85;font-weight:500}.divider{border:none;border-top:2px solid #eee;margin:20px 0}.row{display:flex;justify-content:space-between;margin:10px 0;font-size:14px}.label{color:#666;font-weight:600}.value{font-weight:700}.total-row{background:#f7fafc;border-radius:8px;padding:14px 16px;display:flex;justify-content:space-between;margin:16px 0}.total-label{font-size:16px;font-weight:800}.total-value{font-size:20px;font-weight:900;color:#e53e3e}.footer{margin-top:32px;font-size:12px;color:#888;text-align:center}</style></head><body><div class="header"><h1>INVOICE</h1><h2>ABC-Rally Platform</h2></div><div class="row"><span class="label">Invoice Ref</span><span class="value">${ref}</span></div><div class="row"><span class="label">Date</span><span class="value">${dateStr}</span></div><div class="row"><span class="label">Description</span><span class="value">${trans.description || 'Platform Transaction'}</span></div><div class="row"><span class="label">Status</span><span class="value">${(trans.status || '').toUpperCase()}</span></div><hr class="divider"><div class="total-row"><span class="total-label">Total Amount</span><span class="total-value">NGN ${Number(trans.amount).toLocaleString()}</span></div><div class="footer">Thank you for partnering with ABC-Rally!<br>This is a computer-generated invoice.</div></body></html>`;
+                                                                    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
                                                                     const url = URL.createObjectURL(blob);
-                                                                    const link = document.createElement("a");
-                                                                    link.href = url;
-                                                                    link.download = `invoice_${trans.id || trans.reference || 'download'}.txt`;
-                                                                    document.body.appendChild(link);
-                                                                    link.click();
-                                                                    document.body.removeChild(link);
+                                                                    const win = window.open(url, '_blank');
+                                                                    if (win) { win.onload = () => { win.print(); }; }
+                                                                    URL.revokeObjectURL(url);
                                                                 }}
                                                                 className="text-[10px] font-black text-spark-red uppercase tracking-wider hover:underline"
                                                             >
-                                                                📄 Download Invoice
+                                                                📄 Download PDF Invoice
                                                             </button>
                                                         )}
                                                     </div>
@@ -2014,24 +2175,44 @@ const BrandDashboard: React.FC<{
                         )}
                     </div>
                 );
-            case 'proposals':
+            case 'proposals': {
+                const filteredProposals = proposals.filter((p) => {
+                    const isSender = p.senderId === (brandProfile?.id || auth.currentUser?.uid);
+                    return proposalTab === 'incoming' ? !isSender : isSender;
+                });
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                         <div>
                             <h2 className="text-3xl font-black text-[var(--text-primary)]">Partnership Proposals</h2>
                             <p className="text-[var(--text-secondary)] mt-1">Track collaboration pitches, custom offers, sponsorship requests, and negotiations with creators and associations.</p>
                         </div>
+                        
+                        <div className="flex bg-spark-red/5 border border-spark-red/10 p-1 rounded-2xl max-w-xs">
+                            <button 
+                                onClick={() => setProposalTab('incoming')}
+                                className={`flex-1 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${proposalTab === 'incoming' ? 'bg-spark-red text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-red'}`}
+                            >
+                                Incoming
+                            </button>
+                            <button 
+                                onClick={() => setProposalTab('outgoing')}
+                                className={`flex-1 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${proposalTab === 'outgoing' ? 'bg-spark-red text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-red'}`}
+                            >
+                                Outgoing
+                            </button>
+                        </div>
+
                         {loading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
-                        ) : proposals.length === 0 ? (
+                        ) : filteredProposals.length === 0 ? (
                             <DashboardPlaceholder
-                                title="No Activity"
+                                title={proposalTab === 'incoming' ? "No Incoming Proposals" : "No Outgoing Proposals"}
                                 icon={<Inbox className="w-10 h-10" />}
-                                description="You haven't sent or received any partnership proposals yet. Browse the talent directory to start!"
+                                description={proposalTab === 'incoming' ? "You haven't received any partnership proposals yet." : "You haven't sent any partnership proposals yet."}
                             />
                         ) : (
                             <div className="grid gap-6">
-                                {proposals.map((p) => {
+                                {filteredProposals.map((p) => {
                                     const isSender = p.senderId === (brandProfile?.id || auth.currentUser?.uid);
                                     const otherParty = (isSender ? p.recipient : p.sender) || { name: 'Unknown User', role: 'Unknown', email: '' };
                                     const displayName = otherParty.name !== 'Unknown User' ? otherParty.name : (otherParty.email || 'Unknown User');
@@ -2040,7 +2221,7 @@ const BrandDashboard: React.FC<{
                                         <div key={p.id} className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm flex items-center justify-between">
                                             <div className="flex items-center space-x-6">
                                                 <div className="w-16 h-16 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-2xl flex items-center justify-center text-2xl font-black text-spark-red shadow-inner">
-                                                    {otherParty.imageUrl ? <img src={otherParty.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : (otherParty.name ? otherParty.name.charAt(0) : '?')}
+                                                    {otherParty.imageUrl ? <img src={otherParty.imageUrl} alt={displayName} className="w-full h-full object-cover rounded-2xl" /> : (otherParty.name ? otherParty.name.charAt(0) : '?')}
                                                 </div>
                                                 <div>
                                                     <h4 className="text-xl font-black text-[var(--text-primary)]">{displayName}</h4>
@@ -2096,6 +2277,106 @@ const BrandDashboard: React.FC<{
                         )}
                     </div>
                 );
+            }
+            case 'sponsorships': {
+                const myId = brandProfile?.id || auth.currentUser?.uid;
+                // Show all proposals where the brand is the recipient (associations requesting sponsorship)
+                const allSponsorProps = proposals.filter((p: any) => p.senderId !== myId);
+                const paidSponsors = allSponsorProps.filter((p: any) => p.status === 'paid');
+                const acceptedSponsors = allSponsorProps.filter((p: any) => p.status === 'accepted');
+                const pendingSponsors = allSponsorProps.filter((p: any) => p.status === 'pending');
+                const totalSpent = paidSponsors.reduce((sum: number, p: any) => sum + Number(p.budget || 0), 0);
+                const totalCommittedBrand = acceptedSponsors.reduce((sum: number, p: any) => sum + Number(p.budget || 0), 0);
+                return (
+                    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                        <div>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Sponsorships</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">Track events and associations you have sponsored, and manage pending sponsorship commitments.</p>
+                        </div>
+
+                        {/* Stats */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div className="bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] p-8">
+                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Total Sponsored</p>
+                                <p className="text-3xl font-black text-[var(--text-primary)]">₦{totalSpent.toLocaleString()}</p>
+                                <p className="text-xs text-green-600 font-bold mt-1">{paidSponsors.length} sponsorship{paidSponsors.length !== 1 ? 's' : ''} completed</p>
+                            </div>
+                            <div className="bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] p-8">
+                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Committed</p>
+                                <p className="text-3xl font-black text-[var(--text-primary)]">₦{totalCommittedBrand.toLocaleString()}</p>
+                                <p className="text-xs text-blue-600 font-bold mt-1">{acceptedSponsors.length} accepted, awaiting payment</p>
+                            </div>
+                            <div className="bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] p-8">
+                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Events Sponsored</p>
+                                <p className="text-3xl font-black text-[var(--text-primary)]">{paidSponsors.length + acceptedSponsors.length}</p>
+                                <p className="text-xs text-[var(--text-secondary)] font-bold mt-1">{pendingSponsors.length} request{pendingSponsors.length !== 1 ? 's' : ''} pending review</p>
+                            </div>
+                        </div>
+
+                        {/* Sponsorship List */}
+                        {loading ? (
+                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
+                        ) : allSponsorProps.length === 0 ? (
+                            <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)]">
+                                <div className="w-20 h-20 bg-spark-red/5 rounded-3xl flex items-center justify-center mx-auto mb-6 text-spark-red">
+                                    <Award className="w-10 h-10" />
+                                </div>
+                                <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">No Sponsorships Yet</h3>
+                                <p className="text-[var(--text-secondary)] font-medium mb-6">Discover events and associations to sponsor from the Association Directory or Events tab.</p>
+                                <button onClick={() => setCurrentView('associations')} className="px-8 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all">
+                                    Browse Associations
+                                </button>
+                            </div>
+                        ) : (
+                            <div>
+                                <h3 className="text-lg font-black text-[var(--text-primary)] mb-4">All Sponsorship Activity</h3>
+                                <div className="space-y-4">
+                                    {allSponsorProps.map((p: any) => {
+                                        const assoc = p.sender || { name: 'Unknown Association', imageUrl: null };
+                                        const assocName = (assoc.name && assoc.name !== 'Unknown Association') ? assoc.name : (assoc.email || 'Unknown Association');
+                                        const amount = Number(p.budget || 0);
+                                        const statusBadge =
+                                            p.status === 'paid' ? 'bg-green-100 text-green-700 border border-green-200' :
+                                            p.status === 'accepted' ? 'bg-blue-50 text-blue-600' :
+                                            p.status === 'rejected' ? 'bg-red-50 text-spark-red' :
+                                            'bg-yellow-50 text-yellow-700';
+                                        return (
+                                            <div key={p.id} className="bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] p-6 flex items-center justify-between hover:shadow-md transition-shadow">
+                                                <div className="flex items-center space-x-4">
+                                                    <div className="w-12 h-12 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl flex items-center justify-center text-lg font-black text-spark-red overflow-hidden">
+                                                        {assoc.imageUrl ? <img src={assoc.imageUrl} className="w-full h-full object-cover" alt={assocName} /> : assocName.charAt(0).toUpperCase()}
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="font-black text-[var(--text-primary)]">{assocName}</h4>
+                                                        <p className="text-[10px] text-[var(--text-secondary)] font-bold uppercase tracking-wider">
+                                                            {p.eventName || p.sponsorshipPackageName || (p.message ? p.message.substring(0, 40) + (p.message.length > 40 ? '…' : '') : 'Event Sponsorship')}
+                                                        </p>
+                                                        <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">{p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-NG', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-4">
+                                                    {amount > 0 && (
+                                                        <p className="text-xl font-black text-[var(--text-primary)]">₦{amount.toLocaleString()}</p>
+                                                    )}
+                                                    <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${statusBadge}`}>
+                                                        {p.status === 'paid' ? '✓ Paid' : p.status}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => setSelectedProposal(p)}
+                                                        className="px-4 py-2 bg-[var(--bg-secondary)] text-[var(--text-primary)] rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-[var(--bg-tertiary)] transition-all border border-gray-200"
+                                                    >
+                                                        View
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            }
             case 'campaigns':
                 const categories = ['Awareness', 'Product Launch', 'Event Promo', 'Lead Gen', 'Content Creation', 'Social Media'];
                 const catColors: Record<string, string> = {
@@ -2177,7 +2458,7 @@ const BrandDashboard: React.FC<{
                                         <table className="w-full text-sm">
                                             <thead>
                                                 <tr className="border-b border-[var(--border-color)]">
-                                                    {['Creator', 'University', 'Allocation', 'Status', 'Actions'].map(h => (
+                                                    {['Creator', 'Location', 'Allocation', 'Status', 'Actions'].map(h => (
                                                         <th key={h} className="text-left px-6 py-4 text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">{h}</th>
                                                     ))}
                                                 </tr>
@@ -2191,7 +2472,7 @@ const BrandDashboard: React.FC<{
                                                                 <span className="font-black text-[var(--text-primary)]">{alloc.creatorName}</span>
                                                             </div>
                                                         </td>
-                                                        <td className="px-6 py-4 text-[var(--text-secondary)] text-xs">{alloc.creatorUniversity || '—'}</td>
+                                                        <td className="px-6 py-4 text-[var(--text-secondary)] text-xs">{(alloc as any).creatorLocation || alloc.creatorUniversity || '—'}</td>
                                                         <td className="px-6 py-4 font-black text-[var(--text-primary)]">₦{alloc.amount.toLocaleString()}</td>
                                                         <td className="px-6 py-4">
                                                             <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${allocStatusColors[alloc.status] || 'bg-[var(--bg-tertiary)] text-gray-500'}`}>{alloc.status.replace('_', ' ')}</span>
@@ -2265,7 +2546,27 @@ const BrandDashboard: React.FC<{
                                                                                         {alloc.status === 'revision' ? 'Revision Requested' : 'Work Pending'}
                                                                                     </span>
                                                                                 )}
-                                                                                <span className="text-[10px] text-[var(--text-secondary)] italic">Contact Admin for Refunds</span>
+                                                                                <button
+                                                                                    onClick={() => {
+                                                                                        setPreSelectedDisputeEntity({
+                                                                                            id: alloc.id,
+                                                                                            title: selectedCampaignDetail?.title || 'Campaign',
+                                                                                            type: 'campaign_allocation',
+                                                                                            amount: alloc.amount || 0,
+                                                                                            counterpartyId: alloc.creatorId || '',
+                                                                                            counterpartyName: alloc.creatorName || 'Creator',
+                                                                                            counterpartyEmail: alloc.creatorEmail || '',
+                                                                                            counterpartyRole: 'Creator',
+                                                                                            escrowId: alloc.escrowId || null,
+                                                                                            escrowRef: alloc.escrowRef || null,
+                                                                                            escrowPaymentUrl: alloc.escrowPaymentUrl || null
+                                                                                        });
+                                                                                        setCurrentView('disputes');
+                                                                                    }}
+                                                                                    className="flex items-center gap-1 px-2.5 py-1.5 border border-spark-red/40 text-spark-red rounded-lg text-[10px] font-black uppercase hover:bg-spark-red/10 transition-colors"
+                                                                                >
+                                                                                    <Scale className="w-3 h-3" /> Raise Dispute
+                                                                                </button>
                                                                             </div>
                                                                         )}
                                                                     </div>
@@ -2460,6 +2761,64 @@ const BrandDashboard: React.FC<{
                             </div>
                         )}
 
+                        {/* Rating & Review Modal */}
+                        {showReviewModal && selectedReviewRequest && (
+                            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                                <div className="fixed inset-0 bg-spark-black/60 backdrop-blur-md" onClick={() => setShowReviewModal(false)}></div>
+                                <div className="relative bg-[var(--bg-primary)] w-full max-w-lg rounded-[2.5rem] shadow-2xl animate-in zoom-in-95 duration-300 border border-[var(--border-color)] overflow-hidden">
+                                    <form onSubmit={handleSubmittingReview} className="p-8">
+                                        <div className="flex justify-between items-start mb-6">
+                                            <div>
+                                                <h3 className="text-2xl font-black text-[var(--text-primary)]">Rate Creator</h3>
+                                                <p className="text-xs text-[var(--text-secondary)] mt-1">Leave a rating and testimonial for {selectedReviewRequest.creatorName}.</p>
+                                            </div>
+                                            <button 
+                                                type="button" 
+                                                onClick={() => setShowReviewModal(false)} 
+                                                className="w-8 h-8 bg-[var(--bg-secondary)] text-[var(--text-primary)] rounded-full flex items-center justify-center hover:bg-spark-red hover:text-white transition-all text-xs"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                        <div className="space-y-6">
+                                            <div>
+                                                <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Stars Rating</label>
+                                                <div className="flex gap-2 text-2xl">
+                                                    {[1, 2, 3, 4, 5].map((star) => (
+                                                        <button
+                                                            key={star}
+                                                            type="button"
+                                                            onClick={() => setRatingStars(star)}
+                                                            className={`transition-all ${star <= ratingStars ? 'text-amber-500 hover:scale-110' : 'text-gray-300'}`}
+                                                        >
+                                                            ★
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Written Recommendation</label>
+                                                <textarea
+                                                    required
+                                                    value={reviewText}
+                                                    onChange={(e) => setReviewText(e.target.value)}
+                                                    placeholder="E.g. Outstanding work, delivered exactly on time and exceeded our student conversion goals."
+                                                    className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl outline-none font-semibold focus:border-spark-red min-h-[100px] text-sm"
+                                                />
+                                            </div>
+                                            <button
+                                                type="submit"
+                                                disabled={reviewSubmitting}
+                                                className="w-full py-4 bg-spark-black text-white hover:bg-spark-red rounded-xl font-black text-xs uppercase tracking-widest transition-all"
+                                            >
+                                                {reviewSubmitting ? 'Submitting...' : 'Submit Review'}
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Create Campaign Modal */}
                         {showCampaignModal && (
                             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -2494,12 +2853,13 @@ const BrandDashboard: React.FC<{
                                             try {
                                                 if (editingGig) {
                                                     // UPDATE existing Gig
-                                                    const res = await apiClient.patch(`gigs/${editingGig.id}`, {
+                                                    await apiClient.patch(`gigs/${editingGig.id}`, {
                                                         title: campaignForm.title,
                                                         description: campaignForm.brief,
                                                         reward: Number(campaignForm.budget),
                                                         category: campaignForm.category,
-                                                        deadline: campaignForm.deadline
+                                                        deadline: campaignForm.deadline,
+                                                        location: campaignForm.location
                                                     });
                                                     setCampaigns(prev => prev.map(c => c.id === editingGig.id ? { ...c, ...campaignForm, reward: Number(campaignForm.budget) } : c));
                                                     alert('Campaign updated successfully!');
@@ -2545,6 +2905,7 @@ const BrandDashboard: React.FC<{
                                                                         brandEmail: resolvedBrandEmail,
                                                                         category: campaignForm.category,
                                                                         deadline: campaignForm.deadline,
+                                                                        location: campaignForm.location,
                                                                         listingFeeRef: response.reference,
                                                                         createdAt: new Date().toISOString()
                                                                     };
@@ -2554,7 +2915,7 @@ const BrandDashboard: React.FC<{
                                                                     setCampaigns(prev => [newCampaign, ...prev]);
                                                                     setShowCampaignModal(false);
                                                                     setEditingGig(null);
-                                                                    setCampaignForm({ title: '', brief: '', budget: '', deadline: '', category: 'Awareness' });
+                                                                    setCampaignForm({ title: '', brief: '', budget: '', deadline: '', category: 'Awareness', objective: '', audience: '', location: '', deliverables: '' });
                                                                     alert(`✅ Campaign "${campaignForm.title}" launched! Creators can now apply. When you hire a creator, pay their budget directly into escrow.`);
                                                                     setTimeout(() => fetchCampaigns(), 1500);
                                                                 } catch (err: any) {
@@ -2574,7 +2935,7 @@ const BrandDashboard: React.FC<{
                                                  }
                                                 setShowCampaignModal(false);
                                                 setEditingGig(null);
-                                                setCampaignForm({ title: '', brief: '', budget: '', deadline: '', category: 'Awareness' });
+                                                setCampaignForm({ title: '', brief: '', budget: '', deadline: '', category: 'Awareness', objective: '', audience: '', location: '', deliverables: '' });
                                             } catch (err: any) {
                                                 console.error(err);
                                                 const errMsg = err.response?.data?.error || err.message || 'Unknown error';
@@ -2593,6 +2954,10 @@ const BrandDashboard: React.FC<{
                                                 <select value={campaignForm.category} onChange={e => setCampaignForm(p => ({ ...p, category: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] rounded-2xl font-bold outline-none border-2 border-transparent focus:border-spark-red">
                                                     {categories.map(c => <option key={c}>{c}</option>)}
                                                 </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Location</label>
+                                                <input required value={campaignForm.location} onChange={e => setCampaignForm(p => ({ ...p, location: e.target.value }))} className="w-full px-5 py-4 bg-[var(--bg-secondary)] rounded-2xl font-bold outline-none border-2 border-transparent focus:border-spark-red" placeholder="e.g. University of Lagos (UNILAG) or National" />
                                             </div>
                                             <div>
                                                 <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Campaign Brief</label>
@@ -2645,42 +3010,56 @@ const BrandDashboard: React.FC<{
                         {/* Summary Metrics */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div className="bg-[var(--bg-primary)] p-8 rounded-[2rem] border border-[var(--border-color)] shadow-sm">
-                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Estimated Reach</p>
-                                <h4 className="text-3xl font-black text-[var(--text-primary)]">148,500</h4>
-                                <span className="text-[10px] font-black text-green-600 uppercase tracking-widest bg-green-500/10 px-2 py-0.5 rounded-full inline-block mt-2">↑ 12.3% this month</span>
+                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Total Campaigns</p>
+                                <h4 className="text-3xl font-black text-[var(--text-primary)]">{campaigns.length}</h4>
+                                <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-500/10 px-2 py-0.5 rounded-full inline-block mt-2">{analyticsActiveCampaigns} currently active</span>
                             </div>
                             <div className="bg-[var(--bg-primary)] p-8 rounded-[2rem] border border-[var(--border-color)] shadow-sm">
-                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Completed Milestones</p>
-                                <h4 className="text-3xl font-black text-[var(--text-primary)]">38</h4>
-                                <span className="text-[10px] font-black text-purple-600 uppercase tracking-widest bg-purple-500/10 px-2 py-0.5 rounded-full inline-block mt-2">100% Submission rate</span>
+                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Completed Campaigns</p>
+                                <h4 className="text-3xl font-black text-[var(--text-primary)]">{campaigns.filter(c => c.status === 'paid' || c.status === 'completed').length}</h4>
+                                <span className="text-[10px] font-black text-purple-600 uppercase tracking-widest bg-purple-500/10 px-2 py-0.5 rounded-full inline-block mt-2">{allAllocations.filter(a => a.status === 'approved' || a.status === 'paid').length} deliverables approved</span>
                             </div>
                             <div className="bg-[var(--bg-primary)] p-8 rounded-[2rem] border border-[var(--border-color)] shadow-sm">
                                 <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Aggregate Budget Spend</p>
                                 <h4 className="text-3xl font-black text-spark-red">₦{totalSpend.toLocaleString()}</h4>
-                                <span className="text-[10px] font-black text-spark-red uppercase tracking-widest bg-spark-red/5 px-2 py-0.5 rounded-full inline-block mt-2">Avg ₦{averageMilestone.toLocaleString(undefined, {maximumFractionDigits:0})} / campaign</span>
+                                <span className="text-[10px] font-black text-spark-red uppercase tracking-widest bg-spark-red/5 px-2 py-0.5 rounded-full inline-block mt-2">Avg ₦{averageMilestone.toLocaleString(undefined, {maximumFractionDigits:0})} / active campaign</span>
                             </div>
                         </div>
 
-                        {/* Interactive Graph (Pure SVG & CSS Bar Chart) */}
+                        {/* Campaign Budget Bar Chart - Real Data */}
                         <div className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] p-8 shadow-sm">
-                            <h3 className="text-xl font-black text-[var(--text-primary)] mb-6">Reach Estimations By Campaign</h3>
-                            <div className="space-y-4">
-                                {[
-                                    { title: "Back to School Activation", reach: 65000, color: "bg-spark-red", percent: "90%" },
-                                    { title: "ABC-Rally Hackathon Sponsorship", reach: 45000, color: "bg-spark-purple", percent: "65%" },
-                                    { title: "Pepsi Cola Product sampling", reach: 38500, color: "bg-blue-600", percent: "55%" }
-                                ].map((item, idx) => (
-                                    <div key={idx} className="space-y-2">
-                                        <div className="flex justify-between text-xs font-black">
-                                            <span className="text-[var(--text-primary)]">{item.title}</span>
-                                            <span className="text-[var(--text-secondary)]">{item.reach.toLocaleString()} reach</span>
-                                        </div>
-                                        <div className="h-4 bg-[var(--bg-secondary)] rounded-full overflow-hidden flex">
-                                            <div className={`h-full ${item.color} rounded-full transition-all duration-700`} style={{ width: item.percent }}></div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+                            <h3 className="text-xl font-black text-[var(--text-primary)] mb-6">Budget Allocation By Campaign</h3>
+                            {campaigns.length === 0 ? (
+                                <p className="text-[var(--text-secondary)] text-sm font-medium text-center py-8 italic">No campaigns yet. Create a campaign to see budget analytics.</p>
+                            ) : (
+                                <div className="space-y-4">
+                                    {(() => {
+                                        const maxBudget = Math.max(...campaigns.map((c: any) => Number(c.budget || c.reward || 0)), 1);
+                                        const barColors = ['bg-spark-red', 'bg-spark-purple', 'bg-blue-600', 'bg-green-600', 'bg-amber-500', 'bg-pink-500'];
+                                        return campaigns.slice(0, 6).map((camp: any, idx: number) => {
+                                            const budget = Number(camp.budget || camp.reward || 0);
+                                            const pct = Math.round((budget / maxBudget) * 100);
+                                            return (
+                                                <div key={camp.id || idx} className="space-y-2">
+                                                    <div className="flex justify-between text-xs font-black">
+                                                        <span className="text-[var(--text-primary)] truncate max-w-[60%]">{camp.title || camp.campaignTitle || 'Untitled Campaign'}</span>
+                                                        <span className="text-[var(--text-secondary)]">₦{budget.toLocaleString()} budget</span>
+                                                    </div>
+                                                    <div className="h-4 bg-[var(--bg-secondary)] rounded-full overflow-hidden flex">
+                                                        <div className={`h-full ${barColors[idx % barColors.length]} rounded-full transition-all duration-700`} style={{ width: `${pct}%` }}></div>
+                                                    </div>
+                                                    <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full inline-block ${
+                                                        camp.status === 'open' ? 'bg-green-50 text-green-600' :
+                                                        camp.status === 'in_progress' ? 'bg-blue-50 text-blue-600' :
+                                                        camp.status === 'paid' || camp.status === 'completed' ? 'bg-purple-50 text-purple-600' :
+                                                        'bg-gray-50 text-gray-500'
+                                                    }`}>{camp.status || 'draft'}</span>
+                                                </div>
+                                            );
+                                        });
+                                    })()}
+                                </div>
+                            )}
                         </div>
 
                         {/* Performance Table */}
@@ -2692,8 +3071,8 @@ const BrandDashboard: React.FC<{
                                         <tr className="border-b border-[var(--border-color)] text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">
                                             <th className="pb-3">Creator Name</th>
                                             <th className="pb-3">Campaign Assigned</th>
-                                            <th className="pb-3">Engagement Rate</th>
-                                            <th className="pb-3">Deliverables Status</th>
+                                            <th className="pb-3">Deliverable Status</th>
+                                            <th className="pb-3">Budget</th>
                                         </tr>
                                     </thead>
                                     <tbody className="font-semibold text-[var(--text-secondary)]">
@@ -2706,10 +3085,15 @@ const BrandDashboard: React.FC<{
                                                 <tr key={idx} className="border-b border-[var(--border-color)] last:border-0 hover:bg-[var(--bg-secondary)] transition-colors">
                                                     <td className="py-4 font-black text-[var(--text-primary)]">{alloc.creatorName}</td>
                                                     <td className="py-4">{alloc.campaignTitle}</td>
-                                                    <td className="py-4 text-green-600 font-bold">{(8.4 + (idx % 3) * 0.5).toFixed(1)}% Engagement</td>
                                                     <td className="py-4">
-                                                        <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-green-50 text-green-700 border border-green-100">{alloc.status}</span>
+                                                        <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${
+                                                            alloc.status === 'approved' || alloc.status === 'paid' ? 'bg-green-50 text-green-700 border-green-100' :
+                                                            alloc.status === 'submitted' ? 'bg-blue-50 text-blue-700 border-blue-100' :
+                                                            alloc.status === 'revision' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                                                            'bg-gray-50 text-gray-600 border-gray-100'
+                                                        }`}>{alloc.status}</span>
                                                     </td>
+                                                    <td className="py-4 text-spark-red font-bold">₦{Number(alloc.amount || 0).toLocaleString()}</td>
                                                 </tr>
                                             ))
                                         )}
@@ -2728,6 +3112,17 @@ const BrandDashboard: React.FC<{
                         </div>
                         <ProfileView user={brandProfile} onUpdate={fetchBrandData} />
                     </div>
+                );
+            case 'disputes':
+                return (
+                    <DisputesPanel
+                        userRole="Brand"
+                        userId={user?.id || user?.uid}
+                        userProfile={brandProfile}
+                        onNavigate={onNavigate}
+                        preSelectedEntity={preSelectedDisputeEntity}
+                        onClearPreSelected={() => setPreSelectedDisputeEntity(null)}
+                    />
                 );
             default:
                 return <div>Feature coming soon</div>;
@@ -2836,6 +3231,10 @@ const BrandDashboard: React.FC<{
                                     <div>
                                         <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Campaign Title</label>
                                         <input required type="text" value={inlineCreateForm.title} onChange={e => setInlineCreateForm(p => ({ ...p, title: e.target.value }))} className="w-full px-4 py-3 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl font-bold outline-none focus:border-spark-red text-sm" placeholder="e.g. Back to School Promo" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Location</label>
+                                        <input required type="text" value={inlineCreateForm.location} onChange={e => setInlineCreateForm(p => ({ ...p, location: e.target.value }))} className="w-full px-4 py-3 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl font-bold outline-none focus:border-spark-red text-sm" placeholder="e.g. UNILAG or National" />
                                     </div>
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
@@ -3099,7 +3498,7 @@ const BrandDashboard: React.FC<{
                                                 </a>
                                             )}
                                             <button onClick={() => { setViewingProfile(null); openAllocationModal(viewingProfile); }} className="px-6 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all shadow-lg text-xs uppercase tracking-widest ml-auto">
-                                                Hire Influencer
+                                                Hire Creator
                                             </button>
                                         </div>
                                     </div>
@@ -3108,9 +3507,9 @@ const BrandDashboard: React.FC<{
                                     <div className="grid md:grid-cols-3 gap-8">
                                         <div className="md:col-span-1 space-y-6">
                                             <div className="bg-[var(--bg-secondary)] rounded-3xl p-6 border border-[var(--border-color)]">
-                                                <h4 className="font-black text-[var(--text-primary)] mb-4 uppercase text-[10px] tracking-widest text-spark-red">About Influencer</h4>
+                                                <h4 className="font-black text-[var(--text-primary)] mb-4 uppercase text-[10px] tracking-widest text-spark-red">About Creator</h4>
                                                 <p className="text-sm text-[var(--text-secondary)] leading-relaxed font-medium">
-                                                    {viewingProfile.bio || "No bio provided by the influencer yet."}
+                                                    {viewingProfile.bio || "No bio provided by this creator yet."}
                                                 </p>
                                             </div>
                                             <div className="bg-[var(--bg-secondary)] rounded-3xl p-6 border border-[var(--border-color)]">

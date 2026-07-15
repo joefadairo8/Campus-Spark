@@ -18,6 +18,7 @@ interface ProposalFormModalProps {
     title?: string;
     isSponsorship?: boolean;
     selectedPackage?: { name: string; price: number; entails: string; } | null;
+    isCreatorCollab?: boolean;
 }
 
 export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
@@ -29,7 +30,8 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
     onSubmit,
     title = 'Partnership Proposal',
     isSponsorship = false,
-    selectedPackage = null
+    selectedPackage = null,
+    isCreatorCollab = false
 }) => {
     const [message, setMessage] = useState(initialMessage);
     const [budget, setBudget] = useState('');
@@ -38,6 +40,11 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
 
+    // Split calculator states
+    const [useSplit, setUseSplit] = useState(false);
+    const [splitTotal, setSplitTotal] = useState('');
+    const [leadPercent, setLeadPercent] = useState(60);
+
     useEffect(() => {
         if (isOpen) {
             setMessage(initialMessage);
@@ -45,6 +52,9 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
             setTimeline('');
             setFile(null);
             setError('');
+            setUseSplit(false);
+            setSplitTotal('');
+            setLeadPercent(60);
         }
     }, [isOpen, initialMessage, selectedPackage]);
 
@@ -70,7 +80,21 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
             return;
         }
 
-        const checkoutBudget = selectedPackage ? selectedPackage.price.toString() : budget.trim();
+        let finalMessage = message.trim();
+        let checkoutBudget = selectedPackage ? selectedPackage.price.toString() : budget.trim();
+
+        if (isCreatorCollab && useSplit && splitTotal) {
+            const totalVal = Number(splitTotal) || 0;
+            const leadAmount = ((totalVal * leadPercent) / 100).toLocaleString(undefined, {maximumFractionDigits: 0});
+            const coAmount = ((totalVal * (100 - leadPercent)) / 100).toLocaleString(undefined, {maximumFractionDigits: 0});
+            
+            finalMessage += `\n\n--- Payout Split Agreement ---\nTotal Collaboration Budget: ₦${totalVal.toLocaleString()}\n• Lead Creator (Me): ${leadPercent}% (₦${leadAmount})\n• Partner (${recipientName}): ${100 - leadPercent}% (₦${coAmount})`;
+            
+            if (!checkoutBudget) {
+                checkoutBudget = `₦${totalVal.toLocaleString()}`;
+            }
+        }
+
         if (isSponsorship && !checkoutBudget) {
             setError('Please enter a sponsorship amount');
             return;
@@ -94,7 +118,6 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
                         body: formData
                     });
 
-                    // Add a timeout to prevent infinite hanging
                     const timeout = new Promise((_, reject) => 
                         setTimeout(() => reject(new Error('Cloudinary upload timed out. Please check your connection.')), 25000)
                     );
@@ -118,7 +141,7 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
             // Timeout for API submission as well
             const apiTask = onSubmit({
                 recipientId,
-                message: message.trim(),
+                message: finalMessage,
                 budget: checkoutBudget || undefined,
                 timeline: timeline.trim() || undefined,
                 packageName: selectedPackage?.name || undefined,
@@ -232,6 +255,76 @@ export const ProposalFormModal: React.FC<ProposalFormModalProps> = ({
                                 className="w-full px-4 py-3 border-2 border-[var(--border-color)] bg-[var(--bg-primary)] rounded-2xl focus:border-spark-red focus:outline-none font-bold text-[var(--text-primary)]"
                                 disabled={submitting}
                             />
+                        </div>
+                    )}
+
+                    {isCreatorCollab && message.trim().length > 0 && (
+                        <div className="mb-6 p-6 bg-spark-purple/5 border border-spark-purple/20 rounded-3xl space-y-4 text-left">
+                            <div className="flex justify-between items-center">
+                                <h4 className="text-sm font-black text-spark-purple uppercase tracking-wider flex items-center gap-2">
+                                    🤝 Payout Split Agreement
+                                </h4>
+                                <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-[var(--text-secondary)]">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={useSplit} 
+                                        onChange={(e) => setUseSplit(e.target.checked)} 
+                                        className="rounded border-[var(--border-color)] text-spark-purple focus:ring-spark-purple w-4 h-4 cursor-pointer"
+                                    />
+                                    Enable Split
+                                </label>
+                            </div>
+                            
+                            {useSplit && (
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Total Collaboration Budget (₦)</label>
+                                        <input
+                                            type="number"
+                                            value={splitTotal}
+                                            onChange={(e) => setSplitTotal(e.target.value)}
+                                            placeholder="e.g. 100000"
+                                            className="w-full px-4 py-3 border-2 border-[var(--border-color)] bg-[var(--bg-primary)] rounded-2xl focus:border-spark-purple focus:outline-none font-bold text-[var(--text-primary)]"
+                                            disabled={submitting}
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-[9px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Me (Lead) %</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="100"
+                                                value={leadPercent}
+                                                onChange={(e) => {
+                                                    const val = Math.min(100, Math.max(0, Number(e.target.value) || 0));
+                                                    setLeadPercent(val);
+                                                }}
+                                                className="w-full px-4 py-2.5 border-2 border-[var(--border-color)] bg-[var(--bg-primary)] rounded-xl focus:border-spark-purple focus:outline-none font-bold text-[var(--text-primary)]"
+                                                disabled={submitting}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[9px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">{recipientName} %</label>
+                                            <div className="w-full px-4 py-2.5 border-2 border-dashed border-[var(--border-color)] bg-[var(--bg-secondary)] rounded-xl font-bold text-[var(--text-secondary)]">
+                                                {100 - leadPercent}%
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {Number(splitTotal) > 0 && (
+                                        <div className="p-4 bg-[var(--bg-secondary)] rounded-xl border border-[var(--border-color)] space-y-2 text-xs font-bold">
+                                            <div className="flex justify-between text-[var(--text-primary)]">
+                                                <span>Me (Lead):</span>
+                                                <span>₦{((Number(splitTotal) * leadPercent) / 100).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
+                                            </div>
+                                            <div className="flex justify-between text-[var(--text-primary)]">
+                                                <span>{recipientName}:</span>
+                                                <span>₦{((Number(splitTotal) * (100 - leadPercent)) / 100).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     )}
 

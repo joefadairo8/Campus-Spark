@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import DashboardShell from './DashboardShell';
-import { db, auth, collection, query, where, getDocs, addDoc, serverTimestamp, doc, getDoc, limit, apiClient, updateDoc, orderBy } from '../firebase';
+import { db, auth, collection, query, where, getDocs, addDoc, serverTimestamp, doc, getDoc, limit, apiClient, updateDoc, orderBy, logEvent } from '../firebase';
 import { UserRole } from '../types';
 import ProfileView from './ProfileView';
 import DashboardPlaceholder from './DashboardPlaceholder';
@@ -10,7 +10,8 @@ import { EventDetailsModal } from './EventDetailsModal';
 import { CreatorProfileModal } from './CreatorProfileModal';
 import { WalletService } from '../WalletService';
 import { notifyTopUp, notifyWithdrawal, notifyProposalReceived, notifyProposalStatus } from '../emailNotifier';
-import { Wallet, TrendingUp, Lock, Plus, Minus, Ticket, Edit, Trash2, Search, Handshake, Building2, FileText, Mail, BarChart3, Target, Smartphone, Lightbulb, Award, GraduationCap, BookOpen, Calendar, Users, Megaphone, Inbox, Timer } from 'lucide-react';
+import { Wallet, TrendingUp, Lock, Plus, Minus, Ticket, Edit, Trash2, Search, Handshake, Building2, FileText, Mail, BarChart3, Target, Smartphone, Lightbulb, Award, GraduationCap, BookOpen, Calendar, Users, Megaphone, Inbox, Timer, Instagram, Twitter, Scale } from 'lucide-react';
+import { DisputesPanel } from './DisputesPanel';
 const parsePackages = (packagesField: any): { name: string; price: number; entails: string; }[] => {
     if (!packagesField) return [];
     if (Array.isArray(packagesField)) return packagesField;
@@ -34,6 +35,7 @@ const AssociationDashboard: React.FC<{
     user: any
 }> = ({ onNavigate, onLogout, isDarkMode, toggleTheme, themeMode, user }) => {
     const [currentView, setCurrentView] = useState('overview');
+    const [preSelectedDisputeEntity, setPreSelectedDisputeEntity] = useState<any>(null);
     const [eventTab, setEventTab] = useState<'explore' | 'my'>('explore');
     const [wallet, setWallet] = useState<any>(null);
     const [transactions, setTransactions] = useState<any[]>([]);
@@ -50,6 +52,8 @@ const AssociationDashboard: React.FC<{
     const [myEvents, setMyEvents] = useState<any[]>([]);
     const [orgProfile, setOrgProfile] = useState<any>(null);
     const [proposals, setProposals] = useState<any[]>([]);
+    const [proposalTab, setProposalTab] = useState<'incoming' | 'outgoing'>('incoming');
+    const [creatorTypeTab, setCreatorTypeTab] = useState<'all' | 'professional' | 'student'>('all');
     const [brands, setBrands] = useState<any[]>([]);
     const [selectedBrand, setSelectedBrand] = useState<any>(null);
     const [proposing, setProposing] = useState(false);
@@ -78,7 +82,7 @@ const AssociationDashboard: React.FC<{
     const [showGigModal, setShowGigModal] = useState(false);
     const [selectedGig, setSelectedGig] = useState<any>(null);
     const [gigAllocations, setGigAllocations] = useState<Record<string, any[]>>({});
-    const [gigFormData, setGigFormData] = useState({ title: '', description: '', reward: '0', type: 'volunteer' });
+    const [gigFormData, setGigFormData] = useState({ title: '', description: '', reward: '0', type: 'volunteer', location: '' });
     const [gigSubmitting, setGigSubmitting] = useState(false);
     const [showAssignModal, setShowAssignModal] = useState(false);
     const [selectedCreatorForAssign, setSelectedCreatorForAssign] = useState<any>(null);
@@ -164,9 +168,10 @@ const AssociationDashboard: React.FC<{
         { id: 'sponsorships', label: 'Sponsorships', icon: <Award className="w-5 h-5" /> },
         { id: 'brands', label: 'Brand Directory', icon: <Building2 className="w-5 h-5" /> },
         { id: 'proposals', label: 'Proposals', icon: <Handshake className="w-5 h-5" /> },
-        { id: 'hiring', label: 'Hire Creators/Vendors', icon: <Search className="w-5 h-5" /> },
+        { id: 'hiring', label: 'Hire Creators', icon: <Search className="w-5 h-5" /> },
         { id: 'reports', label: 'Reports', icon: <FileText className="w-5 h-5" /> },
         { id: 'wallet', label: 'Wallet', icon: <Wallet className="w-5 h-5" /> },
+        { id: 'disputes', label: 'Disputes & Mediation', icon: <Scale className="w-5 h-5" /> },
     ];
 
     const fetchOrgData = async () => {
@@ -412,6 +417,7 @@ const AssociationDashboard: React.FC<{
             };
             const res = await apiClient.post('events', payload);
             const createdEventId = res.data.id;
+            logEvent('create_event', { eventId: createdEventId, targetSponsorship: payload.targetSponsorship });
 
             // Create Volunteer Gig if selected
             if (isVolunteer) {
@@ -520,6 +526,7 @@ const AssociationDashboard: React.FC<{
     const handleSendProposal = async (data: { recipientId: string; message: string; budget?: string; timeline?: string; documentUrl?: string; documentName?: string; }) => {
         try {
             await apiClient.post('proposals', data);
+            logEvent('send_proposal_association', { recipientId: data.recipientId, budget: data.budget });
 
             // Notify Brand
             const brand = brands.find(b => b.id === data.recipientId);
@@ -635,7 +642,7 @@ const AssociationDashboard: React.FC<{
             });
 
             setShowGigModal(false);
-            setGigFormData({ title: '', description: '', reward: '0', type: 'volunteer' });
+            setGigFormData({ title: '', description: '', reward: '0', type: 'volunteer', location: '' });
             fetchGigs();
             alert('Gig launched successfully!');
         } catch (e: any) {
@@ -717,7 +724,7 @@ const AssociationDashboard: React.FC<{
 
     const handleReleasePayment = async (alloc: any) => {
         if (!orgProfile?.id || !alloc.id) return;
-        if (!window.confirm(`Accept report and release â‚¦${alloc.amount.toLocaleString()} to ${alloc.studentName}?`)) return;
+        if (!window.confirm(`Accept report and release ₦${alloc.amount.toLocaleString()} to ${alloc.studentName}?`)) return;
         
         setSubmitting(true);
         try {
@@ -793,9 +800,9 @@ const AssociationDashboard: React.FC<{
                                 {/* Summary Cards */}
                                 <div className="grid md:grid-cols-3 gap-8">
                                     {[
-                                        { label: 'Available Balance', value: `â‚¦${(wallet?.balance || 0).toLocaleString()}`, icon: <Wallet className="w-6 h-6" />, color: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' },
-                                        { label: 'Total Spent', value: `â‚¦${transactions.reduce((acc, t) => acc + (t.type === 'debit' && t.status === 'completed' ? (Number(t.amount) || 0) : 0), 0).toLocaleString()}`, icon: <TrendingUp className="w-6 h-6" />, color: 'bg-spark-purple/10 text-spark-purple border border-spark-purple/20' },
-                                        { label: 'Locked in Escrow', value: `â‚¦${(wallet?.escrow || 0).toLocaleString()}`, icon: <Lock className="w-6 h-6" />, color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' },
+                                        { label: 'Available Balance', value: `₦${(wallet?.balance || 0).toLocaleString()}`, icon: <Wallet className="w-6 h-6" />, color: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' },
+                                        { label: 'Total Spent', value: `₦${transactions.reduce((acc, t) => acc + (t.type === 'debit' && t.status === 'completed' ? (Number(t.amount) || 0) : 0), 0).toLocaleString()}`, icon: <TrendingUp className="w-6 h-6" />, color: 'bg-spark-purple/10 text-spark-purple border border-spark-purple/20' },
+                                        { label: 'Locked in Escrow', value: `₦${(wallet?.escrow || 0).toLocaleString()}`, icon: <Lock className="w-6 h-6" />, color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' },
                                     ].map((stat, i) => (
                                         <div key={i} className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm">
                                             <div className={`w-12 h-12 ${stat.color} rounded-2xl flex items-center justify-center text-xl mb-4`}>{stat.icon}</div>
@@ -817,10 +824,10 @@ const AssociationDashboard: React.FC<{
                                             disabled={(wallet?.balance || 0) < 1000}
                                             className="px-10 py-5 bg-white text-spark-black font-black rounded-2xl hover:bg-gray-100 transition-all shadow-lg disabled:opacity-50 whitespace-nowrap"
                                         >
-                                            {(wallet?.balance || 0) < 1000 ? 'Min â‚¦1,000' : 'Request Withdrawal'}
+                                            {(wallet?.balance || 0) < 1000 ? 'Min ₦1,000' : 'Request Withdrawal'}
                                         </button>
                                         <div className="relative w-full sm:w-48">
-                                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">â‚¦</span>
+                                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">₦</span>
                                             <input 
                                                 type="number" 
                                                 value={topUpAmount}
@@ -864,7 +871,7 @@ const AssociationDashboard: React.FC<{
                                                                 const name = orgProfile.name || user?.name || 'Association User';
                                                                 if (email) notifyTopUp(email, name, amount, response.reference);
 
-                                                                alert(`Successfully topped up â‚¦${amount.toLocaleString()}!`);
+                                                                alert(`Successfully topped up ₦${amount.toLocaleString()}!`);
                                                                 fetchWallet();
                                                             } catch (err: any) {
                                                                 alert("Error updating wallet: " + err.message);
@@ -1117,7 +1124,7 @@ const AssociationDashboard: React.FC<{
 
                                             <div className="mb-5 space-y-2">
                                                 <div className="flex justify-between text-xs font-black">
-                                                    <span className="text-[var(--text-secondary)]">Reward: <span className="text-spark-purple">{Number(g.reward) === 0 ? 'Experience/Perks' : `â‚¦${Number(g.reward).toLocaleString()}`}</span></span>
+                                                    <span className="text-[var(--text-secondary)]">Reward: <span className="text-spark-purple">{Number(g.reward) === 0 ? 'Experience/Perks' : `₦${Number(g.reward).toLocaleString()}`}</span></span>
                                                     <span className="text-[var(--text-secondary)]">Assigned: <span className="text-green-600">{allocations.length} Creators</span></span>
                                                 </div>
                                             </div>
@@ -1154,78 +1161,127 @@ const AssociationDashboard: React.FC<{
                         )}
                     </div>
                 );
-            case 'creators':
+            case 'creators': {
+                const filteredCreatorsList = creators.filter((c) => {
+                    const roleLower = (c.role || '').toLowerCase();
+                    const isProfessional = roleLower.includes('professional') || roleLower.includes('influencer');
+                    if (creatorTypeTab === 'professional') return isProfessional;
+                    if (creatorTypeTab === 'student') return !isProfessional;
+                    return true;
+                });
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-                        <div>
-                            <h3 className="text-2xl font-black text-[var(--text-primary)]">Find Creators</h3>
-                            <p className="text-[var(--text-secondary)] mt-1">Discover and connect with creators and influencers for your events.</p>
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                            <div>
+                                <h3 className="text-2xl font-black text-[var(--text-primary)]">Find Creators</h3>
+                                <p className="text-[var(--text-secondary)] mt-1">Discover and connect with creators and influencers for your events.</p>
+                            </div>
+                            <div className="flex bg-spark-purple/5 border border-spark-purple/10 p-1 rounded-2xl max-w-xs">
+                                <button 
+                                    onClick={() => setCreatorTypeTab('all')}
+                                    className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${creatorTypeTab === 'all' ? 'bg-spark-purple text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-purple'}`}
+                                >
+                                    All
+                                </button>
+                                <button 
+                                    onClick={() => setCreatorTypeTab('professional')}
+                                    className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${creatorTypeTab === 'professional' ? 'bg-spark-purple text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-purple'}`}
+                                >
+                                    Professional
+                                </button>
+                                <button 
+                                    onClick={() => setCreatorTypeTab('student')}
+                                    className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${creatorTypeTab === 'student' ? 'bg-spark-purple text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-purple'}`}
+                                >
+                                    Student
+                                </button>
+                            </div>
                         </div>
 
                         {creatorsLoading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-purple"></div></div>
-                        ) : creators.length === 0 ? (
+                        ) : filteredCreatorsList.length === 0 ? (
                             <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)]">
                                 <div className="w-20 h-20 bg-spark-purple/5 rounded-3xl flex items-center justify-center mx-auto mb-6 text-spark-purple">
                                     <Search className="w-10 h-10" />
                                 </div>
                                 <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">No Talent Found</h3>
-                                <p className="text-[var(--text-secondary)]">No creators are registered yet. Check back soon!</p>
+                                <p className="text-[var(--text-secondary)]">No creators match your filter selections.</p>
                             </div>
                         ) : (
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {creators.map(profile => (
-                                    <div key={profile.id} className="group bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] overflow-hidden shadow-sm hover:shadow-xl transition-all">
-                                        <div className="h-20 bg-spark-red/10"></div>
-                                        <div className="px-6 pb-6 -mt-8">
-                                            <div className="w-16 h-16 rounded-2xl bg-[var(--bg-primary)] border-4 border-[var(--bg-primary)] shadow-lg flex items-center justify-center text-2xl font-black text-spark-purple overflow-hidden mb-3">
-                                                {profile.imageUrl ? <img src={profile.imageUrl} className="w-full h-full object-cover" alt={profile.name} /> : (profile.name || '?').charAt(0)}
+                                {filteredCreatorsList.map(profile => (
+                                    <div key={profile.id} className="group bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] overflow-hidden shadow-sm hover:shadow-xl transition-all p-6 flex flex-col justify-between">
+                                        <div>
+                                            <div className="flex justify-between items-center mb-4">
+                                                <span className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest bg-spark-purple/5 text-spark-purple`}>
+                                                    {((profile.role || '').toLowerCase().includes('professional') || (profile.role || '').toLowerCase().includes('influencer')) ? 'Professional' : 'Student'}
+                                                </span>
+                                                {profile.rating && (
+                                                    <div className="flex items-center gap-1 text-xs text-amber-500 font-bold">
+                                                        <span>★</span>
+                                                        <span>{profile.rating}</span>
+                                                    </div>
+                                                )}
                                             </div>
-                                            <h3 className="font-black text-lg text-[var(--text-primary)]">{profile.name}</h3>
-                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">{profile.university || 'Creator'}</p>
-                                            {(profile.email || profile.phoneNumber) && (
-                                                <div className="space-y-1 mb-2">
-                                                    {profile.email && (
-                                                        <a href={`mailto:${profile.email}`} className="flex items-center gap-2 text-[10px] text-[var(--text-secondary)] hover:text-spark-purple transition-colors">
-                                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
-                                                            <span className="truncate max-w-[150px]">{profile.email}</span>
-                                                        </a>
-                                                    )}
-                                                    {profile.phoneNumber && (
-                                                        <a href={`tel:${profile.phoneNumber}`} className="flex items-center gap-2 text-[10px] text-[var(--text-secondary)] hover:text-spark-purple transition-colors">
-                                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
-                                                            <span>{profile.phoneNumber}</span>
-                                                        </a>
-                                                    )}
-                                                </div>
-                                            )}
-                                            {profile.bio && <p className="text-sm text-[var(--text-secondary)] line-clamp-2 mb-4 mt-2 leading-relaxed">{profile.bio}</p>}
-                                            <div className="flex gap-3 mt-4">
-                                                <button
-                                                    onClick={() => {
-                                                        setSelectedCreatorProfile(profile);
-                                                        setShowCreatorProfile(true);
-                                                    }}
-                                                    className="flex-1 py-3 bg-[var(--bg-secondary)] text-[var(--text-primary)] font-black rounded-xl hover:bg-[var(--bg-tertiary)] transition-all text-sm border border-[var(--border-color)]"
-                                                >
-                                                    View Profile
-                                                </button>
-                                                <button
-                                                    onClick={() => handleOpenProposalModal(profile)}
-                                                    className="flex-1 py-3 bg-spark-black text-white font-black rounded-xl hover:bg-gray-800 transition-all text-sm shadow-lg shadow-gray-100"
-                                                >
-                                                    Partner
-                                                </button>
-                                                <button
-                                                    onClick={() => {
-                                                        setSelectedCreatorForAssign(profile);
-                                                        setShowAssignModal(true);
-                                                    }}
-                                                    className="flex-1 py-3 bg-spark-purple text-white font-black rounded-xl hover:bg-purple-700 transition-all text-sm shadow-lg shadow-purple-100 flex items-center justify-center gap-2"
-                                                >
-                                                    <Megaphone className="w-4 h-4" /> Assign
-                                                </button>
+                                            <div className="w-16 h-16 rounded-2xl bg-spark-purple/10 flex items-center justify-center font-black text-2xl mx-auto mb-4 overflow-hidden">
+                                                {profile.imageUrl ? <img src={profile.imageUrl} alt={profile.name || 'Creator Avatar'} className="w-full h-full object-cover" /> : (profile.name || '?').charAt(0)}
                                             </div>
+                                            <h3 className="font-black text-lg line-clamp-1 text-[var(--text-primary)] text-center">{profile.name}</h3>
+                                            <p className="text-[10px] text-spark-purple font-black uppercase tracking-widest mb-3 text-center">{profile.nicheCategory || profile.category || "Campus Creator"}</p>
+                                            
+                                            <div className="space-y-1.5 mb-6 text-xs text-[var(--text-secondary)] font-medium text-center">
+                                                <p className="flex items-center gap-1.5 justify-center">
+                                                    <span>📍 Location:</span> {profile.location || profile.university || 'Not Specified'}
+                                                </p>
+                                            </div>
+
+                                            {/* Social Handles */}
+                                            <div className="flex justify-center gap-3 mb-4">
+                                                {profile.instagram && (
+                                                    <a href={profile.instagram.startsWith('http') ? profile.instagram : `https://instagram.com/${profile.instagram.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-[var(--bg-secondary)] hover:bg-spark-purple/10 text-[var(--text-secondary)] hover:text-spark-purple rounded-xl transition-all">
+                                                        <Instagram className="w-4 h-4" />
+                                                    </a>
+                                                )}
+                                                {profile.tiktok && (
+                                                    <a href={profile.tiktok.startsWith('http') ? profile.tiktok : `https://tiktok.com/@${profile.tiktok.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-[var(--bg-secondary)] hover:bg-spark-purple/10 text-[var(--text-secondary)] hover:text-spark-purple rounded-xl transition-all">
+                                                        <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.17-2.89-.7-4.06-1.66-.27-.23-.52-.48-.75-.75-.01 2.91-.02 5.82-.02 8.74-.08 2.37-1.12 4.74-3.05 6.13-2.14 1.58-5.11 2.05-7.58 1.25-2.82-.87-5.06-3.47-5.26-6.47-.36-4.22 2.91-8.23 7.15-8.43.19-.01.37 0 .56-.01V8.33c-1.92.21-3.79 1.48-4.57 3.25-.97 2.12-.55 4.8 1.01 6.55 1.55 1.76 4.14 2.38 6.27 1.59 1.83-.66 3.14-2.49 3.23-4.47.08-2.73.04-5.46.05-8.19-.01 0-.01 0-.02 0-.07-.94-.48-1.89-1.17-2.54-.74-.74-1.78-1.15-2.83-1.18V.02z"/></svg>
+                                                    </a>
+                                                )}
+                                                {profile.twitter && (
+                                                    <a href={profile.twitter.startsWith('http') ? profile.twitter : `https://twitter.com/${profile.twitter.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-[var(--bg-secondary)] hover:bg-spark-purple/10 text-[var(--text-secondary)] hover:text-spark-purple rounded-xl transition-all">
+                                                        <Twitter className="w-4 h-4" />
+                                                    </a>
+                                                )}
+                                            </div>
+
+                                            {profile.bio && <p className="text-sm text-[var(--text-secondary)] line-clamp-2 mb-4 mt-2 leading-relaxed text-center">{profile.bio}</p>}
+                                        </div>
+                                        <div className="flex gap-3 mt-4">
+                                            <button
+                                                onClick={() => {
+                                                    setSelectedCreatorProfile(profile);
+                                                    setShowCreatorProfile(true);
+                                                }}
+                                                className="flex-1 py-3 bg-[var(--bg-secondary)] text-[var(--text-primary)] font-black rounded-xl hover:bg-[var(--bg-tertiary)] transition-all text-sm border border-[var(--border-color)]"
+                                            >
+                                                View Profile
+                                            </button>
+                                            <button
+                                                onClick={() => handleOpenProposalModal(profile)}
+                                                className="flex-1 py-3 bg-spark-black text-white font-black rounded-xl hover:bg-gray-800 transition-all text-sm shadow-lg shadow-gray-100"
+                                            >
+                                                Partner
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setSelectedCreatorForAssign(profile);
+                                                    setShowAssignModal(true);
+                                                }}
+                                                className="flex-1 py-3 bg-spark-purple text-white font-black rounded-xl hover:bg-purple-700 transition-all text-sm shadow-lg shadow-purple-100 flex items-center justify-center gap-2"
+                                            >
+                                                <Megaphone className="w-4 h-4" /> Assign
+                                            </button>
                                         </div>
                                     </div>
                                 ))}
@@ -1233,24 +1289,45 @@ const AssociationDashboard: React.FC<{
                         )}
                     </div>
                 );
-            case 'proposals':
+            }
+            case 'proposals': {
+                const filteredProposals = proposals.filter((p) => {
+                    const isSender = p.senderId === (orgProfile?.id || auth.currentUser?.uid);
+                    return proposalTab === 'incoming' ? !isSender : isSender;
+                });
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                         <div>
                             <h2 className="text-3xl font-black text-[var(--text-primary)]">Proposals</h2>
                             <p className="text-[var(--text-secondary)] mt-1">Track sponsorship requests, partnership proposals, and brand responses.</p>
                         </div>
+                        
+                        <div className="flex bg-spark-purple/5 border border-spark-purple/10 p-1 rounded-2xl max-w-xs">
+                            <button 
+                                onClick={() => setProposalTab('incoming')}
+                                className={`flex-1 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${proposalTab === 'incoming' ? 'bg-spark-purple text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-purple'}`}
+                            >
+                                Incoming
+                            </button>
+                            <button 
+                                onClick={() => setProposalTab('outgoing')}
+                                className={`flex-1 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${proposalTab === 'outgoing' ? 'bg-spark-purple text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-purple'}`}
+                            >
+                                Outgoing
+                            </button>
+                        </div>
+
                         {loading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-purple"></div></div>
-                        ) : proposals.length === 0 ? (
+                        ) : filteredProposals.length === 0 ? (
                             <DashboardPlaceholder
-                                title="No Partnerships"
+                                title={proposalTab === 'incoming' ? "No Incoming Proposals" : "No Outgoing Proposals"}
                                 icon={<Handshake className="w-10 h-10" />}
-                                description="You haven't received any brand sponsorship requests yet. Keep hosting great events to get noticed!"
+                                description={proposalTab === 'incoming' ? "You haven't received any brand sponsorship requests yet." : "You haven't sent any partnership proposals yet."}
                             />
                         ) : (
                             <div className="grid gap-6">
-                                {proposals.map((p) => {
+                                {filteredProposals.map((p) => {
                                     const isSender = p.senderId === (orgProfile?.id || auth.currentUser?.uid);
                                     const otherParty = (isSender ? p.recipient : p.sender) || { name: 'Unknown User', role: 'Unknown', email: '' };
                                     const displayName = otherParty.name !== 'Unknown User' ? otherParty.name : (otherParty.email || 'Unknown User');
@@ -1259,7 +1336,7 @@ const AssociationDashboard: React.FC<{
                                         <div key={p.id} className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm flex items-center justify-between">
                                             <div className="flex items-center space-x-6">
                                                 <div className="w-16 h-16 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-2xl flex items-center justify-center text-2xl font-black text-spark-purple shadow-inner">
-                                                    {otherParty?.imageUrl ? <img src={otherParty.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : (displayName.charAt(0))}
+                                                    {otherParty?.imageUrl ? <img src={otherParty.imageUrl} alt={displayName} className="w-full h-full object-cover rounded-2xl" /> : (displayName.charAt(0))}
                                                 </div>
                                                 <div>
                                                     <h4 className="text-xl font-black text-[var(--text-primary)]">{displayName}</h4>
@@ -1317,6 +1394,7 @@ const AssociationDashboard: React.FC<{
                         )}
                     </div>
                 );
+            }
             case 'brands':
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
@@ -1339,7 +1417,7 @@ const AssociationDashboard: React.FC<{
                         {brands.map(profile => (
                             <div key={profile.id} className="bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] p-6 flex items-center space-x-4">
                                 <div className="w-14 h-14 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl flex items-center justify-center text-xl font-black text-spark-purple">
-                                    {profile.imageUrl ? <img src={profile.imageUrl} className="w-full h-full object-cover rounded-xl" /> : (profile.name || '?').charAt(0)}
+                                    {profile.imageUrl ? <img src={profile.imageUrl} alt={profile.name || 'Brand Logo'} className="w-full h-full object-cover rounded-xl" /> : (profile.name || '?').charAt(0)}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <h4 className="font-black text-[var(--text-primary)] truncate">{profile.name}</h4>
@@ -1416,7 +1494,7 @@ const AssociationDashboard: React.FC<{
                         </div>
 
                         <div className="bg-[var(--bg-primary)] rounded-[2rem] p-8 border border-[var(--border-color)]">
-                            <h3 className="text-xl font-black text-[var(--text-primary)] mb-2">ðŸ’¬ Need more?</h3>
+                            <h3 className="text-xl font-black text-[var(--text-primary)] mb-2">💬 Need more?</h3>
                             <p className="text-[var(--text-secondary)] mb-6">Request a custom resource or template for your Association's specific needs. Our team will create it for you.</p>
                             <button className="px-6 py-3 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-purple transition-all">
                                 Request a Resource
@@ -1424,25 +1502,103 @@ const AssociationDashboard: React.FC<{
                         </div>
                     </div>
                 );
-            case 'sponsorships':
+            case 'sponsorships': {
+                const sponsorshipProposals = proposals.filter((p: any) => p.senderId === (orgProfile?.id || auth.currentUser?.uid));
+                const paidSponsorships = sponsorshipProposals.filter((p: any) => p.status === 'paid');
+                const acceptedSponsorships = sponsorshipProposals.filter((p: any) => p.status === 'accepted');
+                const pendingSponsorships = sponsorshipProposals.filter((p: any) => p.status === 'pending');
+                const totalRaised = paidSponsorships.reduce((sum: number, p: any) => sum + Number(p.budget || 0), 0);
+                const totalCommitted = acceptedSponsorships.reduce((sum: number, p: any) => sum + Number(p.budget || 0), 0);
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                         <div>
                             <h2 className="text-3xl font-black text-[var(--text-primary)]">Sponsorships</h2>
                             <p className="text-[var(--text-secondary)] mt-1">Create sponsorship packages, invite brands, and track sponsorship interest.</p>
                         </div>
-                        <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)]">
-                            <div className="w-20 h-20 bg-spark-purple/5 rounded-3xl flex items-center justify-center mx-auto mb-6 text-spark-purple">
-                                <Award className="w-10 h-10" />
+
+                        {/* Stats */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div className="bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] p-8">
+                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Total Raised</p>
+                                <p className="text-3xl font-black text-[var(--text-primary)]">₦{totalRaised.toLocaleString()}</p>
+                                <p className="text-xs text-green-600 font-bold mt-1">{paidSponsorships.length} sponsorship{paidSponsorships.length !== 1 ? 's' : ''} paid</p>
                             </div>
-                            <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">Sponsorship Packages</h3>
-                            <p className="text-[var(--text-secondary)] font-medium mb-6">Set up your sponsorship tiers and invite brands directly from your events listing.</p>
-                            <button onClick={() => setCurrentView('events')} className="px-8 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-purple transition-all">
-                                Go to Events
-                            </button>
+                            <div className="bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] p-8">
+                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Committed</p>
+                                <p className="text-3xl font-black text-[var(--text-primary)]">₦{totalCommitted.toLocaleString()}</p>
+                                <p className="text-xs text-blue-600 font-bold mt-1">{acceptedSponsorships.length} accepted, awaiting payment</p>
+                            </div>
+                            <div className="bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] p-8">
+                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Active Sponsors</p>
+                                <p className="text-3xl font-black text-[var(--text-primary)]">{paidSponsorships.length + acceptedSponsorships.length}</p>
+                                <p className="text-xs text-[var(--text-secondary)] font-bold mt-1">{pendingSponsorships.length} proposal{pendingSponsorships.length !== 1 ? 's' : ''} in discussion</p>
+                            </div>
                         </div>
+
+                        {/* Sponsors List */}
+                        {loading ? (
+                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-purple"></div></div>
+                        ) : sponsorshipProposals.length === 0 ? (
+                            <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)]">
+                                <div className="w-20 h-20 bg-spark-purple/5 rounded-3xl flex items-center justify-center mx-auto mb-6 text-spark-purple">
+                                    <Award className="w-10 h-10" />
+                                </div>
+                                <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">No Sponsorships Yet</h3>
+                                <p className="text-[var(--text-secondary)] font-medium mb-6">Set up your sponsorship tiers and invite brands directly from your events listing.</p>
+                                <button onClick={() => setCurrentView('events')} className="px-8 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-purple transition-all">
+                                    Go to Events
+                                </button>
+                            </div>
+                        ) : (
+                            <div>
+                                <h3 className="text-lg font-black text-[var(--text-primary)] mb-4">All Sponsorship Activity</h3>
+                                <div className="space-y-4">
+                                    {sponsorshipProposals.map((p: any) => {
+                                        const brand = p.recipient || { name: 'Unknown Brand', imageUrl: null };
+                                        const brandName = (brand.name && brand.name !== 'Unknown Brand') ? brand.name : (brand.email || 'Unknown Brand');
+                                        const amount = Number(p.budget || 0);
+                                        const statusBadge =
+                                            p.status === 'paid' ? 'bg-green-100 text-green-700 border border-green-200' :
+                                            p.status === 'accepted' ? 'bg-blue-50 text-blue-600' :
+                                            p.status === 'rejected' ? 'bg-red-50 text-red-600' :
+                                            'bg-yellow-50 text-yellow-700';
+                                        return (
+                                            <div key={p.id} className="bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] p-6 flex items-center justify-between hover:shadow-md transition-shadow">
+                                                <div className="flex items-center space-x-4">
+                                                    <div className="w-12 h-12 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl flex items-center justify-center text-lg font-black text-spark-purple overflow-hidden">
+                                                        {brand.imageUrl ? <img src={brand.imageUrl} className="w-full h-full object-cover" alt={brandName} /> : brandName.charAt(0).toUpperCase()}
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="font-black text-[var(--text-primary)]">{brandName}</h4>
+                                                        <p className="text-[10px] text-[var(--text-secondary)] font-bold uppercase tracking-wider">
+                                                            {p.eventName || p.sponsorshipPackageName || (p.message ? p.message.substring(0, 40) + (p.message.length > 40 ? '…' : '') : 'Event Sponsorship')}
+                                                        </p>
+                                                        <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">{p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-NG', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-4">
+                                                    {amount > 0 && (
+                                                        <p className="text-xl font-black text-[var(--text-primary)]">₦{amount.toLocaleString()}</p>
+                                                    )}
+                                                    <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${statusBadge}`}>
+                                                        {p.status === 'paid' ? '✓ Paid' : p.status}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => setSelectedProposal(p)}
+                                                        className="px-4 py-2 bg-[var(--bg-secondary)] text-[var(--text-primary)] rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-[var(--bg-tertiary)] transition-all border border-[var(--border-color)]"
+                                                    >
+                                                        View
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 );
+            }
             case 'profile':
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
@@ -1517,39 +1673,101 @@ const AssociationDashboard: React.FC<{
 
             // Sponsorship Packages tab removed and integrated into event creation flow per user request
 
-            case 'hiring':
+            case 'hiring': {
+                const filteredCreatorsList = creators.filter((c) => {
+                    const roleLower = (c.role || '').toLowerCase();
+                    const isProfessional = roleLower.includes('professional') || roleLower.includes('influencer');
+                    if (creatorTypeTab === 'professional') return isProfessional;
+                    if (creatorTypeTab === 'student') return !isProfessional;
+                    return true;
+                });
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-                        <div>
-                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Hire Creators/Vendors</h2>
-                            <p className="text-[var(--text-secondary)] mt-1">Hire creators, media teams, and talents that match your event needs.</p>
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                            <div>
+                                <h2 className="text-3xl font-black text-[var(--text-primary)]">Hire Creators</h2>
+                                <p className="text-[var(--text-secondary)] mt-1">Hire creators, media teams, and talents that match your event needs.</p>
+                            </div>
+                            <div className="flex bg-spark-purple/5 border border-spark-purple/10 p-1 rounded-2xl max-w-xs">
+                                <button 
+                                    onClick={() => setCreatorTypeTab('all')}
+                                    className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${creatorTypeTab === 'all' ? 'bg-spark-purple text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-purple'}`}
+                                >
+                                    All
+                                </button>
+                                <button 
+                                    onClick={() => setCreatorTypeTab('professional')}
+                                    className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${creatorTypeTab === 'professional' ? 'bg-spark-purple text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-purple'}`}
+                                >
+                                    Professional
+                                </button>
+                                <button 
+                                    onClick={() => setCreatorTypeTab('student')}
+                                    className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${creatorTypeTab === 'student' ? 'bg-spark-purple text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-purple'}`}
+                                >
+                                    Student
+                                </button>
+                            </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
                             {['All', 'Photographers', 'Videographers', 'MCs/Hosts', 'Graphic Designers', 'Ushers', 'Social Media Creators'].map(cat => (
-                                <button key={cat} className="px-4 py-2 bg-[var(--bg-secondary)] text-[var(--text-primary)] text-xs font-black rounded-full border border-[var(--border-color)] hover:bg-spark-red hover:text-white hover:border-spark-red transition-all uppercase tracking-wider">{cat}</button>
+                                <button key={cat} className="px-4 py-2 bg-[var(--bg-secondary)] text-[var(--text-primary)] text-xs font-black rounded-full border border-[var(--border-color)] hover:bg-spark-purple hover:text-white hover:border-spark-purple transition-all uppercase tracking-wider">{cat}</button>
                             ))}
                         </div>
                         {creatorsLoading ? (
-                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-red"></div></div>
-                        ) : creators.length === 0 ? (
-                            <DashboardPlaceholder title="No Creators Found" icon={<Search className="w-10 h-10" />} description="No creators are currently available. Check back soon or broaden your search criteria." />
+                            <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-purple"></div></div>
+                        ) : filteredCreatorsList.length === 0 ? (
+                            <DashboardPlaceholder title="No Creators Found" icon={<Search className="w-10 h-10" />} description="No creators match your filters." />
                         ) : (
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {creators.slice(0, 12).map((creator: any) => (
-                                    <div key={creator.id} className="bg-[var(--bg-primary)] p-6 rounded-[2rem] border border-[var(--border-color)] shadow-sm hover:shadow-md transition-all">
-                                        <div className="flex items-start gap-4 mb-4">
-                                            <div className="w-14 h-14 rounded-2xl bg-spark-red/10 flex items-center justify-center text-spark-red font-black text-xl flex-shrink-0 overflow-hidden">
-                                                {creator.imageUrl ? <img src={creator.imageUrl} alt={creator.name} className="w-full h-full object-cover rounded-2xl" /> : creator.name?.charAt(0) || '?'}
+                                {filteredCreatorsList.map((creator: any) => (
+                                    <div key={creator.id} className="bg-[var(--bg-primary)] p-6 rounded-[2rem] border border-[var(--border-color)] shadow-sm hover:shadow-xl hover:border-spark-purple/20 transition-all flex flex-col justify-between">
+                                        <div>
+                                            <div className="flex justify-between items-center mb-4">
+                                                <span className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest bg-spark-purple/5 text-spark-purple`}>
+                                                    {((creator.role || '').toLowerCase().includes('professional') || (creator.role || '').toLowerCase().includes('influencer')) ? 'Professional' : 'Student'}
+                                                </span>
+                                                {creator.rating && (
+                                                    <div className="flex items-center gap-1 text-xs text-amber-500 font-bold">
+                                                        <span>★</span>
+                                                        <span>{creator.rating}</span>
+                                                    </div>
+                                                )}
                                             </div>
-                                            <div className="flex-1 min-w-0">
-                                                <h4 className="font-black text-[var(--text-primary)] truncate">{creator.name}</h4>
-                                                <p className="text-xs font-bold text-spark-red uppercase tracking-widest">{creator.university || 'Campus Creator'}</p>
+                                            <div className="flex items-start gap-4 mb-4">
+                                                <div className="w-14 h-14 rounded-2xl bg-spark-purple/10 flex items-center justify-center text-spark-purple font-black text-xl flex-shrink-0 overflow-hidden">
+                                                    {creator.imageUrl ? <img src={creator.imageUrl} alt={creator.name} className="w-full h-full object-cover rounded-2xl" /> : creator.name?.charAt(0) || '?'}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <h4 className="font-black text-[var(--text-primary)] truncate">{creator.name}</h4>
+                                                    <p className="text-xs font-bold text-spark-purple uppercase tracking-widest truncate">📍 {creator.location || creator.university || 'Not Specified'}</p>
+                                                </div>
                                             </div>
+
+                                            {/* Social Handles */}
+                                            <div className="flex gap-2 mb-4 justify-start">
+                                                {creator.instagram && (
+                                                    <a href={creator.instagram.startsWith('http') ? creator.instagram : `https://instagram.com/${creator.instagram.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-[var(--bg-secondary)] hover:bg-spark-purple/10 text-[var(--text-secondary)] hover:text-spark-purple rounded-xl transition-all">
+                                                        <Instagram className="w-4 h-4" />
+                                                    </a>
+                                                )}
+                                                {creator.tiktok && (
+                                                    <a href={creator.tiktok.startsWith('http') ? creator.tiktok : `https://tiktok.com/@${creator.tiktok.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-[var(--bg-secondary)] hover:bg-spark-purple/10 text-[var(--text-secondary)] hover:text-spark-purple rounded-xl transition-all">
+                                                        <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.17-2.89-.7-4.06-1.66-.27-.23-.52-.48-.75-.75-.01 2.91-.02 5.82-.02 8.74-.08 2.37-1.12 4.74-3.05 6.13-2.14 1.58-5.11 2.05-7.58 1.25-2.82-.87-5.06-3.47-5.26-6.47-.36-4.22 2.91-8.23 7.15-8.43.19-.01.37 0 .56-.01V8.33c-1.92.21-3.79 1.48-4.57 3.25-.97 2.12-.55 4.8 1.01 6.55 1.55 1.76 4.14 2.38 6.27 1.59 1.83-.66 3.14-2.49 3.23-4.47.08-2.73.04-5.46.05-8.19-.01 0-.01 0-.02 0-.07-.94-.48-1.89-1.17-2.54-.74-.74-1.78-1.15-2.83-1.18V.02z"/></svg>
+                                                    </a>
+                                                )}
+                                                {creator.twitter && (
+                                                    <a href={creator.twitter.startsWith('http') ? creator.twitter : `https://twitter.com/${creator.twitter.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-[var(--bg-secondary)] hover:bg-spark-purple/10 text-[var(--text-secondary)] hover:text-spark-purple rounded-xl transition-all">
+                                                        <Twitter className="w-4 h-4" />
+                                                    </a>
+                                                )}
+                                            </div>
+
+                                            {creator.bio && <p className="text-xs text-[var(--text-secondary)] line-clamp-2 mb-4 leading-relaxed">{creator.bio}</p>}
                                         </div>
-                                        {creator.bio && <p className="text-xs text-[var(--text-secondary)] line-clamp-2 mb-4">{creator.bio}</p>}
                                         <button
                                             onClick={() => { setProposalRecipient({ id: creator.id, name: creator.name }); setShowProposalModal(true); }}
-                                            className="w-full py-2.5 bg-spark-black text-white font-black rounded-xl hover:bg-spark-red transition-all text-xs uppercase tracking-wider"
+                                            className="w-full py-3 bg-spark-black text-white font-black rounded-xl hover:bg-spark-purple transition-all text-xs uppercase tracking-wider"
                                         >
                                             Send Gig Offer
                                         </button>
@@ -1559,18 +1777,21 @@ const AssociationDashboard: React.FC<{
                         )}
                     </div>
                 );
+            }
 
-            case 'reports':
+            case 'reports': {
+                const totalSpent = transactions.reduce((acc, t) => acc + (t.type === 'debit' && t.status === 'completed' ? (Number(t.amount) || 0) : 0), 0);
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                         <div>
                             <h2 className="text-3xl font-black text-[var(--text-primary)]">Reports</h2>
                             <p className="text-[var(--text-secondary)] mt-1">generate your event reports, sponsorship updates, and campaign performance records.</p>
                         </div>
-                        <div className="grid md:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                             {[
                                 { label: 'Total Events Hosted', value: myEvents.length, sub: 'All time' },
                                 { label: 'Accepted Partnerships', value: proposals.filter((p: any) => p.status === 'accepted' || p.status === 'paid').length, sub: 'Sponsorships secured' },
+                                { label: 'Total Wallet Spend', value: `₦${totalSpent.toLocaleString()}`, sub: 'From completed debits' },
                                 { label: 'Total Sponsorship Target', value: `₦${myEvents.reduce((acc: number, e: any) => acc + Number(e.targetSponsorship || 0), 0).toLocaleString()}`, sub: 'Across all events' },
                             ].map((s, i) => (
                                 <div key={i} className="bg-[var(--bg-primary)] p-6 rounded-[2rem] border border-[var(--border-color)]">
@@ -1580,46 +1801,91 @@ const AssociationDashboard: React.FC<{
                                 </div>
                             ))}
                         </div>
-                        <div className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)]">
-                            <h3 className="text-xl font-black text-[var(--text-primary)] mb-6">Event Reports</h3>
-                            {myEvents.length === 0 ? (
-                                <p className="text-[var(--text-secondary)]">No events yet. <button onClick={() => setCurrentView('events')} className="text-spark-red font-black">Create your first event →</button></p>
-                            ) : (
-                                <div className="space-y-4">
-                                    {myEvents.map((evt: any) => (
-                                        <div key={evt.id} className="p-6 rounded-2xl border border-[var(--border-color)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                                            <div>
-                                                <h4 className="font-black text-[var(--text-primary)]">{evt.name || evt.title}</h4>
-                                                <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-                                                    {evt.date ? new Date(evt.date).toLocaleDateString('en-NG', { dateStyle: 'long' }) : 'Date TBD'} &nbsp;·&nbsp; Target: ₦{Number(evt.targetSponsorship || 0).toLocaleString()}
-                                                </p>
+                        <div className="grid md:grid-cols-2 gap-8">
+                            <div className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)]">
+                                <h3 className="text-xl font-black text-[var(--text-primary)] mb-6">Event Reports</h3>
+                                {myEvents.length === 0 ? (
+                                    <p className="text-[var(--text-secondary)]">No events yet. <button onClick={() => setCurrentView('events')} className="text-spark-red font-black">Create your first event →</button></p>
+                                ) : (
+                                    <div className="space-y-4">
+                                        {myEvents.map((evt: any) => (
+                                            <div key={evt.id} className="p-6 rounded-2xl border border-[var(--border-color)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                                <div>
+                                                    <h4 className="font-black text-[var(--text-primary)]">{evt.name || evt.title}</h4>
+                                                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                                                        {evt.date ? new Date(evt.date).toLocaleDateString('en-NG', { dateStyle: 'long' }) : 'Date TBD'} &nbsp;·&nbsp; Target: ₦{Number(evt.targetSponsorship || 0).toLocaleString()}
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    onClick={() => {
+                                                        const report = `ABC-RALLY — Event Report\n${'='.repeat(40)}\nEvent: ${evt.name || evt.title}\nDate: ${evt.date ? new Date(evt.date).toLocaleDateString('en-NG', { dateStyle: 'long' }) : 'TBD'}\nLocation: ${evt.location || orgProfile?.university || 'Campus'}\nSponsorship Target: ₦${Number(evt.targetSponsorship || 0).toLocaleString()}\nOrganiser: ${orgProfile?.name || 'Association'}\nGenerated: ${new Date().toLocaleDateString('en-NG', { dateStyle: 'long' })}\n${'='.repeat(40)}\n`;
+                                                        const blob = new Blob([report], { type: 'text/plain' });
+                                                        const url = URL.createObjectURL(blob);
+                                                        const a = document.createElement('a');
+                                                        a.href = url;
+                                                        a.download = `Event-Report-${(evt.name || 'event').replace(/\s+/g, '-')}.txt`;
+                                                        a.click();
+                                                        URL.revokeObjectURL(url);
+                                                    }}
+                                                    className="px-6 py-2.5 bg-spark-black text-white font-black rounded-xl hover:bg-spark-red transition-all text-xs uppercase tracking-wider whitespace-nowrap flex items-center gap-2"
+                                                >
+                                                    <FileText className="w-4 h-4" /> Download Report
+                                                </button>
                                             </div>
-                                            <button
-                                                onClick={() => {
-                                                    const report = `ABC-RALLY — Event Report\n${'='.repeat(40)}\nEvent: ${evt.name || evt.title}\nDate: ${evt.date ? new Date(evt.date).toLocaleDateString('en-NG', { dateStyle: 'long' }) : 'TBD'}\nLocation: ${evt.location || orgProfile?.university || 'Campus'}\nSponsorship Target: ₦${Number(evt.targetSponsorship || 0).toLocaleString()}\nOrganiser: ${orgProfile?.name || 'Association'}\nGenerated: ${new Date().toLocaleDateString('en-NG', { dateStyle: 'long' })}\n${'='.repeat(40)}\n`;
-                                                    const blob = new Blob([report], { type: 'text/plain' });
-                                                    const url = URL.createObjectURL(blob);
-                                                    const a = document.createElement('a');
-                                                    a.href = url;
-                                                    a.download = `Event-Report-${(evt.name || 'event').replace(/\s+/g, '-')}.txt`;
-                                                    a.click();
-                                                    URL.revokeObjectURL(url);
-                                                }}
-                                                className="px-6 py-2.5 bg-spark-black text-white font-black rounded-xl hover:bg-spark-red transition-all text-xs uppercase tracking-wider whitespace-nowrap flex items-center gap-2"
-                                            >
-                                                <FileText className="w-4 h-4" /> Download Report
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)]">
+                                <h3 className="text-xl font-black text-[var(--text-primary)] mb-6">Gig Spending & Results</h3>
+                                {gigs.length === 0 ? (
+                                    <p className="text-[var(--text-secondary)] text-sm font-medium">No gigs listed yet. <button onClick={() => setCurrentView('events')} className="text-spark-purple font-black">Hire creators via your events →</button></p>
+                                ) : (
+                                    <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+                                        {gigs.map((g: any) => {
+                                            const allocations = gigAllocations[g.id] || [];
+                                            const hired = allocations.length;
+                                            const paidAmount = allocations
+                                                .filter((a: any) => a.status === 'paid')
+                                                .reduce((sum: number, a: any) => sum + (Number(a.amount) || 0), 0);
+                                            return (
+                                                <div key={g.id} className="p-4 rounded-xl border border-[var(--border-color)] flex justify-between items-center hover:bg-[var(--bg-secondary)] transition-colors">
+                                                    <div>
+                                                        <h4 className="font-bold text-[var(--text-primary)] text-sm">{g.title}</h4>
+                                                        <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                                                            {hired} hired · Budget: ₦{Number(g.reward || 0).toLocaleString()}
+                                                        </p>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <p className="text-sm text-green-600 font-black">₦{paidAmount.toLocaleString()}</p>
+                                                        <span className="text-[9px] font-black uppercase bg-spark-purple/10 text-spark-purple px-2 py-0.5 rounded-full inline-block mt-1">{g.status || 'active'}</span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 );
+            }
 
 
             default:
                 return <div>Coming Soon</div>;
+            case 'disputes':
+                return (
+                    <DisputesPanel
+                        userRole="Association"
+                        userId={user?.id || user?.uid}
+                        userProfile={orgProfile}
+                        onNavigate={onNavigate}
+                        preSelectedEntity={preSelectedDisputeEntity}
+                        onClearPreSelected={() => setPreSelectedDisputeEntity(null)}
+                    />
+                );
         }
     };
 
@@ -2152,6 +2418,17 @@ const AssociationDashboard: React.FC<{
                                 </div>
 
                                 <div>
+                                    <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Location</label>
+                                    <input 
+                                        type="text" 
+                                        placeholder="e.g. University of Lagos (UNILAG) or Remote" 
+                                        value={gigFormData.location}
+                                        onChange={e => setGigFormData(p => ({ ...p, location: e.target.value }))}
+                                        className="w-full px-5 py-4 bg-[var(--bg-secondary)] border-2 border-transparent focus:border-spark-purple rounded-2xl font-bold text-[var(--text-primary)] outline-none transition-all" 
+                                    />
+                                </div>
+
+                                <div>
                                     <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Description / Brief</label>
                                     <textarea 
                                         rows={4} 
@@ -2164,7 +2441,7 @@ const AssociationDashboard: React.FC<{
 
                                 {gigFormData.type === 'paid' && (
                                     <div>
-                                        <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Gig Reward (â‚¦)</label>
+                                        <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Gig Reward (₦)</label>
                                         <input 
                                             type="number" 
                                             value={gigFormData.reward}
@@ -2202,7 +2479,7 @@ const AssociationDashboard: React.FC<{
                         </div>
                         <form onSubmit={handleWithdraw} className="space-y-6">
                             <div>
-                                <label className="block text-[10px] font-black uppercase text-[var(--text-secondary)] mb-2">Available: â‚¦{(wallet?.balance || 0).toLocaleString()}</label>
+                                <label className="block text-[10px] font-black uppercase text-[var(--text-secondary)] mb-2">Available: ₦{(wallet?.balance || 0).toLocaleString()}</label>
                                 <input 
                                     type="number" 
                                     value={withdrawalAmount}
@@ -2290,7 +2567,7 @@ const AssociationDashboard: React.FC<{
                                         >
                                             <option value="">Choose a gig...</option>
                                             {gigs.filter(g => g.status === 'open').map(g => (
-                                                <option key={g.id} value={g.id}>{g.title} ({Number(g.reward) === 0 ? 'Volunteer' : `â‚¦${Number(g.reward).toLocaleString()}`})</option>
+                                                <option key={g.id} value={g.id}>{g.title} ({Number(g.reward) === 0 ? 'Volunteer' : `₦${Number(g.reward).toLocaleString()}`})</option>
                                             ))}
                                         </select>
                                     )}
@@ -2340,7 +2617,7 @@ const AssociationDashboard: React.FC<{
                                     <div className="p-6 bg-green-50 rounded-[2rem] border border-green-100 flex items-center justify-between">
                                         <div>
                                             <p className="text-[10px] font-black text-green-600 uppercase tracking-widest mb-1">Total Budget</p>
-                                            <p className="text-2xl font-black text-green-700">â‚¦{Number(selectedGig.reward).toLocaleString()}</p>
+                                            <p className="text-2xl font-black text-green-700">₦{Number(selectedGig.reward).toLocaleString()}</p>
                                         </div>
                                         <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-green-600 shadow-sm">
                                             <Wallet className="w-6 h-6" />
@@ -2436,7 +2713,7 @@ const AssociationDashboard: React.FC<{
                         <div className="h-48 bg-spark-red relative">
                             <div className="absolute -bottom-12 left-12">
                                 <div className="w-24 h-24 bg-[var(--bg-primary)] p-2 rounded-3xl shadow-xl ring-4 ring-white flex items-center justify-center text-4xl font-black text-spark-purple">
-                                    {selectedBrand.imageUrl ? <img src={selectedBrand.imageUrl} className="w-full h-full object-cover rounded-2xl" /> : (selectedBrand.name || '?').charAt(0)}
+                                    {selectedBrand.imageUrl ? <img src={selectedBrand.imageUrl} alt={selectedBrand.name || 'Brand Logo'} className="w-full h-full object-cover rounded-2xl" /> : (selectedBrand.name || '?').charAt(0)}
                                 </div>
                             </div>
                         </div>

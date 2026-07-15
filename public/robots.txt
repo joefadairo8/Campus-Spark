@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin-dashboard
+Disallow: /brand-dashboard
+Disallow: /creator-dashboard
+Disallow: /association-dashboard
+
+Sitemap: https://abc-rally.campushimpacthub.com/sitemap.xml

@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { SparkIcon, APP_ABBREV } from '../constants';
 import { UserRole } from '../types';
-import { apiClient } from '../firebase';
+import { apiClient, auth, addDoc } from '../firebase';
 import NotificationPanel from './NotificationPanel';
-import { ShieldCheck, Lock, EyeOff, CheckCircle2, Scale, Building2, Handshake, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { ShieldCheck, Lock, EyeOff, CheckCircle2, Scale, Building2, Handshake, AlertTriangle, ShieldAlert, MessageSquare, HelpCircle, Send, Phone, Mail } from 'lucide-react';
 
 interface SidebarItem {
     id: string;
@@ -174,6 +173,38 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [showUserMenu, setShowUserMenu] = useState(false);
     const userMenuRef = useRef<HTMLDivElement>(null);
+
+    const [showSupport, setShowSupport] = useState(false);
+    const [supportSubject, setSupportSubject] = useState('');
+    const [supportMessage, setSupportMessage] = useState('');
+    const [supportSubmitting, setSupportSubmitting] = useState(false);
+
+    const handleSendSupport = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!supportSubject.trim() || !supportMessage.trim()) return;
+        setSupportSubmitting(true);
+        try {
+            await addDoc('supportTickets', {
+                subject: supportSubject.trim(),
+                message: supportMessage.trim(),
+                userId: userId || auth.currentUser?.uid || 'anonymous',
+                userName: userName || 'Anonymous User',
+                userRole: role,
+                userEmail: auth.currentUser?.email || '',
+                status: 'open',
+                createdAt: new Date().toISOString()
+            });
+            alert('Your ticket was successfully submitted! Our support team has been notified and will contact you via email.');
+            setSupportSubject('');
+            setSupportMessage('');
+            setShowSupport(false);
+        } catch (err: any) {
+            console.error('Failed to submit support ticket:', err);
+            alert('Could not submit ticket. Please check your network and try again.');
+        } finally {
+            setSupportSubmitting(false);
+        }
+    };
 
     useEffect(() => {
         fetchNotifications();
@@ -430,8 +461,137 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
                 </header>
 
                 {/* Content */}
-                <div className="flex-1 overflow-auto p-6 lg:p-8 bg-[var(--bg-primary)]">
+                <div className="flex-1 overflow-auto p-6 lg:p-8 bg-[var(--bg-primary)] relative">
                     {children}
+
+                    {/* Floating Customer Support FAB */}
+                    <button
+                        onClick={() => setShowSupport(true)}
+                        className={`fixed bottom-6 right-6 z-[90] w-14 h-14 rounded-full flex items-center justify-center text-white shadow-2xl hover:scale-110 active:scale-95 transition-all duration-300 ${role === 'Organization' ? 'bg-spark-purple hover:bg-purple-700 shadow-spark-purple/35' : 'bg-spark-red hover:bg-red-700 shadow-spark-red/35'}`}
+                        title="Customer Support"
+                    >
+                        <MessageSquare className="w-6 h-6" />
+                    </button>
+
+                    {/* Customer Support Modal */}
+                    {showSupport && (
+                        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
+                            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { setShowSupport(false); setSupportSubject(''); setSupportMessage(''); }}></div>
+                            <div className="relative bg-[var(--bg-primary)] w-full max-w-lg rounded-[2.5rem] shadow-2xl border border-[var(--border-color)] overflow-hidden animate-in zoom-in-95 duration-200">
+                                <div className="p-8 pb-4 flex justify-between items-center border-b border-[var(--border-color)]">
+                                    <div>
+                                        <h3 className="text-2xl font-black text-[var(--text-primary)]">Customer Support</h3>
+                                        <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest mt-1">Get fast help from the Spark Team</p>
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            setShowSupport(false);
+                                            setSupportSubject('');
+                                            setSupportMessage('');
+                                        }}
+                                        className="w-10 h-10 bg-spark-black text-white rounded-full flex items-center justify-center hover:bg-gray-800 transition-all"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </div>
+
+                                <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto">
+                                    {/* Contact Channels */}
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <a
+                                            href="https://wa.me/2348123456789"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="p-4 bg-green-500/5 hover:bg-green-500/10 border border-green-500/20 hover:border-green-500/40 rounded-2xl flex flex-col items-center text-center transition-all group"
+                                        >
+                                            <div className="w-10 h-10 bg-green-500 text-white rounded-xl flex items-center justify-center mb-2 shadow-lg shadow-green-500/10 group-hover:scale-110 transition-transform">
+                                                <Phone className="w-5 h-5" />
+                                            </div>
+                                            <span className="text-xs font-black text-[var(--text-primary)] uppercase tracking-wider">WhatsApp Support</span>
+                                            <span className="text-[9px] text-[var(--text-secondary)] mt-0.5 font-bold">Average response: 5 mins</span>
+                                        </a>
+                                        <a
+                                            href="mailto:support@campushub.africa"
+                                            className="p-4 bg-blue-500/5 hover:bg-blue-500/10 border border-blue-500/20 hover:border-blue-500/40 rounded-2xl flex flex-col items-center text-center transition-all group"
+                                        >
+                                            <div className="w-10 h-10 bg-blue-500 text-white rounded-xl flex items-center justify-center mb-2 shadow-lg shadow-blue-500/10 group-hover:scale-110 transition-transform">
+                                                <Mail className="w-5 h-5" />
+                                            </div>
+                                            <span className="text-xs font-black text-[var(--text-primary)] uppercase tracking-wider">Email Support</span>
+                                            <span className="text-[9px] text-[var(--text-secondary)] mt-0.5 font-bold">Average response: 2 hrs</span>
+                                        </a>
+                                    </div>
+
+                                    {/* FAQs */}
+                                    <div>
+                                        <h4 className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                                            <HelpCircle className="w-4 h-4 text-spark-red" /> Quick FAQs
+                                        </h4>
+                                        <div className="space-y-3">
+                                            {[
+                                                { q: "How does the escrow safety lock work?", a: "Brands lock the campaign budget when selecting creators. Funds are held in our secure escrow wallet and only paid out to the creator's wallet once the task report is approved." },
+                                                { q: "How can I withdraw my earnings?", a: "Creators and clubs can request payouts from their available balance directly to their Nigerian bank account. Payout requests are verified and processed within 24 hours." },
+                                                { q: "What is the ₦20,000 campaign fee?", a: "It is a flat fee charged to brands to launch a campaign, list briefs to creators, and enable verified performance metrics tracking." }
+                                            ].map((faq, idx) => (
+                                                <details key={idx} className="group bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl p-3.5 [&_summary::-webkit-details-marker]:hidden cursor-pointer transition-all">
+                                                    <summary className="flex items-center justify-between text-xs font-black text-[var(--text-primary)] select-none">
+                                                        <span>{faq.q}</span>
+                                                        <span className="text-xs font-black transition-transform group-open:rotate-45">+</span>
+                                                    </summary>
+                                                    <p className="text-xs text-[var(--text-secondary)] mt-2 font-medium leading-relaxed">{faq.a}</p>
+                                                </details>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Ticket Form */}
+                                    <form onSubmit={handleSendSupport} className="space-y-4 pt-4 border-t border-[var(--border-color)] text-left">
+                                        <h4 className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Send a Message</h4>
+                                        <div>
+                                            <label className="block text-[9px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Subject</label>
+                                            <input
+                                                required
+                                                type="text"
+                                                placeholder="e.g. Escrow payment not reflecting"
+                                                value={supportSubject}
+                                                onChange={e => setSupportSubject(e.target.value)}
+                                                className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] focus:border-spark-red rounded-xl font-bold text-xs outline-none transition-all text-[var(--text-primary)]"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[9px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1.5">Message / Issue Details</label>
+                                            <textarea
+                                                required
+                                                rows={3}
+                                                placeholder="Describe your issue, including any relevant transaction references..."
+                                                value={supportMessage}
+                                                onChange={e => setSupportMessage(e.target.value)}
+                                                className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] focus:border-spark-red rounded-xl font-bold text-xs outline-none transition-all resize-none text-[var(--text-primary)]"
+                                            />
+                                        </div>
+                                        <button
+                                            type="submit"
+                                            disabled={supportSubmitting}
+                                            className={`w-full py-3.5 text-white font-black rounded-xl text-xs uppercase tracking-widest shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 ${role === 'Organization' ? 'bg-spark-purple hover:bg-purple-700 shadow-purple-100' : 'bg-spark-red hover:bg-red-700 shadow-red-100'}`}
+                                        >
+                                            {supportSubmitting ? (
+                                                <>
+                                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                    Submitting...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Send className="w-3.5 h-3.5" /> Submit Ticket
+                                                </>
+                                            )}
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </main>
         </div>

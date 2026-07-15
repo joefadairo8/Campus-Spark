@@ -1,43 +1,40 @@
-const APP_NAME = 'Campus Spark';
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import dotenv from 'dotenv';
 dotenv.config();
 
-// ─── Transporter ────────────────────────────────────────────────────────────
-const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: Number(process.env.SMTP_PORT) || 587,
-    secure: process.env.SMTP_SECURE === 'true',
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-    },
-    tls: { rejectUnauthorized: false },
-});
+const APP_NAME = 'ABC-Rally';
+
+// ─── Resend Client ────────────────────────────────────────────────────────────
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const FROM_NAME = APP_NAME;
-const FROM_EMAIL = process.env.SMTP_USER || 'hello@abc-rally.com';
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'hello@abc-rally.com';
+const FROM_EMAIL = process.env.FROM_EMAIL || 'support@abc-rally.com';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'support@abc-rally.com';
 const APP_URL = process.env.APP_URL || 'https://abc-rally.com';
 
 // ─── Core Send Helper ────────────────────────────────────────────────────────
 export async function sendEmail(to: string, subject: string, html: string): Promise<void> {
-    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-        console.warn('[Email] SMTP credentials not configured — skipping email send.');
+    if (!process.env.RESEND_API_KEY) {
+        console.warn('[Email] RESEND_API_KEY not configured — skipping email send.');
         return;
     }
     try {
-        await transporter.sendMail({
-            from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+        const { error } = await resend.emails.send({
+            from: `${FROM_NAME} <${FROM_EMAIL}>`,
             to,
             subject,
             html,
         });
-        console.log(`[Email] Sent "${subject}" → ${to}`);
+        if (error) {
+            console.error(`[Email] Resend error sending "${subject}" → ${to}:`, error.message);
+        } else {
+            console.log(`[Email] Sent "${subject}" → ${to}`);
+        }
     } catch (err: any) {
         console.error(`[Email] Failed to send "${subject}" → ${to}:`, err.message);
     }
 }
+
 
 // ─── Shared Layout ───────────────────────────────────────────────────────────
 function layout(content: string): string {
@@ -333,4 +330,18 @@ export function sendGenericNotificationEmail(to: string, subject: string, title:
         ${btn('Open Dashboard', APP_URL)}
     `);
     return sendEmail(to, subject, html);
+}
+
+/** Sent to brand manager when a creator requests a review/rating */
+export function sendRatingRequestEmail(to: string, brandName: string, creatorName: string, gigTitle: string): Promise<void> {
+    const html = layout(`
+        ${tag('Review Request ⭐', '#f59e0b')}
+        <div style="margin-top:16px;">
+            ${heading(`${creatorName} is requesting a review`)}
+            ${para(`<strong>${creatorName}</strong> has requested that you rate and write a recommendation for their work on the campaign <strong>"${gigTitle}"</strong>.`)}
+            ${para('Please visit your dashboard to leave a star rating and a short testimonial that will appear on their ABC-Rally creator profile.')}
+            ${btn('Write a Review', APP_URL)}
+        </div>
+    `);
+    return sendEmail(to, `⭐ ${creatorName} Requests a Rating for "${gigTitle}"`, html);
 }

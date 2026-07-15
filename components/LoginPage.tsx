@@ -1,5 +1,5 @@
-﻿import React, { useState } from 'react';
-import { auth, db, signInWithEmailAndPassword, doc, getDoc } from '../firebase';
+import React, { useState } from 'react';
+import { auth, db, signInWithEmailAndPassword, doc, getDoc, logEvent } from '../firebase';
 import { UserRole } from '../types';
 
 const InputField: React.FC<{
@@ -97,6 +97,7 @@ const LoginPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigat
                         }
 
                         const role = data.role;
+                        logEvent('login', { method: 'email', role: role, userId: user.uid });
 
                         switch (role) {
                             case 'Brand':

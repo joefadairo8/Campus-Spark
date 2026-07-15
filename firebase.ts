@@ -8,7 +8,7 @@ import {
 } from 'firebase/auth';
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection as firebaseCollection, doc as firebaseDoc, getDocs as firebaseGetDocs, getDoc as firebaseGetDoc, setDoc as firebaseSetDoc, addDoc as firebaseAddDoc, updateDoc as firebaseUpdateDoc, deleteDoc as firebaseDeleteDoc, query as firebaseQuery, where as firebaseWhere, or as firebaseOr, limit as firebaseLimit, orderBy as firebaseOrderBy, serverTimestamp as firebaseTimestamp, runTransaction } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
-import { getAnalytics } from "firebase/analytics";
+import { getAnalytics, logEvent as firebaseLogEvent } from "firebase/analytics";
 import { 
   notifyProposalReceived, notifyProposalStatus, 
   notifyNewApplication, notifyApplicationDecision, 
@@ -30,6 +30,16 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null;
 export const auth = getAuth(app);
+
+export const logEvent = (eventName: string, params?: any) => {
+  if (analytics) {
+    try {
+      firebaseLogEvent(analytics, eventName, params);
+    } catch (e) {
+      console.warn('[Analytics] Failed to log event:', eventName, e);
+    }
+  }
+};
 
 // Use modern persistent cache instead of deprecated enableIndexedDbPersistence
 // This fixes the "Unexpected state (ID: b815)" Firestore internal assertion error
@@ -395,9 +405,11 @@ export const apiClient = {
             console.warn('Failed to send gig application email', e);
         }
 
+        logEvent('gig_application_submitted', { gigId, sourceCollection: parts[0] });
         return { data: { id: docRef.id, ...applicationData } };
       } catch (err: any) {
         console.error('[apiClient.post] CRITICAL ERROR during application save:', err);
+        logEvent('application_error', { gigId, error: err.message });
         throw err;
       }
     }
@@ -440,6 +452,7 @@ export const apiClient = {
       });
 
       transaction.update(gigRef, { status: 'completed' });
+      logEvent('report_approved', { gigId, amount });
       return { data: { success: true } };
     });
   }
@@ -495,6 +508,14 @@ export const apiClient = {
           enrichedData.sender?.name || 'A user',
           data.message || ''
       );
+  }
+
+  // Track proposal send
+  if (parts[0] === 'proposals') {
+    logEvent('proposal_sent', {
+      senderRole: enrichedData.sender?.role || 'unknown',
+      recipientRole: enrichedData.recipient?.role || 'unknown'
+    });
   }
 
   return { data: { id: docRef.id, ...data } };
@@ -654,6 +675,14 @@ export const apiClient = {
           } catch (e) {
               console.warn('Failed to send application decision email', e);
           }
+
+          // Track application acceptance
+          logEvent('application_accepted', {
+            gigId,
+            rewardAmount,
+            brandId: gigData.brandId,
+            creatorId
+          });
 
           return { data: { success: true } };
         });

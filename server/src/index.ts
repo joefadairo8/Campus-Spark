@@ -18,6 +18,7 @@ import {
     sendReportSubmittedEmail, sendReportApprovedEmail, sendReportRejectedEmail,
     sendWithdrawalRequestEmail, sendWithdrawalConfirmationEmail,
     sendTopUpConfirmationEmail, sendGenericNotificationEmail,
+    sendRatingRequestEmail,
 } from './emailService.js';
 
 dotenv.config();
@@ -788,6 +789,9 @@ app.post('/api/email/notify', async (req, res) => {
                     ]);
                 }
                 break;
+            case 'rating_request':
+                if (to) await sendRatingRequestEmail(to, name, req.body.creatorName, title);
+                break;
             case 'generic':
                 if (to && subject && title && body) await sendGenericNotificationEmail(to, subject, title, body);
                 break;
@@ -1041,6 +1045,77 @@ app.post('/api/escrow/request-otp', async (req: any, res: any) => {
     } catch (err: any) {
         console.error('[Pandascrow] Request OTP exception:', err);
         res.status(500).json({ error: err.message });
+    }
+});
+
+/**
+ * POST /api/escrow/dispute
+ * Opens a dispute for an escrow transaction on Pandascrow.
+ * Body: { escrow_id, reason, uuid }
+ */
+app.post('/api/escrow/dispute', async (req: any, res: any) => {
+    try {
+        const { escrow_id, reason, uuid: clientUuid } = req.body;
+
+        if (!escrow_id) {
+            return res.status(400).json({ error: 'Missing required field: escrow_id.' });
+        }
+        if (!reason) {
+            return res.status(400).json({ error: 'Missing required field: reason.' });
+        }
+
+        const uuid = PANDASCROW_UUID || clientUuid;
+        if (!uuid) {
+            return res.status(400).json({ error: 'Missing required field: uuid.' });
+        }
+
+        const pandaRes = await fetch(`${PANDASCROW_BASE}/escrow/dispute`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Token': PANDASCROW_TOKEN,
+            },
+            body: JSON.stringify({
+                uuid,
+                escrow_id: Number(escrow_id),
+                reason,
+            }),
+        });
+
+        const responseText = await pandaRes.text();
+        let pandaData: any = {};
+        try {
+            pandaData = JSON.parse(responseText);
+        } catch {
+            // Handle non-JSON response if any
+        }
+
+        if (!pandaRes.ok || pandaData.status === false) {
+            console.error('[Pandascrow] Dispute error:', pandaData);
+            return res.status(502).json({ error: pandaData?.data?.message || 'Failed to submit dispute to Pandascrow.' });
+        }
+
+        res.json({ success: true, data: pandaData.data });
+    } catch (err: any) {
+        console.error('[Pandascrow] Dispute exception:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/admin/wipe-userdata', async (req, res) => {
+    try {
+        console.log("🧹 Admin request to wipe MySQL tables...");
+        await pool.query("SET FOREIGN_KEY_CHECKS = 0");
+        const tablesToWipe = ["GigApplication", "Gig", "Event", "Proposal", "Notification"];
+        for (const table of tablesToWipe) {
+            await pool.query(`TRUNCATE TABLE ${table}`);
+        }
+        await pool.query("SET FOREIGN_KEY_CHECKS = 1");
+        console.log("✅ MySQL Tables wiped successfully.");
+        res.json({ success: true, message: "MySQL Tables wiped successfully." });
+    } catch (e: any) {
+        console.error("❌ MySQL Tables wipe failed:", e.message);
+        res.status(500).json({ error: e.message });
     }
 });
 

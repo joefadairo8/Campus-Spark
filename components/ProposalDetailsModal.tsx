@@ -161,7 +161,6 @@ export const ProposalDetailsModal: React.FC<ProposalDetailsModalProps> = ({ isOp
                         </div>
                         <div>
                             <p className="font-black text-[var(--text-primary)]">{otherParty.name}</p>
-                            <p className="text-xs font-bold text-[var(--text-secondary)]">{otherParty.email}</p>
                         </div>
                     </div>
                 </div>

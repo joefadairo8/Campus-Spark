@@ -12,8 +12,9 @@ import {
     BarChart3, Users, Megaphone, Building2, Shield, Wallet, 
     Search, ArrowUpRight, ArrowDownLeft, Clock, CheckCircle2, 
     XCircle, ArrowRight, Calendar, Activity, Database, Trash2, Edit,
-    Eye, Ban, CheckCircle, Info, ExternalLink, MapPin, TrendingUp, FileText, Plus, Settings, MessageSquare
+    Eye, Ban, CheckCircle, Info, ExternalLink, MapPin, TrendingUp, FileText, Plus, Settings, MessageSquare, Scale
 } from 'lucide-react';
+import { DisputesPanel } from './DisputesPanel';
 import * as LucideIcons from 'lucide-react';
 
 const isTransactionActive = (trans: any, myCampaigns: any[]) => {
@@ -106,6 +107,7 @@ const AdminDashboard: React.FC<{
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [currentView, setCurrentView] = useState('overview');
+    const [preSelectedDisputeEntity, setPreSelectedDisputeEntity] = useState<any>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedUserDetail, setSelectedUserDetail] = useState<any>(null);
     const [userDetailData, setUserDetailData] = useState<{gigs: any[], events: any[], transactions: any[], allocations: any[]}>({gigs: [], events: [], transactions: [], allocations: []});
@@ -549,6 +551,7 @@ const AdminDashboard: React.FC<{
         { id: 'blogs', label: 'Blog Manager', icon: <FileText className="w-5 h-5" /> },
         { id: 'testimonials', label: 'Testimonials', icon: <MessageSquare className="w-5 h-5" /> },
         { id: 'branding', label: 'Site Config', icon: <Settings className="w-5 h-5" /> },
+        { id: 'disputes', label: 'Disputes & Mediation', icon: <Scale className="w-5 h-5" />, badge: 0 },
     ];
 
     const renderContent = () => {
@@ -1662,6 +1665,18 @@ const AdminDashboard: React.FC<{
                             </div>
                         )}
                     </div>
+                );
+
+            case 'disputes':
+                return (
+                    <DisputesPanel
+                        userRole="Admin"
+                        userId={auth.currentUser?.uid}
+                        userProfile={null}
+                        onNavigate={onNavigate}
+                        preSelectedEntity={preSelectedDisputeEntity}
+                        onClearPreSelected={() => setPreSelectedDisputeEntity(null)}
+                    />
                 );
 
             case 'overview':

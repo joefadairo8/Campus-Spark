@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { auth, db, createUserWithEmailAndPassword, doc, setDoc } from '../firebase';
+import { auth, db, createUserWithEmailAndPassword, doc, setDoc, logEvent } from '../firebase';
 import { SparkIcon } from '../constants';
 import { UserRole } from '../types';
 import { notifyWelcome } from '../emailNotifier';
@@ -95,6 +95,7 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
 
     const [formData, setFormData] = useState({
         email: '',
+        phoneNumber: '',
         password: '',
         confirmPassword: '',
         name: '',
@@ -157,7 +158,7 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
 
     const nextStep = () => {
         if (step === 2) {
-            if (!formData.email || !formData.password || !formData.name) {
+            if (!formData.email || !formData.password || !formData.name || !formData.phoneNumber) {
                 setError('Please fill in all basic details.');
                 return;
             }
@@ -194,6 +195,7 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                 const firestorePromise = setDoc(doc(db, "users", user.uid), {
                     name: formData.name,
                     email: formData.email,
+                    phoneNumber: formData.phoneNumber,
                     role: selectedRole,
                     location: formData.location,
                     industry: formData.industry,
@@ -216,6 +218,7 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
 
                 // Send welcome email (non-blocking — never delays user)
                 notifyWelcome(formData.email, formData.name, selectedRole);
+                logEvent('sign_up', { role: selectedRole, userId: user.uid });
 
                 onNavigate(targetPage);
             }
@@ -327,6 +330,7 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                                  onChange={handleChange} 
                              />
                             <InputField id="email" label="Email Address" type="email" placeholder="you@example.com" value={formData.email} focusColor={theme.focus} onChange={handleChange} />
+                            <InputField id="phoneNumber" label="Phone Number" type="tel" placeholder="e.g. +234 803 123 4567" value={formData.phoneNumber} focusColor={theme.focus} onChange={handleChange} />
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <InputField id="password" label="Password" type="password" placeholder="••••••••" value={formData.password} focusColor={theme.focus} onChange={handleChange} />
                                 <InputField id="confirmPassword" label="Confirm" type="password" placeholder="••••••••" value={formData.confirmPassword} focusColor={theme.focus} onChange={handleChange} />
