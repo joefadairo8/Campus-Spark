@@ -35,56 +35,27 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
     }
 }
 
-
-// ─── Shared Layout ───────────────────────────────────────────────────────────
 function layout(content: string): string {
-    return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ABC-Rally</title>
-</head>
-<body style="margin:0;padding:0;background:#f4f4f4;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:40px 16px;">
-    <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
-        <!-- Header -->
-        <tr>
-          <td style="background:#111111;padding:28px 40px;text-align:center;">
-            <span style="font-size:22px;font-weight:900;color:#ffffff;letter-spacing:-0.5px;">
-              ⚡ Campus <span style="color:#e53e3e;">Spark</span>
-            </span>
-          </td>
-        </tr>
-        <!-- Body -->
-        <tr>
-          <td style="padding:40px;">
-            ${content}
-          </td>
-        </tr>
-        <!-- Footer -->
-        <tr>
-          <td style="background:#f9f9f9;padding:24px 40px;border-top:1px solid #eeeeee;text-align:center;">
-            <p style="margin:0;font-size:12px;color:#999999;">
-              © ${new Date().getFullYear()} ABC-Rally · 42, Olowu Street, Ikeja, Lagos, Nigeria<br/>
-              <a href="mailto:hello@abc-rally.com" style="color:#e53e3e;">hello@abc-rally.com</a> · +234 (0) 906 032 0863
-            </p>
-            <p style="margin:8px 0 0;font-size:11px;color:#bbbbbb;">
-              You are receiving this because you have an account on ABC-Rally.
-            </p>
-          </td>
-        </tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
+    return `<!DOCTYPE html><html><body style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;background:#f4f4f4;margin:0;padding:0;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:32px 16px;">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+      <tr><td style="background:#111111;padding:24px 40px;text-align:center;">
+        <span style="font-size:22px;font-weight:900;color:#ffffff;letter-spacing:-0.5px;">⚡ ABC-<span style="color:#e53e3e;">Rally</span></span>
+      </td></tr>
+      <tr><td style="padding:40px;">${content}</td></tr>
+      <tr><td style="background:#f9f9f9;padding:20px 40px;border-top:1px solid #eeeeee;text-align:center;">
+        <p style="margin:0;font-size:12px;color:#999999;">&copy; ${new Date().getFullYear()} ABC-Rally &middot; 42, Olowu Street, Ikeja, Lagos, Nigeria</p>
+        <p style="margin:6px 0 0;font-size:11px;color:#bbbbbb;">You are receiving this because you have an account on ABC-Rally.</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
 }
 
-function btn(text: string, href: string): string {
-    return `<a href="${href}" style="display:inline-block;margin-top:24px;padding:14px 32px;background:#e53e3e;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:700;font-size:14px;letter-spacing:0.5px;">${text}</a>`;
+function btn(text: string, url: string): string {
+    return `<a href="${url}" style="display:inline-block;padding:13px 28px;background:#e53e3e;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;margin-top:20px;letter-spacing:0.3px;">${text}</a>`;
 }
 
 function tag(text: string, color = '#e53e3e'): string {
@@ -116,7 +87,7 @@ function infoRow(label: string, value: string): string {
 export function sendWelcomeEmail(to: string, name: string, role: string): Promise<void> {
     const roleLabel = role.replace('_', ' ');
     const html = layout(`
-        ${tag('Welcome to Spark!')}
+        ${tag('Welcome to ABC-Rally! 🎉')}
         <div style="margin-top:16px;">
             ${heading(`Hey ${name}, you're in! 🎉`)}
             ${para(`Welcome to <strong>ABC-Rally</strong> — Nigeria's leading campus marketing platform. Your account has been created successfully as a <strong>${roleLabel}</strong>.`)}

@@ -795,6 +795,18 @@ app.post('/api/email/notify', async (req, res) => {
             case 'generic':
                 if (to && subject && title && body) await sendGenericNotificationEmail(to, subject, title, body);
                 break;
+            case 'blast':
+                const { recipients } = req.body;
+                if (Array.isArray(recipients) && subject && title && body) {
+                    const batchSize = 10;
+                    for (let i = 0; i < recipients.length; i += batchSize) {
+                        const batch = recipients.slice(i, i + batchSize);
+                        await Promise.allSettled(
+                            batch.map((email: string) => sendGenericNotificationEmail(email, subject, title, body))
+                        );
+                    }
+                }
+                break;
             default:
                 return res.status(400).json({ error: 'Unknown notification type.' });
         }
@@ -860,7 +872,7 @@ app.post('/api/escrow/initialize', async (req: any, res: any) => {
             // Seller is the platform admin — Pandascrow pays out to the platform,
             // which then manually disburses to the creator via the admin dashboard.
             seller_details: {
-                name: 'Campus Spark Admin',
+                name: 'ABC-Rally Admin',
                 email: process.env.ADMIN_EMAIL || 'olathetechboy@gmail.com',
                 phone: '+2340000000000',
             },
