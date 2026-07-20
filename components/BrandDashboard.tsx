@@ -5,7 +5,7 @@ import { UserRole } from '../types';
 import { STATES, UNIVERSITIES, BACKEND_URL } from '../constants';
 import ProfileView from './ProfileView';
 import DashboardPlaceholder from './DashboardPlaceholder';
-import { notifyTopUp, notifyProposalStatus, notifyApplicationDecision, notifyReportRejected } from '../emailNotifier';
+import { notifyTopUp, notifyProposalReceived, notifyProposalStatus, notifyApplicationDecision, notifyReportRejected } from '../emailNotifier';
 import { ProposalFormModal } from './ProposalFormModal';
 import { ProposalDetailsModal } from './ProposalDetailsModal';
 import { EventDetailsModal } from './EventDetailsModal';
@@ -426,6 +426,18 @@ const BrandDashboard: React.FC<{
             setWalletLoading(false);
         }
     };
+
+    const getTransactionNotes = (trans: any) => String(trans.description || '').toLowerCase();
+    const isSponsorshipTransaction = (trans: any) => {
+        const note = getTransactionNotes(trans);
+        return note.includes('sponsorship') || note.includes('sponsorship received') || note.includes('event sponsorship') || note.includes('sponsorship commission');
+    };
+    const isCampaignGigTransaction = (trans: any) => {
+        const note = getTransactionNotes(trans);
+        return note.includes('gig') || note.includes('campaign') || note.includes('allocation') || note.includes('payment released') || note.includes('lock');
+    };
+    const campaignGigSpend = transactions.reduce((sum, t) => t.type === 'debit' && t.status === 'completed' && isCampaignGigTransaction(t) ? sum + Number(t.amount || 0) : sum, 0);
+    const sponsorshipSpend = transactions.reduce((sum, t) => t.type === 'debit' && t.status === 'completed' && isSponsorshipTransaction(t) ? sum + Number(t.amount || 0) : sum, 0);
 
     // Sync wallet strip data (lightweight — always runs on mount & profile load)
     const syncWalletStrip = async (profileId: string) => {
@@ -1350,14 +1362,16 @@ const BrandDashboard: React.FC<{
                     const proposalRes = await apiClient.post('proposals', { ...data, status: 'pending_payment', amount, sponsorshipPackageName: data.packageName || null, eventName: eventBeingSponsored.name });
                     const newProposalId = proposalRes.data?.id;
 
-                    setShowProposalModal(false);
-                    setProposalRecipient(null);
-
-                    const PaystackPop = (window as any).PaystackPop;
-                    if (!PaystackPop) {
-                        alert('Paystack is not loaded. Your proposal was saved but payment was not completed. Please go to Proposals and release the payment manually.');
-                        fetchProposals();
-                        return;
+                    const recipientUser = creators.find((u: any) => u.id === data.recipientId) || partners.find((u: any) => u.id === data.recipientId);
+                    const recipientName = recipientUser?.name || proposalRecipient?.name || 'Organization';
+                    const recipientEmail = recipientUser?.email;
+                    if (recipientEmail) {
+                        notifyProposalReceived(
+                            recipientEmail,
+                            recipientName,
+                            brandProfile?.name || 'Brand',
+                            data.message
+                        );
                     }
 
                     const reference = `SPONS-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
@@ -1400,6 +1414,19 @@ const BrandDashboard: React.FC<{
             // Non-sponsored / non-budget proposals — just send the message
             await apiClient.post('proposals', { ...data, sponsorshipPackageName: data.packageName || null });
             logEvent('send_proposal', { recipientId: data.recipientId, isSponsorship: !!eventBeingSponsored });
+
+            const recipientUser = creators.find((u: any) => u.id === data.recipientId) || partners.find((u: any) => u.id === data.recipientId);
+            const recipientName = recipientUser?.name || proposalRecipient?.name || 'User';
+            const recipientEmail = recipientUser?.email;
+            if (recipientEmail) {
+                notifyProposalReceived(
+                    recipientEmail,
+                    recipientName,
+                    brandProfile?.name || 'Brand',
+                    data.message
+                );
+            }
+
             alert("Partnership proposal sent successfully!");
             setShowProposalModal(false);
             setProposalRecipient(null);
@@ -1630,6 +1657,9 @@ const BrandDashboard: React.FC<{
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
                                 {filteredPartners.map((partner) => {
                                     const type = partner.role === 'Organization' ? 'Student Organization' : 'Campus Association';
+                                    const locationStr = partner.university || partner.location || partner.address || 'Campus';
+                                    const sizeStr = partner.membershipSize || partner.audienceSize || partner.size || partner.companySize || 'Not specified';
+                                    const nicheStr = partner.nicheCategory || partner.category || partner.focus || partner.niche || 'General';
                                     return (
                                         <div key={partner.id} className="group bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between">
                                             <div>
@@ -1640,7 +1670,22 @@ const BrandDashboard: React.FC<{
                                                     </div>
                                                     <h3 className="text-xl font-black text-[var(--text-primary)] mb-1 group-hover:text-spark-red transition-colors">{partner.name}</h3>
                                                     <p className="text-[10px] font-black text-spark-red uppercase tracking-widest mb-4">{type}</p>
-                                                    
+
+                                                    <div className="space-y-2 mb-4 text-xs font-semibold text-[var(--text-secondary)]">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-bold text-spark-red">📍 Location:</span>
+                                                            <span>{locationStr}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-bold text-spark-red">👥 Size:</span>
+                                                            <span>{sizeStr}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-bold text-spark-red">🎯 Niche:</span>
+                                                            <span className="text-[11px] font-black text-[var(--text-primary)]">{nicheStr}</span>
+                                                        </div>
+                                                    </div>
+
                                                     <p className="text-sm text-[var(--text-secondary)] line-clamp-2 mb-4 min-h-[40px] font-medium leading-relaxed">
                                                         {partner.bio || `Connect with ${partner.name} for sponsorship and strategic collaborations.`}
                                                     </p>
@@ -1988,11 +2033,12 @@ const BrandDashboard: React.FC<{
                         ) : (
                             <>
                                 {/* Summary Cards */}
-                                <div className="grid md:grid-cols-3 gap-8">
+                                <div className="grid md:grid-cols-4 gap-8">
                                     {[
                                         { label: 'Available Balance', value: `₦${(wallet?.balance || 0).toLocaleString()}`, icon: <Wallet className="w-6 h-6" />, color: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' },
-                                        { label: 'Total Spent', value: `₦${transactions.reduce((acc, t) => acc + (t.type === 'debit' && t.status === 'completed' ? (Number(t.amount) || 0) : 0), 0).toLocaleString()}`, icon: <TrendingUp className="w-6 h-6" />, color: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/20' },
-                                        { label: 'Locked in Escrow', value: `₦${(wallet?.escrow || 0).toLocaleString()}`, icon: <Lock className="w-6 h-6" />, color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' },
+                                        { label: 'Campaign / Gig Spend', value: `₦${campaignGigSpend.toLocaleString()}`, icon: <Briefcase className="w-6 h-6" />, color: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/20' },
+                                        { label: 'Sponsorship Spend', value: `₦${sponsorshipSpend.toLocaleString()}`, icon: <Handshake className="w-6 h-6" />, color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' },
+                                        { label: 'Locked in Escrow', value: `₦${(wallet?.escrow || 0).toLocaleString()}`, icon: <Lock className="w-6 h-6" />, color: 'bg-spark-red/10 text-spark-red border border-spark-red/20' },
                                     ].map((stat, i) => (
                                         <div key={i} className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm">
                                             <div className={`w-12 h-12 ${stat.color} rounded-2xl flex items-center justify-center text-xl mb-4`}>{stat.icon}</div>

@@ -599,11 +599,13 @@ const CreatorDashboard: React.FC<{
 
             // Notify Recipient (Brand or Org)
             const recipientUser = data.find((u: any) => u.id === proposalData.recipientId) || partners.find((u: any) => u.id === proposalData.recipientId);
-            
-            if (recipientUser?.email) {
+            const recipientName = recipientUser?.name || proposalRecipient?.name || 'User';
+            const recipientEmail = recipientUser?.email;
+
+            if (recipientEmail) {
                 notifyProposalReceived(
-                    recipientUser.email,
-                    recipientUser.name || 'User',
+                    recipientEmail,
+                    recipientName,
                     userProfile?.name || 'Creator',
                     proposalData.message
                 );
@@ -1018,19 +1020,7 @@ const CreatorDashboard: React.FC<{
                                                         onClick={() => setSelectedProposal(p)}
                                                         className="px-6 py-3 bg-[var(--bg-secondary)] text-[var(--text-primary)] rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[var(--bg-tertiary)] transition-all border border-[var(--border-color)]"
                                                     >
-                                                        View
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleUpdateStatus(p.id, 'accepted')}
-                                                        className="px-6 py-3 bg-spark-red text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition-all shadow-sm"
-                                                    >
-                                                        Accept
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleUpdateStatus(p.id, 'rejected')}
-                                                        className="px-6 py-3 bg-spark-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-800 transition-all border border-transparent shadow-sm"
-                                                    >
-                                                        Reject
+                                                        View & Decide
                                                     </button>
                                                 </div>
                                             ) : (
@@ -1598,7 +1588,7 @@ const CreatorDashboard: React.FC<{
             <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                     <div>
-                        <h2 className="text-3xl font-black text-[var(--text-primary)]">Campus Opportunities</h2>
+                        <h2 className="text-3xl font-black text-[var(--text-primary)]">Opportunities</h2>
                         <p className="text-[var(--text-secondary)] font-medium mt-1">Discover paid creator gigs, campaigns, activations, and event tasks.</p>
                     </div>
                     <button 
@@ -1806,13 +1796,16 @@ const CreatorDashboard: React.FC<{
                             const displayName = partner.name || partner.companyName || 'Unknown Partner';
                             const roleLabel = partner.role === 'Brand' ? 'Brand Partner' : 'Student Association';
                             const badgeColor = partner.role === 'Brand' ? 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20' : 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20';
+                            const location = partner.university || partner.location || 'Nationwide';
+                            const description = partner.description || 'Connect with this partner to explore collaborations, sponsorships, and campus activations.';
 
                             return (
-                                <div key={partner.id} className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] p-8 shadow-sm flex flex-col justify-between hover:shadow-md transition-all gap-6">
-                                    <div className="space-y-4">
-                                        <div className="flex items-center space-x-4">
-                                            <div className="w-14 h-14 bg-[var(--bg-secondary)] rounded-2xl flex items-center justify-center text-xl font-black text-spark-red shadow-inner flex-shrink-0">
-                                                {partner.imageUrl ? <img src={partner.imageUrl} alt={displayName} className="w-full h-full object-cover rounded-2xl" /> : (displayName.charAt(0))}
+                                <div key={partner.id} className="group bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between">
+                                    <div className="h-24 bg-spark-red/5 transition-colors" />
+                                    <div className="px-8 pb-6 -mt-12">
+                                        <div className="flex items-center space-x-4 mb-4">
+                                            <div className="w-14 h-14 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-2xl flex items-center justify-center text-xl font-black text-spark-red shadow-inner overflow-hidden">
+                                                {partner.imageUrl ? <img src={partner.imageUrl} alt={displayName} className="w-full h-full object-cover rounded-2xl" /> : displayName.charAt(0)}
                                             </div>
                                             <div>
                                                 <h3 className="text-lg font-black text-[var(--text-primary)] leading-tight">{displayName}</h3>
@@ -1821,14 +1814,14 @@ const CreatorDashboard: React.FC<{
                                                 </span>
                                             </div>
                                         </div>
-                                        <p className="text-xs text-[var(--text-secondary)] font-medium line-clamp-3">
-                                            {partner.description || 'No description provided by partner.'}
+                                        <p className="text-xs text-[var(--text-secondary)] font-medium line-clamp-3 mb-5 min-h-[54px] leading-relaxed">
+                                            {description}
                                         </p>
                                     </div>
-                                    <div className="space-y-4 pt-4 border-t border-[var(--border-color)]">
-                                        <div className="flex justify-between items-center text-[11px] font-bold text-[var(--text-secondary)]">
+                                    <div className="px-8 pb-8">
+                                        <div className="flex justify-between items-center text-[11px] font-bold text-[var(--text-secondary)] mb-4">
                                             <span>Location</span>
-                                            <span className="text-[var(--text-primary)] truncate max-w-[150px]">{partner.university || partner.location || 'Nationwide'}</span>
+                                            <span className="text-[var(--text-primary)] truncate max-w-[150px]">{location}</span>
                                         </div>
                                         <button
                                             onClick={() => handleOpenProposalModal(partner)}
@@ -2461,33 +2454,19 @@ const CreatorDashboard: React.FC<{
                                                 </div>
                                                 <div className="flex items-center space-x-4">
                                                     {isDirectOffer ? (
-                                                        <div className="flex gap-3">
-                                                            <button
-                                                                onClick={() => setSelectedProposal(p)}
-                                                                className="px-6 py-3 bg-[var(--bg-secondary)] text-[var(--text-primary)] rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[var(--bg-tertiary)] transition-all border border-[var(--border-color)]"
-                                                            >
-                                                                View
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleUpdateStatus(p.id, 'accepted')}
-                                                                className="px-6 py-3 bg-spark-red text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition-all shadow-sm"
-                                                            >
-                                                                Accept
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleUpdateStatus(p.id, 'rejected')}
-                                                                className="px-6 py-3 bg-spark-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-800 transition-all border border-transparent shadow-sm"
-                                                            >
-                                                                Reject
-                                                            </button>
-                                                        </div>
+                                                        <button
+                                                            onClick={() => setSelectedProposal(p)}
+                                                            className="px-6 py-3 bg-[var(--bg-secondary)] text-[var(--text-primary)] rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[var(--bg-tertiary)] transition-all border border-[var(--border-color)]"
+                                                        >
+                                                            View & Decide
+                                                        </button>
                                                     ) : (
                                                         <>
                                                             <button
                                                                 onClick={() => setSelectedProposal(p)}
                                                                 className="px-6 py-2 bg-[var(--text-primary)] text-[var(--bg-primary)] rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-spark-red hover:text-white transition-all border border-transparent"
                                                             >
-                                                                View Details
+                                                                View & Decide
                                                             </button>
                                                             <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${p.status === 'accepted' ? 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20' :
                                                                 p.status === 'rejected' ? 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20' :

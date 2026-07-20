@@ -11,19 +11,23 @@ const InputField: React.FC<{
     value: string;
     focusColor: string;
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-}> = ({ id, label, type = 'text', placeholder, required = true, value, focusColor, onChange }) => (
+    rightSlot?: React.ReactNode;
+}> = ({ id, label, type = 'text', placeholder, required = true, value, focusColor, onChange, rightSlot }) => (
     <div>
         <label htmlFor={id} className="block text-sm font-black text-[var(--text-primary)] mb-3 uppercase tracking-widest">{label}</label>
-        <input
-            type={type}
-            name={id}
-            id={id}
-            className={`block w-full px-6 py-4 bg-[var(--bg-primary)] border-2 border-[var(--border-color)] rounded-2xl focus:bg-[var(--bg-primary)] ${focusColor} outline-none transition-all font-bold text-[var(--text-primary)]`}
-            placeholder={placeholder}
-            required={required}
-            value={value}
-            onChange={onChange}
-        />
+        <div className="relative">
+            <input
+                type={type}
+                name={id}
+                id={id}
+                className={`block w-full px-6 py-4 bg-[var(--bg-primary)] border-2 border-[var(--border-color)] rounded-2xl focus:bg-[var(--bg-primary)] ${focusColor} outline-none transition-all font-bold text-[var(--text-primary)] ${rightSlot ? 'pr-14' : ''}`}
+                placeholder={placeholder}
+                required={required}
+                value={value}
+                onChange={onChange}
+            />
+            {rightSlot && <div className="absolute inset-y-0 right-3 flex items-center">{rightSlot}</div>}
+        </div>
     </div>
 );
 
@@ -35,6 +39,7 @@ const LoginPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigat
     const [selectedRole, setSelectedRole] = useState<UserRole>('Creator');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
 
     const getTheme = () => {
         switch (selectedRole) {
@@ -200,11 +205,20 @@ const LoginPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigat
                             <InputField
                                 id="password"
                                 label="Password"
-                                type="password"
+                                type={showPassword ? 'text' : 'password'}
                                 placeholder="••••••••"
                                 value={formData.password}
                                 focusColor={theme.focus}
                                 onChange={handleChange}
+                                rightSlot={
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword(prev => !prev)}
+                                        className="text-[var(--text-secondary)] hover:text-spark-red text-xs font-black uppercase tracking-wider"
+                                    >
+                                        {showPassword ? 'Hide' : 'Show'}
+                                    </button>
+                                }
                             />
                             <div className="text-right mt-3">
                                 <a href="#" className={`text-xs font-black ${theme.text} uppercase tracking-widest hover:underline`}>

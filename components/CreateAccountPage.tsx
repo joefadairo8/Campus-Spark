@@ -63,19 +63,23 @@ const InputField: React.FC<{
     value: string;
     focusColor: string;
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
-}> = ({ id, label, type = 'text', placeholder, required = true, value, focusColor, onChange }) => (
+    rightSlot?: React.ReactNode;
+}> = ({ id, label, type = 'text', placeholder, required = true, value, focusColor, onChange, rightSlot }) => (
     <div>
         <label htmlFor={id} className="block text-sm font-black text-[var(--text-primary)] mb-3 uppercase tracking-widest">{label}</label>
-        <input
-            type={type}
-            name={id}
-            id={id}
-            className={`block w-full px-6 py-4 bg-[var(--bg-primary)] border-2 border-[var(--border-color)] rounded-2xl focus:bg-[var(--bg-primary)] ${focusColor} outline-none transition-all font-bold text-[var(--text-primary)]`}
-            placeholder={placeholder}
-            required={required}
-            value={value}
-            onChange={onChange}
-        />
+        <div className="relative">
+            <input
+                type={type}
+                name={id}
+                id={id}
+                className={`block w-full px-6 py-4 bg-[var(--bg-primary)] border-2 border-[var(--border-color)] rounded-2xl focus:bg-[var(--bg-primary)] ${focusColor} outline-none transition-all font-bold text-[var(--text-primary)] ${rightSlot ? 'pr-14' : ''}`}
+                placeholder={placeholder}
+                required={required}
+                value={value}
+                onChange={onChange}
+            />
+            {rightSlot && <div className="absolute inset-y-0 right-3 flex items-center">{rightSlot}</div>}
+        </div>
     </div>
 );
 
@@ -84,6 +88,8 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [selectedRole, setSelectedRole] = useState<UserRole>('Creator');
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
     useEffect(() => {
         const preselected = localStorage.getItem('preselectedRole');
@@ -152,6 +158,22 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
     };
 
     const theme = getTheme();
+
+    const getPasswordStrength = (password: string) => {
+        let score = 0;
+        if (!password) return { label: 'Enter a password', color: 'bg-gray-300', width: '0%' };
+        if (password.length >= 8) score += 1;
+        if (/[A-Z]/.test(password)) score += 1;
+        if (/[0-9]/.test(password)) score += 1;
+        if (/[^A-Za-z0-9]/.test(password)) score += 1;
+        if (password.length >= 12) score += 1;
+
+        if (score <= 2) return { label: 'Weak', color: 'bg-red-500', width: '33%' };
+        if (score <= 3) return { label: 'Fair', color: 'bg-yellow-500', width: '66%' };
+        return { label: 'Strong', color: 'bg-green-500', width: '100%' };
+    };
+
+    const passwordStrength = getPasswordStrength(formData.password);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
@@ -361,8 +383,40 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                             <InputField id="email" label="Email Address" type="email" placeholder="you@example.com" value={formData.email} focusColor={theme.focus} onChange={handleChange} />
                             <InputField id="phoneNumber" label="Phone Number" type="tel" placeholder="e.g. +234 803 123 4567" value={formData.phoneNumber} focusColor={theme.focus} onChange={handleChange} />
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <InputField id="password" label="Password" type="password" placeholder="••••••••" value={formData.password} focusColor={theme.focus} onChange={handleChange} />
-                                <InputField id="confirmPassword" label="Confirm" type="password" placeholder="••••••••" value={formData.confirmPassword} focusColor={theme.focus} onChange={handleChange} />
+                                <div className="space-y-2">
+                                    <InputField
+                                        id="password"
+                                        label="Password"
+                                        type={showPassword ? 'text' : 'password'}
+                                        placeholder="••••••••"
+                                        value={formData.password}
+                                        focusColor={theme.focus}
+                                        onChange={handleChange}
+                                        rightSlot={
+                                            <button type="button" onClick={() => setShowPassword(prev => !prev)} className="text-[var(--text-secondary)] hover:text-spark-red text-xs font-black uppercase tracking-wider">
+                                                {showPassword ? 'Hide' : 'Show'}
+                                            </button>
+                                        }
+                                    />
+                                    <div className="h-2 w-full rounded-full bg-[var(--bg-secondary)] overflow-hidden">
+                                        <div className={`h-full rounded-full transition-all ${passwordStrength.color}`} style={{ width: passwordStrength.width }} />
+                                    </div>
+                                    <p className="text-xs font-bold text-[var(--text-secondary)]">Strength: {passwordStrength.label}</p>
+                                </div>
+                                <InputField
+                                    id="confirmPassword"
+                                    label="Confirm"
+                                    type={showConfirmPassword ? 'text' : 'password'}
+                                    placeholder="••••••••"
+                                    value={formData.confirmPassword}
+                                    focusColor={theme.focus}
+                                    onChange={handleChange}
+                                    rightSlot={
+                                        <button type="button" onClick={() => setShowConfirmPassword(prev => !prev)} className="text-[var(--text-secondary)] hover:text-spark-red text-xs font-black uppercase tracking-wider">
+                                            {showConfirmPassword ? 'Hide' : 'Show'}
+                                        </button>
+                                    }
+                                />
                             </div>
 
                             <div className="flex gap-4 pt-4">

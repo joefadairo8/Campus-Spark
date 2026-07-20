@@ -10,7 +10,7 @@ import { EventDetailsModal } from './EventDetailsModal';
 import { CreatorProfileModal } from './CreatorProfileModal';
 import { WalletService } from '../WalletService';
 import { notifyTopUp, notifyWithdrawal, notifyProposalReceived, notifyProposalStatus } from '../emailNotifier';
-import { Wallet, TrendingUp, Lock, Plus, Minus, Ticket, Edit, Trash2, Search, Handshake, Building2, FileText, Mail, BarChart3, Target, Smartphone, Lightbulb, Award, GraduationCap, BookOpen, Calendar, Users, Megaphone, Inbox, Timer, Instagram, Twitter, Scale, Star } from 'lucide-react';
+import { Wallet, TrendingUp, Lock, Plus, Minus, Ticket, Edit, Trash2, Search, Handshake, Building2, FileText, Mail, BarChart3, Target, Smartphone, Lightbulb, Award, GraduationCap, BookOpen, Calendar, Users, Megaphone, Inbox, Timer, Instagram, Twitter, Scale, Star, Briefcase } from 'lucide-react';
 import { DisputesPanel } from './DisputesPanel';
 const parsePackages = (packagesField: any): { name: string; price: number; entails: string; }[] => {
     if (!packagesField) return [];
@@ -166,6 +166,19 @@ const AssociationDashboard: React.FC<{
             }
         }
     };
+
+    const getTransactionNotes = (trans: any) => String(trans.description || '').toLowerCase();
+    const isSponsorshipTransaction = (trans: any) => {
+        const note = getTransactionNotes(trans);
+        return note.includes('sponsorship') || note.includes('sponsorship received') || note.includes('event sponsorship') || note.includes('sponsorship commission');
+    };
+    const isCampaignGigTransaction = (trans: any) => {
+        const note = getTransactionNotes(trans);
+        return note.includes('gig') || note.includes('campaign') || note.includes('allocation') || note.includes('payment released') || note.includes('lock');
+    };
+    const campaignGigSpend = transactions.reduce((sum, t) => t.type === 'debit' && t.status === 'completed' && isCampaignGigTransaction(t) ? sum + Number(t.amount || 0) : sum, 0);
+    const sponsorshipIncome = transactions.reduce((sum, t) => t.type === 'credit' && t.status === 'completed' && isSponsorshipTransaction(t) ? sum + Number(t.amount || 0) : sum, 0);
+    const sponsorshipSpend = transactions.reduce((sum, t) => t.type === 'debit' && t.status === 'completed' && isSponsorshipTransaction(t) ? sum + Number(t.amount || 0) : sum, 0);
 
     const sidebarItems = [
         { id: 'overview', label: 'Overview', icon: <BarChart3 className="w-5 h-5" /> },
@@ -537,10 +550,12 @@ const AssociationDashboard: React.FC<{
 
             // Notify Brand
             const brand = brands.find(b => b.id === data.recipientId);
-            if (brand && (brand.email || brand.brandEmail)) {
+            const recipientName = brand?.name || proposalRecipient?.name || 'Brand';
+            const recipientEmail = brand?.email || brand?.brandEmail;
+            if (recipientEmail) {
                 notifyProposalReceived(
-                    brand.email || brand.brandEmail,
-                    brand.name || 'Brand',
+                    recipientEmail,
+                    recipientName,
                     orgProfile?.name || 'Association',
                     data.message
                 );
@@ -805,11 +820,12 @@ const AssociationDashboard: React.FC<{
                         ) : (
                             <>
                                 {/* Summary Cards */}
-                                <div className="grid md:grid-cols-3 gap-8">
+                                <div className="grid md:grid-cols-4 gap-8">
                                     {[
                                         { label: 'Available Balance', value: `₦${(wallet?.balance || 0).toLocaleString()}`, icon: <Wallet className="w-6 h-6" />, color: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' },
-                                        { label: 'Total Spent', value: `₦${transactions.reduce((acc, t) => acc + (t.type === 'debit' && t.status === 'completed' ? (Number(t.amount) || 0) : 0), 0).toLocaleString()}`, icon: <TrendingUp className="w-6 h-6" />, color: 'bg-spark-purple/10 text-spark-purple border border-spark-purple/20' },
-                                        { label: 'Locked in Escrow', value: `₦${(wallet?.escrow || 0).toLocaleString()}`, icon: <Lock className="w-6 h-6" />, color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' },
+                                        { label: 'Campaign / Gig Spend', value: `₦${campaignGigSpend.toLocaleString()}`, icon: <Briefcase className="w-6 h-6" />, color: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/20' },
+                                        { label: 'Sponsorship Spend', value: `₦${sponsorshipSpend.toLocaleString()}`, icon: <Handshake className="w-6 h-6" />, color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' },
+                                        { label: 'Locked in Escrow', value: `₦${(wallet?.escrow || 0).toLocaleString()}`, icon: <Lock className="w-6 h-6" />, color: 'bg-spark-purple/10 text-spark-purple border border-spark-purple/20' },
                                     ].map((stat, i) => (
                                         <div key={i} className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm">
                                             <div className={`w-12 h-12 ${stat.color} rounded-2xl flex items-center justify-center text-xl mb-4`}>{stat.icon}</div>
@@ -1413,7 +1429,7 @@ const AssociationDashboard: React.FC<{
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                         <div>
                             <h2 className="text-3xl font-black text-[var(--text-primary)]">Brand Directory</h2>
-                            <p className="text-[var(--text-secondary)] mt-1">Find brands open to partnerships, sponsorships, and activations.</p>
+                            <p className="text-[var(--text-secondary)] mt-1">Browse brands available for sponsorship, collaboration, and event activation.</p>
                         </div>
                         {loading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-purple"></div></div>
@@ -1427,26 +1443,29 @@ const AssociationDashboard: React.FC<{
                             </div>
                         ) : (
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-                        {brands.map(profile => (
-                            <div key={profile.id} className="bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] p-6 flex items-center space-x-4">
-                                <div className="w-14 h-14 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl flex items-center justify-center text-xl font-black text-spark-purple">
-                                    {profile.imageUrl ? <img src={profile.imageUrl} alt={profile.name || 'Brand Logo'} className="w-full h-full object-cover rounded-xl" /> : (profile.name || '?').charAt(0)}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <h4 className="font-black text-[var(--text-primary)] truncate">{profile.name}</h4>
-                                    <p className="text-[10px] text-[var(--text-secondary)] font-black uppercase tracking-widest truncate">{profile.industry || 'Market Leader'}</p>
-                                    {profile.email && (
-                                        <p className="text-[9px] text-[var(--text-secondary)] truncate">{profile.email}</p>
-                                    )}
-                                </div>
-                                <button
-                                    onClick={() => setSelectedBrand(profile)}
-                                    className="px-4 py-2 bg-spark-purple text-white rounded-xl text-[10px] font-black uppercase tracking-widest"
-                                >
-                                    Propose
-                                </button>
-                            </div>
-                        ))}
+                                {brands.map(profile => (
+                                    <div key={profile.id} className="group bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] overflow-hidden shadow-sm hover:shadow-xl transition-all">
+                                        <div className="h-24 bg-spark-red/5 transition-colors" />
+                                        <div className="px-8 pb-6 -mt-12">
+                                            <div className="w-20 h-20 bg-[var(--bg-primary)] border-4 border-[var(--bg-primary)] rounded-[1.5rem] shadow-lg flex items-center justify-center text-3xl font-black text-spark-red mb-4 overflow-hidden">
+                                                {profile.imageUrl ? <img src={profile.imageUrl} alt={profile.name || 'Brand Logo'} className="w-full h-full object-cover" /> : profile.name?.charAt(0)}
+                                            </div>
+                                            <h3 className="text-xl font-black text-[var(--text-primary)] mb-1 group-hover:text-spark-red transition-colors">{profile.name}</h3>
+                                            <p className="text-[10px] font-black text-spark-red uppercase tracking-widest mb-3">{profile.industry || profile.category || 'Brand Partner'}</p>
+                                            <p className="text-sm text-[var(--text-secondary)] line-clamp-3 mb-5 min-h-[54px] font-medium">{profile.bio || profile.description || 'Partner with this brand to secure sponsorship, event activation, and promotional support.'}</p>
+                                            <div className="space-y-2 text-xs text-[var(--text-secondary)] font-semibold mb-6">
+                                                {profile.location && <div className="flex items-center gap-2"><span>📍</span><span>{profile.location}</span></div>}
+                                                {profile.email && <div className="flex items-center gap-2"><span>✉️</span><span>{profile.email}</span></div>}
+                                            </div>
+                                            <button
+                                                onClick={() => setSelectedBrand(profile)}
+                                                className="w-full py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all transform active:scale-95"
+                                            >
+                                                Propose Collaboration
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         )}
                     </div>
@@ -1687,105 +1706,63 @@ const AssociationDashboard: React.FC<{
             // Sponsorship Packages tab removed and integrated into event creation flow per user request
 
             case 'hiring': {
-                const filteredCreatorsList = creators.filter((c) => {
-                    const creatorType = c.influencerType || (c.university ? 'Student Creator' : 'Professional Creator');
-                    const isProfessional = creatorType === 'Professional Creator';
-                    if (creatorTypeTab === 'professional') return isProfessional;
-                    if (creatorTypeTab === 'student') return !isProfessional;
-                    return true;
-                });
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                            <div>
-                                <h2 className="text-3xl font-black text-[var(--text-primary)]">Hire Creators</h2>
-                                <p className="text-[var(--text-secondary)] mt-1">Hire creators, media teams, and talents that match your event needs.</p>
-                            </div>
-                            <div className="flex bg-spark-purple/5 border border-spark-purple/10 p-1 rounded-2xl max-w-xs">
-                                <button 
-                                    onClick={() => setCreatorTypeTab('all')}
-                                    className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${creatorTypeTab === 'all' ? 'bg-spark-purple text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-purple'}`}
-                                >
-                                    All
-                                </button>
-                                <button 
-                                    onClick={() => setCreatorTypeTab('professional')}
-                                    className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${creatorTypeTab === 'professional' ? 'bg-spark-purple text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-purple'}`}
-                                >
-                                    Professional
-                                </button>
-                                <button 
-                                    onClick={() => setCreatorTypeTab('student')}
-                                    className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${creatorTypeTab === 'student' ? 'bg-spark-purple text-white shadow-sm' : 'text-[var(--text-secondary)] hover:text-spark-purple'}`}
-                                >
-                                    Student
-                                </button>
-                            </div>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                            {['All', 'Photographers', 'Videographers', 'MCs/Hosts', 'Graphic Designers', 'Ushers', 'Social Media Creators'].map(cat => (
-                                <button key={cat} className="px-4 py-2 bg-[var(--bg-secondary)] text-[var(--text-primary)] text-xs font-black rounded-full border border-[var(--border-color)] hover:bg-spark-purple hover:text-white hover:border-spark-purple transition-all uppercase tracking-wider">{cat}</button>
-                            ))}
+                        <div>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Hire Creators</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">Hire creators directly from the creator directory using the same card layout as the brand dashboard.</p>
                         </div>
                         {creatorsLoading ? (
                             <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-spark-purple"></div></div>
-                        ) : filteredCreatorsList.length === 0 ? (
-                            <DashboardPlaceholder title="No Creators Found" icon={<Search className="w-10 h-10" />} description="No creators match your filters." />
+                        ) : creators.length === 0 ? (
+                            <DashboardPlaceholder title="No Creators Found" icon={<Search className="w-10 h-10" />} description="No creators are available right now." />
                         ) : (
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {filteredCreatorsList.map((creator: any) => (
-                                    <div key={creator.id} className="bg-[var(--bg-primary)] p-6 rounded-[2rem] border border-[var(--border-color)] shadow-sm hover:shadow-xl hover:border-spark-purple/20 transition-all flex flex-col justify-between">
-                                        <div>
-                                            <div className="flex justify-between items-center mb-4">
-                                                <span className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest bg-spark-purple/5 text-spark-purple`}>
-                                                    {((creator.role || '').toLowerCase().includes('professional') || (creator.role || '').toLowerCase().includes('influencer')) ? 'Professional' : 'Student'}
-                                                </span>
-                                                {creator.rating && (
-                                                    <div className="flex items-center gap-1 text-xs text-amber-500 font-bold">
-                                                        <span>★</span>
-                                                        <span>{creator.rating}</span>
+                                {creators.map((creator: any) => {
+                                    const creatorType = creator.influencerType || (creator.university ? 'Student Creator' : 'Professional Creator');
+                                    const isProfessional = creatorType === 'Professional Creator';
+                                    const category = creator.niche || creator.nicheCategory || creator.category || 'Campus Creator';
+                                    const location = creator.location || creator.university || 'Not Specified';
+
+                                    return (
+                                        <div key={creator.id} className="group bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between">
+                                            <div className="h-24 bg-spark-purple/5 transition-colors" />
+                                            <div className="px-8 pb-6 -mt-12">
+                                                <div className="flex justify-between items-center mb-4">
+                                                    <span className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest ${isProfessional ? 'bg-blue-500/10 text-blue-600' : 'bg-spark-purple/10 text-spark-purple'}`}>
+                                                        {isProfessional ? 'Professional' : 'Student'}
+                                                    </span>
+                                                    {creator.rating && (
+                                                        <div className="flex items-center gap-1 text-xs text-amber-500 font-bold">
+                                                            <span>★</span>
+                                                            <span>{creator.rating}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="w-20 h-20 bg-[var(--bg-primary)] border-4 border-[var(--bg-primary)] rounded-[1.5rem] shadow-lg flex items-center justify-center text-3xl font-black text-spark-red mb-4 overflow-hidden mx-auto">
+                                                    {creator.imageUrl ? <img src={creator.imageUrl} alt={creator.name || 'Creator'} className="w-full h-full object-cover" /> : creator.name?.charAt(0) || '?'}
+                                                </div>
+                                                <h3 className="text-xl font-black text-[var(--text-primary)] mb-1 group-hover:text-spark-red transition-colors text-center">{creator.name}</h3>
+                                                <p className="text-[10px] font-black text-spark-purple uppercase tracking-widest mb-3 text-center">{category}</p>
+                                                {creator.bio && <p className="text-sm text-[var(--text-secondary)] line-clamp-3 mb-4 leading-relaxed text-center">{creator.bio}</p>}
+                                                <div className="space-y-2 text-xs text-[var(--text-secondary)] font-semibold mb-6 text-center">
+                                                    <div className="flex items-center justify-center gap-2">
+                                                        <span>📍</span>
+                                                        <span>{location}</span>
                                                     </div>
-                                                )}
-                                            </div>
-                                            <div className="flex items-start gap-4 mb-4">
-                                                <div className="w-14 h-14 rounded-2xl bg-spark-purple/10 flex items-center justify-center text-spark-purple font-black text-xl flex-shrink-0 overflow-hidden">
-                                                    {creator.imageUrl ? <img src={creator.imageUrl} alt={creator.name} className="w-full h-full object-cover rounded-2xl" /> : creator.name?.charAt(0) || '?'}
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <h4 className="font-black text-[var(--text-primary)] truncate">{creator.name}</h4>
-                                                    <p className="text-xs font-bold text-spark-purple uppercase tracking-widest truncate">📍 {creator.location || creator.university || 'Not Specified'}</p>
                                                 </div>
                                             </div>
-
-                                            {/* Social Handles */}
-                                            <div className="flex gap-2 mb-4 justify-start">
-                                                {creator.instagram && (
-                                                    <a href={creator.instagram.startsWith('http') ? creator.instagram : `https://instagram.com/${creator.instagram.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-[var(--bg-secondary)] hover:bg-spark-purple/10 text-[var(--text-secondary)] hover:text-spark-purple rounded-xl transition-all">
-                                                        <Instagram className="w-4 h-4" />
-                                                    </a>
-                                                )}
-                                                {creator.tiktok && (
-                                                    <a href={creator.tiktok.startsWith('http') ? creator.tiktok : `https://tiktok.com/@${creator.tiktok.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-[var(--bg-secondary)] hover:bg-spark-purple/10 text-[var(--text-secondary)] hover:text-spark-purple rounded-xl transition-all">
-                                                        <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.17-2.89-.7-4.06-1.66-.27-.23-.52-.48-.75-.75-.01 2.91-.02 5.82-.02 8.74-.08 2.37-1.12 4.74-3.05 6.13-2.14 1.58-5.11 2.05-7.58 1.25-2.82-.87-5.06-3.47-5.26-6.47-.36-4.22 2.91-8.23 7.15-8.43.19-.01.37 0 .56-.01V8.33c-1.92.21-3.79 1.48-4.57 3.25-.97 2.12-.55 4.8 1.01 6.55 1.55 1.76 4.14 2.38 6.27 1.59 1.83-.66 3.14-2.49 3.23-4.47.08-2.73.04-5.46.05-8.19-.01 0-.01 0-.02 0-.07-.94-.48-1.89-1.17-2.54-.74-.74-1.78-1.15-2.83-1.18V.02z"/></svg>
-                                                    </a>
-                                                )}
-                                                {creator.twitter && (
-                                                    <a href={creator.twitter.startsWith('http') ? creator.twitter : `https://twitter.com/${creator.twitter.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-[var(--bg-secondary)] hover:bg-spark-purple/10 text-[var(--text-secondary)] hover:text-spark-purple rounded-xl transition-all">
-                                                        <Twitter className="w-4 h-4" />
-                                                    </a>
-                                                )}
+                                            <div className="px-8 pb-8">
+                                                <button
+                                                    onClick={() => { setProposalRecipient({ id: creator.id, name: creator.name }); setShowProposalModal(true); }}
+                                                    className="w-full py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all active:scale-95 text-xs uppercase tracking-wider"
+                                                >
+                                                    Pitch Collaboration
+                                                </button>
                                             </div>
-
-                                            {creator.bio && <p className="text-xs text-[var(--text-secondary)] line-clamp-2 mb-4 leading-relaxed">{creator.bio}</p>}
                                         </div>
-                                        <button
-                                            onClick={() => { setProposalRecipient({ id: creator.id, name: creator.name }); setShowProposalModal(true); }}
-                                            className="w-full py-3 bg-spark-black text-white font-black rounded-xl hover:bg-spark-purple transition-all text-xs uppercase tracking-wider"
-                                        >
-                                            Send Gig Offer
-                                        </button>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
