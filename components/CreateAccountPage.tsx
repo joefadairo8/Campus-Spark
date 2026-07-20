@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { auth, db, createUserWithEmailAndPassword, doc, setDoc, logEvent } from '../firebase';
+import { auth, db, createUserWithEmailAndPassword, doc, setDoc, logEvent, collection, query, where, getDocs } from '../firebase';
 import { SparkIcon } from '../constants';
 import { UserRole } from '../types';
 import { notifyWelcome } from '../emailNotifier';
@@ -104,7 +104,9 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
         location: '',
         clubType: '',
         companySize: 'Small/Medium (11-50)',
-        influencerType: 'Campus Creator',
+        influencerType: 'Student Creator',
+        niche: '',
+        nicheOther: '',
         orgType: 'Association',
     });
 
@@ -188,10 +190,35 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                     'creator-dashboard';
 
         try {
+            // Check for duplicate name, email, or phone in Firestore users collection
+            const usersRef = collection(db, "users");
+            const [emailSnap, nameSnap, phoneSnap] = await Promise.all([
+                getDocs(query(usersRef, where("email", "==", formData.email.trim()))),
+                getDocs(query(usersRef, where("name", "==", formData.name.trim()))),
+                getDocs(query(usersRef, where("phoneNumber", "==", formData.phoneNumber.trim())))
+            ]);
+
+            if (!emailSnap.empty) {
+                setError('This email is already registered.');
+                setLoading(false);
+                return;
+            }
+            if (!nameSnap.empty) {
+                setError('A user with this full name is already registered.');
+                setLoading(false);
+                return;
+            }
+            if (!phoneSnap.empty) {
+                setError('This phone number is already registered.');
+                setLoading(false);
+                return;
+            }
+
             const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
             const user = userCredential.user;
 
             if (user) {
+                const creatorNiche = formData.niche === 'Other' ? formData.nicheOther : formData.niche;
                 const firestorePromise = setDoc(doc(db, "users", user.uid), {
                     name: formData.name,
                     email: formData.email,
@@ -203,6 +230,8 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                     clubType: formData.clubType,
                     companySize: formData.companySize,
                     influencerType: selectedRole === 'Creator' ? formData.influencerType : null,
+                    niche: selectedRole === 'Creator' ? creatorNiche : null,
+                    nicheCategory: selectedRole === 'Creator' ? creatorNiche : null,
                     orgType: selectedRole === 'Organization' ? formData.orgType : null,
                     createdAt: new Date().toISOString(),
                 });
@@ -368,12 +397,13 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                                 </>
                             ) : selectedRole === 'Creator' ? (
                                 <>
+                                    {/* Creator Type */}
                                     <div className="mb-6">
                                         <label className="block text-sm font-black text-[var(--text-primary)] mb-3 uppercase tracking-widest">Creator Type</label>
                                         <div className="flex gap-4">
                                             <label className="flex-1 cursor-pointer">
-                                                <input type="radio" name="influencerType" value="Campus Creator" checked={formData.influencerType === 'Campus Creator'} onChange={handleChange} className="hidden peer" />
-                                                <div className={`p-4 border-2 border-[var(--border-color)] rounded-2xl peer-checked:${theme.border} peer-checked:${theme.bg} text-center font-bold text-[var(--text-secondary)] peer-checked:${theme.text} transition-all`}>Campus Creator</div>
+                                                <input type="radio" name="influencerType" value="Student Creator" checked={formData.influencerType === 'Student Creator'} onChange={handleChange} className="hidden peer" />
+                                                <div className={`p-4 border-2 border-[var(--border-color)] rounded-2xl peer-checked:${theme.border} peer-checked:${theme.bg} text-center font-bold text-[var(--text-secondary)] peer-checked:${theme.text} transition-all`}>Student Creator</div>
                                             </label>
                                             <label className="flex-1 cursor-pointer">
                                                 <input type="radio" name="influencerType" value="Professional Creator" checked={formData.influencerType === 'Professional Creator'} onChange={handleChange} className="hidden peer" />
@@ -381,7 +411,9 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                                             </label>
                                         </div>
                                     </div>
-                                    {formData.influencerType === 'Campus Creator' ? (
+
+                                    {/* Location/University based on type */}
+                                    {formData.influencerType === 'Student Creator' ? (
                                         <InputField 
                                             id="university" 
                                             label="Your University" 
@@ -400,6 +432,39 @@ const CreateAccountPage: React.FC<{ onNavigate: (page: string) => void }> = ({ o
                                             onChange={handleChange} 
                                         />
                                     )}
+
+                                    {/* Niche Dropdown */}
+                                    <div>
+                                        <label htmlFor="niche" className="block text-sm font-black text-[var(--text-primary)] mb-3 uppercase tracking-widest">Your Niche</label>
+                                        <select
+                                            id="niche"
+                                            name="niche"
+                                            value={formData.niche}
+                                            onChange={handleChange}
+                                            required
+                                            className={`w-full px-6 py-4 bg-[var(--bg-primary)] border-2 border-[var(--border-color)] rounded-2xl outline-none font-bold appearance-none cursor-pointer text-[var(--text-primary)] ${theme.focus}`}
+                                        >
+                                            <option value="">— Select your niche —</option>
+                                            <option value="Fashion &amp; Lifestyle">Fashion &amp; Lifestyle</option>
+                                            <option value="Food &amp; Beverage">Food &amp; Beverage</option>
+                                            <option value="Tech &amp; Gaming">Tech &amp; Gaming</option>
+                                            <option value="Beauty &amp; Wellness">Beauty &amp; Wellness</option>
+                                            <option value="Comedy &amp; Entertainment">Comedy &amp; Entertainment</option>
+                                            <option value="Business &amp; Finance">Business &amp; Finance</option>
+                                            <option value="Other">Other (specify below)</option>
+                                        </select>
+                                        {formData.niche === 'Other' && (
+                                            <input
+                                                type="text"
+                                                name="nicheOther"
+                                                value={formData.nicheOther}
+                                                onChange={handleChange}
+                                                placeholder="Describe your niche..."
+                                                required
+                                                className={`mt-3 block w-full px-6 py-4 bg-[var(--bg-primary)] border-2 border-[var(--border-color)] rounded-2xl focus:bg-[var(--bg-primary)] ${theme.focus} outline-none transition-all font-bold text-[var(--text-primary)]`}
+                                            />
+                                        )}
+                                    </div>
                                 </>
                             ) : (
                                 <>

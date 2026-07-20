@@ -11,7 +11,7 @@ import { ProposalDetailsModal } from './ProposalDetailsModal';
 import { EventDetailsModal } from './EventDetailsModal';
 import { CreatorProfileModal } from './CreatorProfileModal';
 import { WalletService, CampaignAllocation } from '../WalletService';
-import { Calendar, Wallet, BarChart3, Lock, Plus, Minus, Mail, Users, Megaphone, Inbox, TrendingUp, ArrowUpRight, ArrowDownLeft, Activity, Handshake, Building2, Search, Briefcase, FileText, Download, Edit, Trash2, User, Award, Instagram, Twitter, Scale } from 'lucide-react';
+import { Calendar, Wallet, BarChart3, Lock, Plus, Minus, Mail, Users, Megaphone, Inbox, TrendingUp, ArrowUpRight, ArrowDownLeft, Activity, Handshake, Building2, Search, Briefcase, FileText, Download, Edit, Trash2, User, Award, Instagram, Twitter, Scale, Star } from 'lucide-react';
 import { DisputesPanel } from './DisputesPanel';
 
 const parsePackages = (packagesField: any): { name: string; price: number; entails: string; }[] => {
@@ -36,6 +36,7 @@ const BrandDashboard: React.FC<{
     themeMode: 'light' | 'dark' | 'auto',
     user: any
 }> = ({ onNavigate, onLogout, isDarkMode, toggleTheme, themeMode, user }) => {
+    const paystackPublicKey = (import.meta as any).env?.VITE_PAYSTACK_PUBLIC_KEY || '';
     const [currentView, setCurrentView] = useState('overview');
     const [preSelectedDisputeEntity, setPreSelectedDisputeEntity] = useState<any>(null);
     const [searchTerm, setSearchTerm] = useState('');
@@ -104,6 +105,11 @@ const BrandDashboard: React.FC<{
     const [ratingStars, setRatingStars] = useState(5);
     const [reviewText, setReviewText] = useState('');
     const [reviewSubmitting, setReviewSubmitting] = useState(false);
+    // Platform review state
+    const [platformRating, setPlatformRating] = useState(5);
+    const [platformReviewText, setPlatformReviewText] = useState('');
+    const [platformReviewSubmitting, setPlatformReviewSubmitting] = useState(false);
+    const [myPlatformReviews, setMyPlatformReviews] = useState<any[]>([]);
     const [editingGig, setEditingGig] = useState<any>(null);
     const [topUpAmount, setTopUpAmount] = useState('5000');
     const [myEvents, setMyEvents] = useState<any[]>([]);
@@ -724,7 +730,7 @@ const BrandDashboard: React.FC<{
         try {
             const reference = `SPONS-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
             const handler = PaystackPop.setup({
-                key: 'pk_test_5ee439620d8a49acc254131ede19b9063d8fe95f',
+                key: paystackPublicKey,
                 email: brandProfile.email || user?.email || 'brand@campushub.africa',
                 amount: amount * 100, // Paystack uses kobo
                 currency: 'NGN',
@@ -910,6 +916,7 @@ const BrandDashboard: React.FC<{
         { id: 'events', label: 'Events', icon: <Calendar className="w-5 h-5" /> },
         { id: 'wallet', label: 'Wallet & Billing', icon: <Wallet className="w-5 h-5" /> },
         { id: 'analytics', label: 'Analytics', icon: <BarChart3 className="w-5 h-5" /> },
+        { id: 'ratings_reviews', label: 'Ratings & Reviews', icon: <Star className="w-5 h-5" /> },
         { id: 'disputes', label: 'Disputes & Mediation', icon: <Scale className="w-5 h-5" /> },
         { id: 'profile', label: 'Company Profile', icon: <User className="w-5 h-5" /> },
     ];
@@ -1286,7 +1293,7 @@ const BrandDashboard: React.FC<{
         const fetchPartners = async () => {
             setPartnersLoading(true);
             try {
-                const roles = ['Organization', 'Association', 'Brand'];
+                const roles = ['Organization', 'Association'];
                 const q = query(collection(db, "users"), where("role", "in", roles), limit(500));
                 const querySnapshot = await getDocs(q);
                 const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
@@ -1355,10 +1362,14 @@ const BrandDashboard: React.FC<{
 
                     const reference = `SPONS-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
                     const packageLabel = selectedSponsorshipPackage ? ` — ${selectedSponsorshipPackage.name} Package` : '';
+                    if (!paystackPublicKey) {
+                        alert('Paystack live key is not configured. Please set VITE_PAYSTACK_PUBLIC_KEY.');
+                        return;
+                    }
                     alert(`Opening Paystack to pay ₦${amount.toLocaleString()} for sponsoring "${eventBeingSponsored.name}"${packageLabel}. The association will receive funds directly.`);
 
                     const handler = PaystackPop.setup({
-                        key: 'pk_test_5ee439620d8a49acc254131ede19b9063d8fe95f',
+                        key: paystackPublicKey,
                         email: brandProfile.email || user?.email || 'brand@campushub.africa',
                         amount: amount * 100,
                         currency: 'NGN',
@@ -1427,8 +1438,8 @@ const BrandDashboard: React.FC<{
     const filteredCreators = creators.filter((creator) => {
         const matchesSearch = creator.name.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesUni = selectedUni === 'All' || creator.university === selectedUni;
-        const roleLower = (creator.role || '').toLowerCase();
-        const isProfessional = roleLower.includes('professional') || roleLower.includes('influencer');
+        const creatorType = creator.influencerType || (creator.university ? 'Student Creator' : 'Professional Creator');
+        const isProfessional = creatorType === 'Professional Creator';
         if (creatorTypeTab === 'professional') return matchesSearch && matchesUni && isProfessional;
         if (creatorTypeTab === 'student') return matchesSearch && matchesUni && !isProfessional;
         return matchesSearch && matchesUni;
@@ -1618,11 +1629,7 @@ const BrandDashboard: React.FC<{
                         ) : (
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
                                 {filteredPartners.map((partner) => {
-                                    const size = partner.membershipSize || partner.audienceSize || "1,200+ Members";
-                                    const locationStr = partner.university || partner.location || "Campus Main Gate";
                                     const type = partner.role === 'Organization' ? 'Student Organization' : 'Campus Association';
-                                    const niche = partner.nicheCategory || partner.category || partner.focus || "General";
-                                    const packageSummary = "Bronze, Silver, Gold Packages Available";
                                     return (
                                         <div key={partner.id} className="group bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between">
                                             <div>
@@ -1634,25 +1641,6 @@ const BrandDashboard: React.FC<{
                                                     <h3 className="text-xl font-black text-[var(--text-primary)] mb-1 group-hover:text-spark-red transition-colors">{partner.name}</h3>
                                                     <p className="text-[10px] font-black text-spark-red uppercase tracking-widest mb-4">{type}</p>
                                                     
-                                                    <div className="space-y-2 mb-4 text-xs font-semibold text-[var(--text-secondary)]">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="font-bold text-spark-red">📍 Location:</span>
-                                                            <span>{locationStr}</span>
-                                                        </div>
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="font-bold text-spark-red">👥 Size:</span>
-                                                            <span>{size}</span>
-                                                        </div>
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="font-bold text-spark-red">🎯 Niche:</span>
-                                                            <span className="text-[11px] font-black text-[var(--text-primary)]">{niche}</span>
-                                                        </div>
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="font-bold text-spark-red">📦 Packages:</span>
-                                                            <span className="text-[11px] font-black text-green-600">{packageSummary}</span>
-                                                        </div>
-                                                    </div>
-
                                                     <p className="text-sm text-[var(--text-secondary)] line-clamp-2 mb-4 min-h-[40px] font-medium leading-relaxed">
                                                         {partner.bio || `Connect with ${partner.name} for sponsorship and strategic collaborations.`}
                                                     </p>
@@ -1738,17 +1726,17 @@ const BrandDashboard: React.FC<{
                                         in_campaign: { label: 'Active', cls: 'bg-spark-red/10 text-spark-red border border-spark-red/20' },
                                     }[status];
                                     const rating = creator.rating || null;
-                                    const category = creator.nicheCategory || creator.category || "Social Media Influencer";
+                                    const category = creator.niche || creator.nicheCategory || creator.category || "Creator";
                                     const location = creator.location || creator.university || "Main Campus";
-                                    const roleLower = (creator.role || '').toLowerCase();
-                                    const isProfessional = roleLower.includes('professional') || roleLower.includes('influencer');
+                                    const creatorType = creator.influencerType || (creator.university ? 'Student Creator' : 'Professional Creator');
+                                    const isProfessional = creatorType === 'Professional Creator';
 
                                     return (
                                         <div key={creator.id} className={`group bg-[var(--bg-primary)] rounded-[2rem] border overflow-hidden shadow-sm hover:shadow-xl transition-all p-6 flex flex-col justify-between ${status === 'in_campaign' ? 'border-spark-red/30 ring-1 ring-spark-red/10' : 'border-[var(--border-color)]'}`}>
                                             <div>
                                                 <div className="flex justify-between items-center mb-4">
                                                     <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${statusConfig.cls}`}>{statusConfig.label}</span>
-                                                    <span className="px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest bg-spark-red/5 text-spark-red">
+                                                    <span className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest ${isProfessional ? 'bg-blue-500/10 text-blue-600' : 'bg-spark-red/5 text-spark-red'}`}>
                                                         {isProfessional ? 'Professional' : 'Student'}
                                                     </span>
                                                 </div>
@@ -1756,8 +1744,10 @@ const BrandDashboard: React.FC<{
                                                     {creator.imageUrl ? <img src={creator.imageUrl} alt={creator.name || 'Creator Avatar'} className="w-full h-full object-cover" /> : (creator.name || '?').charAt(0)}
                                                 </div>
                                                 <h3 className="font-black text-lg line-clamp-1 text-[var(--text-primary)] text-center">{creator.name}</h3>
-                                                <p className="text-[10px] text-spark-red font-black uppercase tracking-widest mb-3 text-center">{category}</p>
+                                                <p className="text-[10px] text-spark-red font-black uppercase tracking-widest mb-2 text-center">{category}</p>
                                                 
+                                                {creator.bio && <p className="text-xs text-[var(--text-secondary)] line-clamp-2 mb-3 leading-relaxed text-center">{creator.bio}</p>}
+
                                                 {rating && (
                                                     <div className="flex items-center gap-1 text-xs text-amber-500 font-bold justify-center mb-3">
                                                         <span>★</span>
@@ -1790,6 +1780,7 @@ const BrandDashboard: React.FC<{
                                                     )}
                                                 </div>
                                             </div>
+
                                             
                                             <div className="flex gap-2">
                                                 <button
@@ -2047,7 +2038,7 @@ const BrandDashboard: React.FC<{
                                                 console.log('[Paystack] Initializing with ref:', reference);
                                                 
                                                 const handler = PaystackPop.setup({
-                                                    key: 'pk_test_5ee439620d8a49acc254131ede19b9063d8fe95f', 
+                                                    key: paystackPublicKey,
                                                     email: brandProfile.email || user?.email || 'brand@campushub.africa',
                                                     amount: amount * 100,
                                                     currency: 'NGN',
@@ -2884,7 +2875,7 @@ const BrandDashboard: React.FC<{
 
                                                     const listingRef = `LISTING-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
                                                     const handler = PaystackPop.setup({
-                                                        key: 'pk_test_5ee439620d8a49acc254131ede19b9063d8fe95f',
+                                                        key: paystackPublicKey,
                                                         email: resolvedBrandEmail || 'brand@campushub.africa',
                                                         amount: LISTING_FEE * 100, // ₦20,000 in kobo
                                                         currency: 'NGN',
@@ -3103,6 +3094,108 @@ const BrandDashboard: React.FC<{
                         </div>
                     </div>
                 );
+            case 'ratings_reviews': {
+                const fetchBrandPlatformReviews = async () => {
+                    if (!brandProfile?.id && !user?.uid && !user?.id) return;
+                    try {
+                        const uid = brandProfile?.id || user?.uid || user?.id;
+                        const q = query(collection(db, 'platformReviews'), where('userId', '==', uid));
+                        const snap = await getDocs(q);
+                        setMyPlatformReviews(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                    } catch (err) {
+                        console.warn('[BrandDashboard] fetchPlatformReviews error:', err);
+                    }
+                };
+                if (myPlatformReviews.length === 0) fetchBrandPlatformReviews();
+                return (
+                    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                        <div>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Ratings & Reviews</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">Review the platform and manage creator ratings and feedback.</p>
+                        </div>
+                        {/* Platform Review Form */}
+                        <div className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm space-y-6">
+                            <div>
+                                <h3 className="text-xl font-black text-[var(--text-primary)]">Review This Platform</h3>
+                                <p className="text-xs text-[var(--text-secondary)] mt-1 font-medium">Share your experience with ABC-Rally. Your feedback helps us grow.</p>
+                            </div>
+                            <form
+                                onSubmit={async (e) => {
+                                    e.preventDefault();
+                                    if (!platformReviewText.trim()) return;
+                                    setPlatformReviewSubmitting(true);
+                                    try {
+                                        const uid = brandProfile?.id || user?.uid || user?.id;
+                                        const reviewDoc = {
+                                            userId: uid,
+                                            userName: brandProfile?.name || brandProfile?.brandName || 'Brand',
+                                            userRole: 'Brand',
+                                            stars: platformRating,
+                                            reviewText: platformReviewText.trim(),
+                                            createdAt: new Date().toISOString(),
+                                        };
+                                        await addDoc(collection(db, 'platformReviews'), reviewDoc);
+                                        setMyPlatformReviews(prev => [reviewDoc, ...prev]);
+                                        setPlatformReviewText('');
+                                        setPlatformRating(5);
+                                        alert('Thank you for your review! 🎉');
+                                    } catch (err: any) {
+                                        alert('Failed to submit review: ' + err.message);
+                                    } finally {
+                                        setPlatformReviewSubmitting(false);
+                                    }
+                                }}
+                                className="space-y-4"
+                            >
+                                <div>
+                                    <p className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Your Rating</p>
+                                    <div className="flex gap-1">
+                                        {[1, 2, 3, 4, 5].map(star => (
+                                            <button
+                                                key={star}
+                                                type="button"
+                                                onClick={() => setPlatformRating(star)}
+                                                className="transition-transform hover:scale-110"
+                                            >
+                                                <Star className={`w-7 h-7 ${star <= platformRating ? 'fill-yellow-400 text-yellow-400' : 'text-[var(--border-color)]'}`} />
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <textarea
+                                    required
+                                    value={platformReviewText}
+                                    onChange={e => setPlatformReviewText(e.target.value)}
+                                    placeholder="Tell us what you love or what we can improve..."
+                                    rows={3}
+                                    className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl text-sm font-medium text-[var(--text-primary)] outline-none resize-none"
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={platformReviewSubmitting}
+                                    className="px-8 py-3.5 bg-spark-red text-white rounded-xl font-black text-xs uppercase tracking-widest transition-all hover:bg-red-700 disabled:opacity-50"
+                                >
+                                    {platformReviewSubmitting ? 'Submitting...' : 'Submit Review'}
+                                </button>
+                            </form>
+                            {myPlatformReviews.length > 0 && (
+                                <div className="space-y-3 pt-2 border-t border-[var(--border-color)]">
+                                    <p className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest">Your Reviews</p>
+                                    {myPlatformReviews.map((r, idx) => (
+                                        <div key={idx} className="p-4 bg-[var(--bg-secondary)] rounded-xl border border-[var(--border-color)] space-y-1">
+                                            <div className="flex gap-0.5">
+                                                {Array.from({ length: r.stars }).map((_, i) => <Star key={i} className="w-4 h-4 fill-yellow-400 text-yellow-400" />)}
+                                            </div>
+                                            <p className="text-sm text-[var(--text-primary)] italic">"{r.reviewText}"</p>
+                                            <p className="text-[10px] text-[var(--text-secondary)]">{new Date(r.createdAt).toLocaleDateString()}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            }
             case 'profile':
                 return (
                     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
@@ -3140,6 +3233,7 @@ const BrandDashboard: React.FC<{
             userSub={brandProfile?.industry || "Market Leader"}
             userId={user?.id || user?.uid}
             userImage={brandProfile?.imageUrl}
+            userProfile={brandProfile}
             isDarkMode={isDarkMode}
             toggleTheme={toggleTheme}
             themeMode={themeMode}

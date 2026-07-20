@@ -3,7 +3,31 @@ import { SparkIcon, APP_ABBREV } from '../constants';
 import { UserRole } from '../types';
 import { apiClient, auth, addDoc } from '../firebase';
 import NotificationPanel from './NotificationPanel';
-import { ShieldCheck, Lock, EyeOff, CheckCircle2, Scale, Building2, Handshake, AlertTriangle, ShieldAlert, MessageSquare, HelpCircle, Send, Phone, Mail } from 'lucide-react';
+import { ShieldCheck, Lock, EyeOff, CheckCircle2, Scale, Building2, Handshake, AlertTriangle, ShieldAlert, MessageSquare, HelpCircle, Send, Phone, Mail, UserCircle, X as XIcon, ChevronRight } from 'lucide-react';
+
+// Profile completion calculator — returns { pct, missing } based on role
+const getProfileCompletion = (user: any, role: UserRole): { pct: number; missing: string[] } => {
+    if (!user) return { pct: 0, missing: [] };
+    const check = (val: any) => !!val && String(val).trim() !== '';
+    const sharedFields: [string, string][] = [
+        ['name', 'Full Name'],
+        ['email', 'Email Address'],
+        ['phoneNumber', 'Phone Number'],
+        ['location', 'Location'],
+        ['bio', 'Bio / Description'],
+        ['imageUrl', 'Profile Photo'],
+    ];
+    const roleFields: Record<string, [string, string][]> = {
+        Creator: [['influencerType', 'Creator Type'], ['niche', 'Niche'], ['instagram', 'Instagram']],
+        Brand: [['industry', 'Industry'], ['companySize', 'Company Size'], ['website', 'Website']],
+        Organization: [['clubType', 'Association Type'], ['university', 'University'], ['website', 'Website']],
+        Admin: [],
+    };
+    const allFields = [...sharedFields, ...(roleFields[role] || [])];
+    const missing = allFields.filter(([field]) => !check(user[field])).map(([, label]) => label);
+    const pct = Math.round(((allFields.length - missing.length) / allFields.length) * 100);
+    return { pct, missing };
+};
 
 interface SidebarItem {
     id: string;
@@ -26,6 +50,7 @@ interface DashboardShellProps {
     isDarkMode: boolean;
     toggleTheme: () => void;
     themeMode?: 'light' | 'dark' | 'auto';
+    userProfile?: any; // Full user object for profile completion tracking
 }
 
 const getTrustPopupContent = (role: UserRole) => {
@@ -144,7 +169,8 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
     walletStrip,
     isDarkMode,
     toggleTheme,
-    themeMode
+    themeMode,
+    userProfile
 }) => {
     const renderThemeIcon = () => {
         const activeMode = themeMode || (isDarkMode ? 'dark' : 'light');
@@ -241,6 +267,12 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
     const unreadCount = notifications.filter(n => !n.read).length;
 
     const [showTrustPopup, setShowTrustPopup] = useState(false);
+    const [showProfilePrompt, setShowProfilePrompt] = useState(false);
+    const [bannerDismissed, setBannerDismissed] = useState(false);
+
+    // Compute profile completion from passed userProfile
+    const { pct: profilePct, missing: profileMissing } = getProfileCompletion(userProfile, role);
+    const isProfileIncomplete = profilePct < 100;
 
     useEffect(() => {
         const keyVal = userId || userName;
@@ -252,6 +284,27 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
             }
         }
     }, [role, userId, userName]);
+
+    // First-login profile completion prompt (fires 1.5s after trust popup so they don't stack)
+    useEffect(() => {
+        if (!userId || role === 'Admin') return;
+        const promptKey = `seen_profile_prompt_${userId}`;
+        const seen = localStorage.getItem(promptKey);
+        if (!seen && isProfileIncomplete) {
+            setTimeout(() => setShowProfilePrompt(true), 1500);
+        }
+    }, [userId, role, isProfileIncomplete]);
+
+    const handleDismissProfilePrompt = () => {
+        if (userId) localStorage.setItem(`seen_profile_prompt_${userId}`, 'true');
+        setShowProfilePrompt(false);
+    };
+
+    const handleGoToProfile = () => {
+        if (userId) localStorage.setItem(`seen_profile_prompt_${userId}`, 'true');
+        setShowProfilePrompt(false);
+        onViewChange('profile');
+    };
 
     const handleDismissPopup = () => {
         const keyVal = userId || userName;
@@ -462,7 +515,118 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
 
                 {/* Content */}
                 <div className="flex-1 overflow-auto p-6 lg:p-8 bg-[var(--bg-primary)] relative">
+
+                    {/* ── Profile Completion Banner ── */}
+                    {isProfileIncomplete && !bannerDismissed && role !== 'Admin' && (
+                        <div className={`mb-6 rounded-2xl overflow-hidden border animate-in slide-in-from-top-2 duration-500 ${profilePct < 50 ? 'border-spark-red/40 bg-gradient-to-r from-spark-red/10 to-orange-500/5' : 'border-amber-400/40 bg-gradient-to-r from-amber-400/10 to-yellow-400/5'}`}>
+                            <div className="px-5 py-3.5 flex flex-wrap items-center gap-4">
+                                <div className="flex items-center gap-3 flex-1 min-w-0">
+                                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${profilePct < 50 ? 'bg-spark-red/15 text-spark-red' : 'bg-amber-400/15 text-amber-600'}`}>
+                                        <UserCircle className="w-5 h-5" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-xs font-black text-[var(--text-primary)] leading-none">
+                                            Profile is <span className={profilePct < 50 ? 'text-spark-red' : 'text-amber-600'}>{profilePct}% complete</span> — complete it to unlock full platform visibility
+                                        </p>
+                                        {profileMissing.length > 0 && (
+                                            <p className="text-[10px] text-[var(--text-secondary)] font-medium mt-0.5 truncate">
+                                                Missing: {profileMissing.slice(0, 3).join(', ')}{profileMissing.length > 3 ? ` +${profileMissing.length - 3} more` : ''}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <div className="w-32 h-2 bg-[var(--border-color)] rounded-full overflow-hidden hidden sm:block">
+                                        <div
+                                            className={`h-full rounded-full transition-all duration-700 ${profilePct < 50 ? 'bg-spark-red' : profilePct < 80 ? 'bg-amber-400' : 'bg-green-500'}`}
+                                            style={{ width: `${profilePct}%` }}
+                                        />
+                                    </div>
+                                    <button
+                                        onClick={() => onViewChange('profile')}
+                                        className={`px-4 py-2 text-white text-[10px] font-black uppercase tracking-widest rounded-xl flex items-center gap-1.5 transition-all hover:opacity-90 active:scale-95 flex-shrink-0 ${profilePct < 50 ? 'bg-spark-red shadow-sm shadow-spark-red/30' : 'bg-amber-500 shadow-sm shadow-amber-400/30'}`}
+                                    >
+                                        Update Profile <ChevronRight className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                        onClick={() => setBannerDismissed(true)}
+                                        className="w-7 h-7 rounded-lg bg-[var(--bg-secondary)] flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex-shrink-0"
+                                        title="Dismiss for this session"
+                                    >
+                                        <XIcon className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {children}
+
+                    {/* ── First-Login Profile Completion Prompt ── */}
+                    {showProfilePrompt && (
+                        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-[990] p-4 animate-in fade-in duration-300">
+                            <div className="relative w-full max-w-md bg-[var(--bg-primary)] border-2 border-[var(--border-color)] rounded-[2.5rem] shadow-2xl p-8 flex flex-col gap-6 overflow-hidden animate-in zoom-in-95 duration-300">
+                                {/* Decorative glow */}
+                                <div className="absolute -top-10 -left-10 w-40 h-40 bg-gradient-to-br from-spark-red/20 via-transparent to-transparent rounded-full blur-2xl -z-10" />
+                                {/* Header */}
+                                <div className="flex items-center gap-4">
+                                    <div className="w-14 h-14 rounded-2xl bg-spark-red/10 flex items-center justify-center flex-shrink-0 border-2 border-spark-red/20">
+                                        <UserCircle className="w-8 h-8 text-spark-red" />
+                                    </div>
+                                    <div>
+                                        <span className="text-[10px] font-black tracking-widest text-[var(--text-secondary)] uppercase">Welcome to ABC-Rally!</span>
+                                        <h3 className="text-xl font-black tracking-tight text-[var(--text-primary)] mt-0.5">Complete Your Profile</h3>
+                                    </div>
+                                </div>
+                                <p className="text-[var(--text-secondary)] text-sm font-medium leading-relaxed">
+                                    Hey <strong className="text-[var(--text-primary)]">{userName}</strong>! 👋 Your profile is only <span className="font-black text-spark-red">{profilePct}%</span> complete. A complete profile boosts your visibility and makes you more attractive to {role === 'Creator' ? 'brands and associations' : 'creators'}.
+                                </p>
+                                {/* Progress ring visual */}
+                                <div className="flex items-center gap-4 py-2 px-4 bg-[var(--bg-secondary)] rounded-2xl border border-[var(--border-color)]">
+                                    <div className="relative w-16 h-16 flex-shrink-0">
+                                        <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
+                                            <circle cx="18" cy="18" r="15.5" fill="none" stroke="currentColor" strokeWidth="2" className="text-[var(--border-color)]" />
+                                            <circle
+                                                cx="18" cy="18" r="15.5" fill="none" strokeWidth="2.5"
+                                                stroke={profilePct < 50 ? '#ef4444' : profilePct < 80 ? '#f59e0b' : '#22c55e'}
+                                                strokeDasharray={`${profilePct} ${100 - profilePct}`}
+                                                strokeLinecap="round"
+                                            />
+                                        </svg>
+                                        <span className="absolute inset-0 flex items-center justify-center text-[11px] font-black text-[var(--text-primary)]">{profilePct}%</span>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs font-black text-[var(--text-primary)] mb-1">Missing fields:</p>
+                                        <ul className="text-[11px] text-[var(--text-secondary)] font-medium space-y-0.5">
+                                            {profileMissing.slice(0, 4).map((f, i) => (
+                                                <li key={i} className="flex items-center gap-1.5">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-spark-red/60 flex-shrink-0" />
+                                                    {f}
+                                                </li>
+                                            ))}
+                                            {profileMissing.length > 4 && <li className="text-[var(--text-secondary)] opacity-60">+{profileMissing.length - 4} more</li>}
+                                        </ul>
+                                    </div>
+                                </div>
+                                {/* Actions */}
+                                <div className="flex flex-col gap-3">
+                                    <button
+                                        onClick={handleGoToProfile}
+                                        className="w-full py-4 bg-spark-red text-white font-black text-sm rounded-2xl hover:bg-red-700 transition-all active:scale-95 shadow-lg shadow-spark-red/20 flex items-center justify-center gap-2"
+                                    >
+                                        <UserCircle className="w-5 h-5" />
+                                        Update My Profile Now
+                                    </button>
+                                    <button
+                                        onClick={handleDismissProfilePrompt}
+                                        className="w-full py-3 text-[var(--text-secondary)] font-bold text-xs uppercase tracking-widest rounded-2xl hover:bg-[var(--bg-secondary)] transition-all"
+                                    >
+                                        I'll do it later
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Floating Customer Support FAB */}
                     <button
@@ -501,7 +665,7 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
                                     {/* Contact Channels */}
                                     <div className="grid grid-cols-2 gap-4">
                                         <a
-                                            href="https://wa.me/2348123456789"
+                                            href="https://wa.me/2349060320863"
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="p-4 bg-green-500/5 hover:bg-green-500/10 border border-green-500/20 hover:border-green-500/40 rounded-2xl flex flex-col items-center text-center transition-all group"
@@ -513,7 +677,7 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
                                             <span className="text-[9px] text-[var(--text-secondary)] mt-0.5 font-bold">Average response: 5 mins</span>
                                         </a>
                                         <a
-                                            href="mailto:support@campushub.africa"
+                                            href="mailto:hello@abc-rally.com"
                                             className="p-4 bg-blue-500/5 hover:bg-blue-500/10 border border-blue-500/20 hover:border-blue-500/40 rounded-2xl flex flex-col items-center text-center transition-all group"
                                         >
                                             <div className="w-10 h-10 bg-blue-500 text-white rounded-xl flex items-center justify-center mb-2 shadow-lg shadow-blue-500/10 group-hover:scale-110 transition-transform">
@@ -522,7 +686,7 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
                                             <span className="text-xs font-black text-[var(--text-primary)] uppercase tracking-wider">Email Support</span>
                                             <span className="text-[9px] text-[var(--text-secondary)] mt-0.5 font-bold">Average response: 2 hrs</span>
                                         </a>
-                                    </div>
+                                     </div>
 
                                     {/* FAQs */}
                                     <div>

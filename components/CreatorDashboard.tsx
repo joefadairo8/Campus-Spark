@@ -93,7 +93,7 @@ const CreatorDashboard: React.FC<{
 
     // Portfolio states
     const [showPortfolioModal, setShowPortfolioModal] = useState(false);
-    const [portfolioForm, setPortfolioForm] = useState({ title: '', description: '', fileType: 'image' as any });
+    const [portfolioForm, setPortfolioForm] = useState({ title: '', description: '', fileType: 'image' as any, linkUrl: '' });
     const [portfolioFile, setPortfolioFile] = useState<File | null>(null);
     const [portfolioSubmitting, setPortfolioSubmitting] = useState(false);
 
@@ -108,6 +108,11 @@ const CreatorDashboard: React.FC<{
     const [ratingRequestCampaignId, setRatingRequestCampaignId] = useState('');
     const [ratingRequestSubmitting, setRatingRequestSubmitting] = useState(false);
     const [testimonials, setTestimonials] = useState<any[]>([]);
+    // Platform review state
+    const [platformRating, setPlatformRating] = useState(5);
+    const [platformReviewText, setPlatformReviewText] = useState('');
+    const [platformReviewSubmitting, setPlatformReviewSubmitting] = useState(false);
+    const [myPlatformReviews, setMyPlatformReviews] = useState<any[]>([]);
     const [splitTotal, setSplitTotal] = useState('');
     const [splitShares, setSplitShares] = useState<Array<{ name: string; percentage: number }>>([
         { name: 'Me (Lead)', percentage: 60 },
@@ -213,6 +218,18 @@ const CreatorDashboard: React.FC<{
         }
     };
 
+    const fetchPlatformReviews = async () => {
+        if (!userProfile?.id && !user?.id) return;
+        try {
+            const uid = userProfile?.id || user?.id;
+            const q = query(collection(db, 'platformReviews'), where('userId', '==', uid));
+            const snap = await getDocs(q);
+            setMyPlatformReviews(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        } catch (err) {
+            console.warn('[CreatorDashboard] Error fetching platform reviews:', err);
+        }
+    };
+
     useEffect(() => {
         if (user) {
             fetchUserData();
@@ -225,6 +242,7 @@ const CreatorDashboard: React.FC<{
             fetchMyApplications();
             fetchMyCampaigns();
             fetchTestimonials();
+            fetchPlatformReviews();
         }
     }, [userProfile?.id, currentSection, activeTab]);
 
@@ -625,28 +643,40 @@ const CreatorDashboard: React.FC<{
 
     const handlePortfolioSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!userProfile?.id || !portfolioFile) {
+        const isLinkType = portfolioForm.fileType === 'video' || portfolioForm.fileType === 'link';
+
+        if (!isLinkType && !portfolioFile) {
             alert('Please select a file to upload.');
             return;
         }
+        if (isLinkType && !portfolioForm.linkUrl.trim()) {
+            alert('Please enter a valid URL.');
+            return;
+        }
+
         setPortfolioSubmitting(true);
         try {
-            const formData = new FormData();
-            formData.append('file', portfolioFile);
-            formData.append('upload_preset', 'abc-rally');
+            let fileUrl = portfolioForm.linkUrl || '';
 
-            const uploadRes = await fetch('https://api.cloudinary.com/v1_1/dk9tq3oop/auto/upload', {
-                method: 'POST',
-                body: formData
-            });
+            if (!isLinkType && portfolioFile) {
+                const formData = new FormData();
+                formData.append('file', portfolioFile);
+                formData.append('upload_preset', 'abc-rally');
 
-            if (!uploadRes.ok) throw new Error('Upload failed');
-            const uploadData = await uploadRes.json();
+                const uploadRes = await fetch('https://api.cloudinary.com/v1_1/dk9tq3oop/auto/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!uploadRes.ok) throw new Error('Upload failed');
+                const uploadData = await uploadRes.json();
+                fileUrl = uploadData.secure_url;
+            }
 
             const newItem = {
                 id: Math.random().toString(36).substr(2, 9),
                 ...portfolioForm,
-                fileUrl: uploadData.secure_url,
+                fileUrl,
                 createdAt: new Date().toISOString()
             };
 
@@ -655,7 +685,7 @@ const CreatorDashboard: React.FC<{
             
             setUserProfile({ ...userProfile, portfolio: updatedPortfolio });
             setShowPortfolioModal(false);
-            setPortfolioForm({ title: '', description: '', fileType: 'image' });
+            setPortfolioForm({ title: '', description: '', fileType: 'image', linkUrl: '' });
             setPortfolioFile(null);
             alert('Portfolio item added successfully!');
         } catch (e) {
@@ -665,6 +695,7 @@ const CreatorDashboard: React.FC<{
             setPortfolioSubmitting(false);
         }
     };
+
 
     const handleDeletePortfolioItem = async (itemId: string) => {
         if (!window.confirm('Delete this portfolio item?')) return;
@@ -1144,14 +1175,29 @@ const CreatorDashboard: React.FC<{
                                 <div className="h-48 bg-[var(--bg-secondary)] relative overflow-hidden group">
                                     {item.fileType === 'image' ? (
                                         <img src={item.fileUrl} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt={item.title} />
+                                    ) : item.fileType === 'video' ? (
+                                        <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-red-950 to-spark-black gap-2">
+                                            <div className="w-14 h-14 bg-white/10 rounded-full flex items-center justify-center border-2 border-white/20">
+                                                <svg className="w-6 h-6 text-white ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                            </div>
+                                            <span className="text-white/60 text-[10px] font-black uppercase tracking-widest">Video</span>
+                                        </div>
+                                    ) : item.fileType === 'link' ? (
+                                        <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-zinc-900 to-spark-black gap-2">
+                                            <div className="w-14 h-14 bg-white/10 rounded-full flex items-center justify-center border-2 border-white/20">
+                                                <ExternalLink className="w-6 h-6 text-white" />
+                                            </div>
+                                            <span className="text-white/60 text-[10px] font-black uppercase tracking-widest">External Link</span>
+                                        </div>
                                     ) : (
-                                        <div className="w-full h-full flex items-center justify-center bg-spark-black">
-                                            <FileText className="w-16 h-16 text-white/20" />
+                                        <div className="w-full h-full flex flex-col items-center justify-center bg-spark-black gap-2">
+                                            <FileText className="w-12 h-12 text-white/20" />
+                                            <span className="text-white/40 text-[10px] font-black uppercase tracking-widest">Document</span>
                                         </div>
                                     )}
                                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-4 backdrop-blur-sm">
                                         <a href={item.fileUrl} target="_blank" rel="noopener noreferrer" className="p-3 bg-white text-spark-black rounded-xl hover:bg-spark-red hover:text-white transition-all transform hover:scale-110">
-                                            <Download className="w-6 h-6" />
+                                            {(item.fileType === 'video' || item.fileType === 'link') ? <ExternalLink className="w-6 h-6" /> : <Download className="w-6 h-6" />}
                                         </a>
                                         <button onClick={() => handleDeletePortfolioItem(item.id)} className="p-3 bg-white text-spark-black rounded-xl hover:bg-spark-red hover:text-white transition-all transform hover:scale-110">
                                             <Trash2 className="w-6 h-6" />
@@ -1221,7 +1267,7 @@ const CreatorDashboard: React.FC<{
                                             <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2 ml-2">Work Type</label>
                                             <select 
                                                 value={portfolioForm.fileType}
-                                                onChange={e => setPortfolioForm({...portfolioForm, fileType: e.target.value as any})}
+                                                onChange={e => setPortfolioForm({...portfolioForm, fileType: e.target.value as any, linkUrl: ''})}
                                                 className="w-full px-6 py-4 bg-spark-red/5 border border-[var(--border-color)] rounded-2xl outline-none font-bold appearance-none cursor-pointer"
                                             >
                                                 <option value="image">Image / Graphic</option>
@@ -1231,22 +1277,40 @@ const CreatorDashboard: React.FC<{
                                             </select>
                                         </div>
                                         <div>
-                                            <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2 ml-2">Evidence File</label>
-                                            <input 
-                                                type="file" 
-                                                onChange={e => setPortfolioFile(e.target.files?.[0] || null)}
-                                                className="hidden" 
-                                                id="portfolio-file"
-                                                accept={portfolioForm.fileType === 'image' ? 'image/*' : portfolioForm.fileType === 'document' ? '.pdf' : '*'}
-                                            />
-                                            <label 
-                                                htmlFor="portfolio-file"
-                                                className="w-full px-6 py-4 bg-spark-black text-white rounded-2xl font-black text-center cursor-pointer hover:bg-spark-red transition-all flex items-center justify-center gap-2 text-xs uppercase tracking-widest"
-                                            >
-                                                {portfolioFile ? 'File Selected' : 'Upload File'}
-                                            </label>
+                                            {(portfolioForm.fileType === 'video' || portfolioForm.fileType === 'link') ? (
+                                                <div>
+                                                    <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2 ml-2">
+                                                        {portfolioForm.fileType === 'video' ? 'Video URL' : 'External Link'}
+                                                    </label>
+                                                    <input
+                                                        type="url"
+                                                        value={portfolioForm.linkUrl}
+                                                        onChange={e => setPortfolioForm({...portfolioForm, linkUrl: e.target.value})}
+                                                        placeholder={portfolioForm.fileType === 'video' ? 'https://youtube.com/...' : 'https://...'}
+                                                        className="w-full px-4 py-4 bg-spark-red/5 border border-[var(--border-color)] rounded-2xl outline-none font-bold focus:ring-4 focus:ring-spark-red/10 transition-all text-sm"
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <div>
+                                                    <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2 ml-2">Evidence File</label>
+                                                    <input 
+                                                        type="file" 
+                                                        onChange={e => setPortfolioFile(e.target.files?.[0] || null)}
+                                                        className="hidden" 
+                                                        id="portfolio-file"
+                                                        accept={portfolioForm.fileType === 'image' ? 'image/*' : '.pdf'}
+                                                    />
+                                                    <label 
+                                                        htmlFor="portfolio-file"
+                                                        className="w-full px-6 py-4 bg-spark-black text-white rounded-2xl font-black text-center cursor-pointer hover:bg-spark-red transition-all flex items-center justify-center gap-2 text-xs uppercase tracking-widest"
+                                                    >
+                                                        {portfolioFile ? 'File Selected' : 'Upload File'}
+                                                    </label>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
+
 
                                     <button 
                                         type="submit"
@@ -1848,7 +1912,16 @@ const CreatorDashboard: React.FC<{
                                                 <p className="text-xs text-green-800 dark:text-green-400 font-medium">This gig is complete and your payment has been processed.</p>
                                             </div>
                                             <button
-                                                onClick={() => setCurrentSection('ratings_reviews')}
+                                                onClick={() => {
+                                                    // Find the matching campaign allocation by campaignId or gigId
+                                                    const matchedAllocation = myCampaigns.find(
+                                                        c => c.campaignId === app.campaignId || c.campaignId === app.gigId || c.id === app.campaignId
+                                                    );
+                                                    if (matchedAllocation) {
+                                                        setRatingRequestCampaignId(matchedAllocation.id || matchedAllocation.campaignId);
+                                                    }
+                                                    setCurrentSection('ratings_reviews');
+                                                }}
                                                 className="w-full py-3.5 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all text-xs uppercase tracking-widest flex items-center justify-center gap-2"
                                             >
                                                 <Star className="w-4 h-4" />
@@ -2437,12 +2510,14 @@ const CreatorDashboard: React.FC<{
                 {collabSubTab === 'network' && (
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                         {data.map(member => {
-                            const isProfessional = (member.role || '').toLowerCase().includes('professional') || (member.role || '').toLowerCase().includes('influencer');
+                            const creatorType = member.influencerType || (member.university ? 'Student Creator' : 'Professional Creator');
+                            const isProfessional = creatorType === 'Professional Creator';
+                            const niche = member.niche || member.nicheCategory || member.category || null;
                             return (
                                 <div key={member.id} className="bg-[var(--bg-primary)] p-6 rounded-[2rem] border border-[var(--border-color)] shadow-sm hover:shadow-xl hover:border-spark-red/20 transition-all flex flex-col justify-between text-left group">
                                     <div>
                                         <div className="flex justify-between items-center mb-4">
-                                            <span className="px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest bg-spark-red/5 text-spark-red">
+                                            <span className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest ${isProfessional ? 'bg-blue-500/10 text-blue-600' : 'bg-spark-red/5 text-spark-red'}`}>
                                                 {isProfessional ? 'Professional' : 'Student'}
                                             </span>
                                             {member.rating && (
@@ -2452,18 +2527,15 @@ const CreatorDashboard: React.FC<{
                                                 </div>
                                             )}
                                         </div>
-                                        <div className="flex items-start gap-4 mb-4">
-                                            <div className="w-14 h-14 rounded-2xl bg-spark-red/10 flex items-center justify-center text-spark-red font-black text-xl flex-shrink-0 overflow-hidden">
-                                                {member.imageUrl ? <img src={member.imageUrl} alt={member.name} className="w-full h-full object-cover rounded-2xl" /> : member.name?.charAt(0) || '?'}
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <h4 className="font-black text-[var(--text-primary)] truncate">{member.name}</h4>
-                                                <p className="text-xs font-bold text-spark-red uppercase tracking-widest truncate">📍 {member.university || member.location || 'Campus'}</p>
-                                            </div>
+                                        <div className="w-16 h-16 rounded-2xl bg-spark-red/10 flex items-center justify-center text-spark-red font-black text-2xl mx-auto mb-4 overflow-hidden shadow-md">
+                                            {member.imageUrl ? <img src={member.imageUrl} alt={member.name} className="w-full h-full object-cover rounded-2xl" /> : member.name?.charAt(0) || '?'}
                                         </div>
+                                        <h4 className="font-black text-[var(--text-primary)] text-center line-clamp-1 mb-1">{member.name}</h4>
+                                        {niche && <p className="text-[10px] text-spark-red font-black uppercase tracking-widest text-center mb-2">{niche}</p>}
+                                        <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-widest text-center mb-4">📍 {member.university || member.location || 'Campus'}</p>
 
                                         {/* Social Handles */}
-                                        <div className="flex gap-2 mb-4 justify-start">
+                                        <div className="flex gap-2 mb-4 justify-center">
                                             {member.instagram && (
                                                 <a href={member.instagram.startsWith('http') ? member.instagram : `https://instagram.com/${member.instagram.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-[var(--bg-secondary)] hover:bg-spark-red/10 text-[var(--text-secondary)] hover:text-spark-red rounded-xl transition-all">
                                                     <Instagram className="w-4 h-4" />
@@ -2481,7 +2553,7 @@ const CreatorDashboard: React.FC<{
                                             )}
                                         </div>
 
-                                        {member.bio && <p className="text-xs text-[var(--text-secondary)] line-clamp-2 mb-4 leading-relaxed">{member.bio}</p>}
+                                        {member.bio && <p className="text-xs text-[var(--text-secondary)] line-clamp-2 mb-4 leading-relaxed text-center">{member.bio}</p>}
                                     </div>
                                     <button
                                         onClick={() => {
@@ -2498,6 +2570,7 @@ const CreatorDashboard: React.FC<{
                         })}
                     </div>
                 )}
+
 
                 {collabSubTab === 'splits' && (
                     <div className="bg-[var(--bg-primary)] p-8 sm:p-10 rounded-[3rem] border border-[var(--border-color)] shadow-sm max-w-2xl mx-auto space-y-8">
@@ -2700,11 +2773,94 @@ const CreatorDashboard: React.FC<{
                                 </button>
                             </form>
                         </div>
+
+                        {/* Platform Review Section */}
+                        <div className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm space-y-6">
+                            <div>
+                                <h3 className="text-xl font-black text-[var(--text-primary)]">Review This Platform</h3>
+                                <p className="text-xs text-[var(--text-secondary)] mt-1 font-medium">Share your experience with ABC-Rally. Your feedback helps us improve.</p>
+                            </div>
+                            <form
+                                onSubmit={async (e) => {
+                                    e.preventDefault();
+                                    if (!platformReviewText.trim()) return;
+                                    setPlatformReviewSubmitting(true);
+                                    try {
+                                        const reviewDoc = {
+                                            userId: userProfile?.id || user?.id,
+                                            userName: userProfile?.name || 'Anonymous',
+                                            userRole: 'Creator',
+                                            stars: platformRating,
+                                            reviewText: platformReviewText.trim(),
+                                            createdAt: new Date().toISOString(),
+                                        };
+                                        await addDoc(collection(db, 'platformReviews'), reviewDoc);
+                                        setMyPlatformReviews(prev => [reviewDoc, ...prev]);
+                                        setPlatformReviewText('');
+                                        setPlatformRating(5);
+                                        alert('Thank you for your review! 🎉');
+                                    } catch (err: any) {
+                                        alert('Failed to submit review: ' + err.message);
+                                    } finally {
+                                        setPlatformReviewSubmitting(false);
+                                    }
+                                }}
+                                className="space-y-4"
+                            >
+                                <div>
+                                    <p className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Your Rating</p>
+                                    <div className="flex gap-1">
+                                        {[1, 2, 3, 4, 5].map(star => (
+                                            <button
+                                                key={star}
+                                                type="button"
+                                                onClick={() => setPlatformRating(star)}
+                                                className="transition-transform hover:scale-110"
+                                            >
+                                                <Star
+                                                    className={`w-7 h-7 ${star <= platformRating ? 'fill-yellow-400 text-yellow-400' : 'text-[var(--border-color)]'}`}
+                                                />
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <textarea
+                                    required
+                                    value={platformReviewText}
+                                    onChange={e => setPlatformReviewText(e.target.value)}
+                                    placeholder="Tell us what you love or what we can improve..."
+                                    rows={3}
+                                    className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl text-sm font-medium text-[var(--text-primary)] outline-none resize-none"
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={platformReviewSubmitting}
+                                    className="px-8 py-3.5 bg-spark-red text-white rounded-xl font-black text-xs uppercase tracking-widest transition-all hover:bg-red-700 disabled:opacity-50"
+                                >
+                                    {platformReviewSubmitting ? 'Submitting...' : 'Submit Review'}
+                                </button>
+                            </form>
+                            {myPlatformReviews.length > 0 && (
+                                <div className="space-y-3 pt-2 border-t border-[var(--border-color)]">
+                                    <p className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest">Your Reviews</p>
+                                    {myPlatformReviews.map((r, idx) => (
+                                        <div key={idx} className="p-4 bg-[var(--bg-secondary)] rounded-xl border border-[var(--border-color)] space-y-1">
+                                            <div className="flex gap-0.5">
+                                                {Array.from({ length: r.stars }).map((_, i) => <Star key={i} className="w-4 h-4 fill-yellow-400 text-yellow-400" />)}
+                                            </div>
+                                            <p className="text-sm text-[var(--text-primary)] italic">"{r.reviewText}"</p>
+                                            <p className="text-[10px] text-[var(--text-secondary)]">{new Date(r.createdAt).toLocaleDateString()}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
         );
     };
+
 
     const renderMainContent = () => {
         switch (currentSection) {
@@ -2754,6 +2910,7 @@ const CreatorDashboard: React.FC<{
             userSub={userProfile?.university || "Creator"}
             userId={user?.id || user?.uid}
             userImage={userProfile?.imageUrl}
+            userProfile={userProfile}
             isDarkMode={isDarkMode}
             toggleTheme={toggleTheme}
             themeMode={themeMode}

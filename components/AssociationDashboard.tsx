@@ -10,7 +10,7 @@ import { EventDetailsModal } from './EventDetailsModal';
 import { CreatorProfileModal } from './CreatorProfileModal';
 import { WalletService } from '../WalletService';
 import { notifyTopUp, notifyWithdrawal, notifyProposalReceived, notifyProposalStatus } from '../emailNotifier';
-import { Wallet, TrendingUp, Lock, Plus, Minus, Ticket, Edit, Trash2, Search, Handshake, Building2, FileText, Mail, BarChart3, Target, Smartphone, Lightbulb, Award, GraduationCap, BookOpen, Calendar, Users, Megaphone, Inbox, Timer, Instagram, Twitter, Scale } from 'lucide-react';
+import { Wallet, TrendingUp, Lock, Plus, Minus, Ticket, Edit, Trash2, Search, Handshake, Building2, FileText, Mail, BarChart3, Target, Smartphone, Lightbulb, Award, GraduationCap, BookOpen, Calendar, Users, Megaphone, Inbox, Timer, Instagram, Twitter, Scale, Star } from 'lucide-react';
 import { DisputesPanel } from './DisputesPanel';
 const parsePackages = (packagesField: any): { name: string; price: number; entails: string; }[] => {
     if (!packagesField) return [];
@@ -34,6 +34,7 @@ const AssociationDashboard: React.FC<{
     themeMode: 'light' | 'dark' | 'auto',
     user: any
 }> = ({ onNavigate, onLogout, isDarkMode, toggleTheme, themeMode, user }) => {
+    const paystackPublicKey = (import.meta as any).env?.VITE_PAYSTACK_PUBLIC_KEY || '';
     const [currentView, setCurrentView] = useState('overview');
     const [preSelectedDisputeEntity, setPreSelectedDisputeEntity] = useState<any>(null);
     const [eventTab, setEventTab] = useState<'explore' | 'my'>('explore');
@@ -87,8 +88,13 @@ const AssociationDashboard: React.FC<{
     const [showAssignModal, setShowAssignModal] = useState(false);
     const [selectedCreatorForAssign, setSelectedCreatorForAssign] = useState<any>(null);
     const [assigningGigId, setAssigningGigId] = useState('');
-    const [showCreatorProfile, setShowCreatorProfile] = useState(false);
+    const [showCreatorProfile, setShowCreatorProfile] = useState<any>(null);
     const [selectedCreatorProfile, setSelectedCreatorProfile] = useState<any>(null);
+    // Platform review state
+    const [platformRating, setPlatformRating] = useState(5);
+    const [platformReviewText, setPlatformReviewText] = useState('');
+    const [platformReviewSubmitting, setPlatformReviewSubmitting] = useState(false);
+    const [myPlatformReviews, setMyPlatformReviews] = useState<any[]>([]);
 
     useEffect(() => {
         const script = document.createElement("script");
@@ -171,6 +177,7 @@ const AssociationDashboard: React.FC<{
         { id: 'hiring', label: 'Hire Creators', icon: <Search className="w-5 h-5" /> },
         { id: 'reports', label: 'Reports', icon: <FileText className="w-5 h-5" /> },
         { id: 'wallet', label: 'Wallet', icon: <Wallet className="w-5 h-5" /> },
+        { id: 'ratings_reviews', label: 'Ratings & Reviews', icon: <Star className="w-5 h-5" /> },
         { id: 'disputes', label: 'Disputes & Mediation', icon: <Scale className="w-5 h-5" /> },
     ];
 
@@ -854,7 +861,7 @@ const AssociationDashboard: React.FC<{
                                             try {
                                                 const reference = `REF-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
                                                 const handler = PaystackPop.setup({
-                                                    key: 'pk_test_5ee439620d8a49acc254131ede19b9063d8fe95f',
+                                                    key: paystackPublicKey,
                                                     email: orgProfile.email || 'org@campushub.africa',
                                                     amount: amount * 100, // Paystack uses Kobo
                                                     currency: 'NGN',
@@ -1163,8 +1170,8 @@ const AssociationDashboard: React.FC<{
                 );
             case 'creators': {
                 const filteredCreatorsList = creators.filter((c) => {
-                    const roleLower = (c.role || '').toLowerCase();
-                    const isProfessional = roleLower.includes('professional') || roleLower.includes('influencer');
+                    const creatorType = c.influencerType || (c.university ? 'Student Creator' : 'Professional Creator');
+                    const isProfessional = creatorType === 'Professional Creator';
                     if (creatorTypeTab === 'professional') return isProfessional;
                     if (creatorTypeTab === 'student') return !isProfessional;
                     return true;
@@ -1214,9 +1221,15 @@ const AssociationDashboard: React.FC<{
                                     <div key={profile.id} className="group bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] overflow-hidden shadow-sm hover:shadow-xl transition-all p-6 flex flex-col justify-between">
                                         <div>
                                             <div className="flex justify-between items-center mb-4">
-                                                <span className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest bg-spark-purple/5 text-spark-purple`}>
-                                                    {((profile.role || '').toLowerCase().includes('professional') || (profile.role || '').toLowerCase().includes('influencer')) ? 'Professional' : 'Student'}
-                                                </span>
+                                                {(() => {
+                                                    const creatorType = profile.influencerType || (profile.university ? 'Student Creator' : 'Professional Creator');
+                                                    const isPro = creatorType === 'Professional Creator';
+                                                    return (
+                                                        <span className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest ${isPro ? 'bg-blue-500/10 text-blue-600' : 'bg-spark-purple/5 text-spark-purple'}`}>
+                                                            {isPro ? 'Professional' : 'Student'}
+                                                        </span>
+                                                    );
+                                                })()}
                                                 {profile.rating && (
                                                     <div className="flex items-center gap-1 text-xs text-amber-500 font-bold">
                                                         <span>★</span>
@@ -1228,7 +1241,7 @@ const AssociationDashboard: React.FC<{
                                                 {profile.imageUrl ? <img src={profile.imageUrl} alt={profile.name || 'Creator Avatar'} className="w-full h-full object-cover" /> : (profile.name || '?').charAt(0)}
                                             </div>
                                             <h3 className="font-black text-lg line-clamp-1 text-[var(--text-primary)] text-center">{profile.name}</h3>
-                                            <p className="text-[10px] text-spark-purple font-black uppercase tracking-widest mb-3 text-center">{profile.nicheCategory || profile.category || "Campus Creator"}</p>
+                                            <p className="text-[10px] text-spark-purple font-black uppercase tracking-widest mb-2 text-center">{profile.niche || profile.nicheCategory || profile.category || "Campus Creator"}</p>
                                             
                                             <div className="space-y-1.5 mb-6 text-xs text-[var(--text-secondary)] font-medium text-center">
                                                 <p className="flex items-center gap-1.5 justify-center">
@@ -1675,8 +1688,8 @@ const AssociationDashboard: React.FC<{
 
             case 'hiring': {
                 const filteredCreatorsList = creators.filter((c) => {
-                    const roleLower = (c.role || '').toLowerCase();
-                    const isProfessional = roleLower.includes('professional') || roleLower.includes('influencer');
+                    const creatorType = c.influencerType || (c.university ? 'Student Creator' : 'Professional Creator');
+                    const isProfessional = creatorType === 'Professional Creator';
                     if (creatorTypeTab === 'professional') return isProfessional;
                     if (creatorTypeTab === 'student') return !isProfessional;
                     return true;
@@ -1875,6 +1888,108 @@ const AssociationDashboard: React.FC<{
 
             default:
                 return <div>Coming Soon</div>;
+            case 'ratings_reviews': {
+                const fetchAssocPlatformReviews = async () => {
+                    if (!orgProfile?.id && !user?.uid && !user?.id) return;
+                    try {
+                        const uid = orgProfile?.id || user?.uid || user?.id;
+                        const q = query(collection(db, 'platformReviews'), where('userId', '==', uid));
+                        const snap = await getDocs(q);
+                        setMyPlatformReviews(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                    } catch (err) {
+                        console.warn('[AssociationDashboard] fetchPlatformReviews error:', err);
+                    }
+                };
+                if (myPlatformReviews.length === 0) fetchAssocPlatformReviews();
+                return (
+                    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                        <div>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Ratings & Reviews</h2>
+                            <p className="text-[var(--text-secondary)] mt-1">Share your experience and help improve ABC-Rally for everyone.</p>
+                        </div>
+                        {/* Platform Review Form */}
+                        <div className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm space-y-6">
+                            <div>
+                                <h3 className="text-xl font-black text-[var(--text-primary)]">Review This Platform</h3>
+                                <p className="text-xs text-[var(--text-secondary)] mt-1 font-medium">Share your experience with ABC-Rally. Your feedback helps us grow.</p>
+                            </div>
+                            <form
+                                onSubmit={async (e) => {
+                                    e.preventDefault();
+                                    if (!platformReviewText.trim()) return;
+                                    setPlatformReviewSubmitting(true);
+                                    try {
+                                        const uid = orgProfile?.id || user?.uid || user?.id;
+                                        const reviewDoc = {
+                                            userId: uid,
+                                            userName: orgProfile?.name || 'Association',
+                                            userRole: 'Association',
+                                            stars: platformRating,
+                                            reviewText: platformReviewText.trim(),
+                                            createdAt: new Date().toISOString(),
+                                        };
+                                        await addDoc(collection(db, 'platformReviews'), reviewDoc);
+                                        setMyPlatformReviews(prev => [reviewDoc, ...prev]);
+                                        setPlatformReviewText('');
+                                        setPlatformRating(5);
+                                        alert('Thank you for your review! 🎉');
+                                    } catch (err: any) {
+                                        alert('Failed to submit review: ' + err.message);
+                                    } finally {
+                                        setPlatformReviewSubmitting(false);
+                                    }
+                                }}
+                                className="space-y-4"
+                            >
+                                <div>
+                                    <p className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Your Rating</p>
+                                    <div className="flex gap-1">
+                                        {[1, 2, 3, 4, 5].map(star => (
+                                            <button
+                                                key={star}
+                                                type="button"
+                                                onClick={() => setPlatformRating(star)}
+                                                className="transition-transform hover:scale-110"
+                                            >
+                                                <Star className={`w-7 h-7 ${star <= platformRating ? 'fill-yellow-400 text-yellow-400' : 'text-[var(--border-color)]'}`} />
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <textarea
+                                    required
+                                    value={platformReviewText}
+                                    onChange={e => setPlatformReviewText(e.target.value)}
+                                    placeholder="Tell us what you love or what we can improve..."
+                                    rows={3}
+                                    className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl text-sm font-medium text-[var(--text-primary)] outline-none resize-none"
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={platformReviewSubmitting}
+                                    className="px-8 py-3.5 bg-spark-red text-white rounded-xl font-black text-xs uppercase tracking-widest transition-all hover:bg-red-700 disabled:opacity-50"
+                                >
+                                    {platformReviewSubmitting ? 'Submitting...' : 'Submit Review'}
+                                </button>
+                            </form>
+                            {myPlatformReviews.length > 0 && (
+                                <div className="space-y-3 pt-2 border-t border-[var(--border-color)]">
+                                    <p className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest">Your Reviews</p>
+                                    {myPlatformReviews.map((r, idx) => (
+                                        <div key={idx} className="p-4 bg-[var(--bg-secondary)] rounded-xl border border-[var(--border-color)] space-y-1">
+                                            <div className="flex gap-0.5">
+                                                {Array.from({ length: r.stars }).map((_, i) => <Star key={i} className="w-4 h-4 fill-yellow-400 text-yellow-400" />)}
+                                            </div>
+                                            <p className="text-sm text-[var(--text-primary)] italic">"{r.reviewText}"</p>
+                                            <p className="text-[10px] text-[var(--text-secondary)]">{new Date(r.createdAt).toLocaleDateString()}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            }
             case 'disputes':
                 return (
                     <DisputesPanel
@@ -1900,6 +2015,7 @@ const AssociationDashboard: React.FC<{
             userSub={orgProfile?.university || "Campus Organizer"}
             userId={user?.id || user?.uid}
             userImage={orgProfile?.imageUrl}
+            userProfile={orgProfile}
             isDarkMode={isDarkMode}
             toggleTheme={toggleTheme}
             themeMode={themeMode}

@@ -99,9 +99,15 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({ isOpen
                         </div>
                         <div className="text-center sm:text-left flex-1">
                             <h2 className={`text-2xl sm:text-3xl font-black mb-1 ${creator.coverPhotoUrl ? 'text-white' : 'text-[var(--text-primary)]'}`}>{creator.name}</h2>
-                            <p className={`${creator.coverPhotoUrl ? 'text-white/90' : 'text-spark-purple'} font-bold uppercase tracking-widest text-xs mb-3`}>
+                            <p className={`${creator.coverPhotoUrl ? 'text-white/90' : 'text-spark-purple'} font-bold uppercase tracking-widest text-xs mb-1`}>
                                 {creator.influencerType || creator.role || 'Creator'}
                             </p>
+                            {(creator.niche || creator.nicheCategory) && (
+                                <p className={`${creator.coverPhotoUrl ? 'text-white/75' : 'text-spark-red'} font-black uppercase tracking-wider text-[10px] mb-3`}>
+                                    Niche: {creator.niche || creator.nicheCategory}
+                                </p>
+                            )}
+
                             
                             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 sm:gap-4 text-[11px] font-bold">
                                 {((creator.role === 'Brand' && creator.industry) || (creator.role !== 'Brand' && creator.influencerType !== 'Professional Creator' && creator.university)) && (

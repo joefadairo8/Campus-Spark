@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { db, addDoc, collection, serverTimestamp } from '../firebase';
 import { 
   Mail, Phone, MapPin, MessageSquare, Shield, HelpCircle, 
   FileText, ArrowRight, Clock, UserCheck, Megaphone, Users, 
@@ -44,26 +45,33 @@ const ContactPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavig
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
-    setTimeout(() => {
-      setSubmitting(false);
-      setIsSubmitted(true);
-      // Reset form (except file name which gets cleared)
-      setFormData({
-        name: '',
-        email: '',
-        phone: '',
-        userType: 'Creator',
-        organisation: '',
-        enquiryType: 'general',
-        message: '',
-        callbackTime: 'anytime',
+    try {
+      await addDoc(collection(db, 'support_tickets'), {
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        userType: formData.userType,
+        organisation: formData.organisation,
+        enquiryType: formData.enquiryType,
+        message: formData.message,
+        callbackTime: formData.callbackTime,
+        status: 'open',
+        createdAt: serverTimestamp(),
       });
+      setIsSubmitted(true);
+      setFormData({ name: '', email: '', phone: '', userType: 'Creator', organisation: '', enquiryType: 'general', message: '', callbackTime: 'anytime' });
       setFileName('');
-    }, 1500);
+    } catch (err) {
+      console.error('Failed to submit support ticket:', err);
+      alert('Failed to submit. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
+
 
   const ROUTING_CARDS = [
     { id: 'brand-campaign', title: 'Brand Campaign Enquiry', icon: <Megaphone className="w-5 h-5" />, desc: 'Partner with creators or set up campaigns.' },
@@ -336,11 +344,22 @@ const ContactPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavig
                   <div className="space-y-3">
                     <div className="flex items-center gap-3">
                       <Mail className="w-5 h-5 text-spark-red flex-shrink-0" />
-                      <p className="text-base font-bold text-[var(--text-primary)]">hello@abc-rally.com</p>
+                      <a href="mailto:hello@abc-rally.com" className="text-base font-bold text-[var(--text-primary)] hover:text-spark-red transition-colors">hello@abc-rally.com</a>
                     </div>
                     <div className="flex items-center gap-3">
                       <Phone className="w-5 h-5 text-spark-red flex-shrink-0" />
                       <p className="text-base font-bold text-[var(--text-primary)]">+234 (0) 906 032 0863</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <MessageSquare className="w-5 h-5 text-green-500 flex-shrink-0" />
+                      <a
+                        href="https://wa.me/2349060320863"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-base font-bold text-green-600 hover:text-green-700 transition-colors"
+                      >
+                        WhatsApp: +234 906 032 0863
+                      </a>
                     </div>
                   </div>
                 </div>

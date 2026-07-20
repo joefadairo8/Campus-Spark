@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { auth, db } from './firebase';
 import { doc as firebaseDoc, getDoc as firebaseGetDoc, onSnapshot } from 'firebase/firestore';
 import Navbar from './components/Navbar';
@@ -9,35 +9,42 @@ import DashboardPortal from './components/DashboardPortal';
 import FaqSection from './components/FaqSection';
 import CtaSection from './components/CtaSection';
 import Footer from './components/Footer';
-import BrandsPage from './components/BrandsPage';
-import CreatorsPage from './components/CreatorsPage';
-import BrandDashboard from './components/BrandDashboard';
-import CreatorDashboard from './components/CreatorDashboard';
-import AssociationDashboard from './components/AssociationDashboard';
-import AdminDashboard from './components/AdminDashboard';
-import AboutPage from './components/AboutPage';
-import CareersPage from './components/CareersPage';
-import ContactPage from './components/ContactPage';
-import LoginPage from './components/LoginPage';
-import CreateAccountPage from './components/CreateAccountPage';
-import AdminLoginPage from './components/AdminLoginPage';
 import RoleSelectionSection from './components/RoleSelectionSection';
 import LiveOpportunitiesSection from './components/LiveOpportunitiesSection';
 import TrustSection from './components/TrustSection';
 import SocialProofSection from './components/SocialProofSection';
 import ScrollToTop from './components/ScrollToTop';
-import ScheduleCallPage from './components/ScheduleCallPage';
 import LatestBlogsSection from './components/LatestBlogsSection';
 import MarketplaceModules from './components/MarketplaceModules';
-import BlogPage from './components/BlogPage';
-import EventsPage from './components/EventsPage';
-import ForAssociationsPage from './components/ForAssociationsPage';
-import PrivacyPolicyPage from './components/PrivacyPolicyPage';
-import TermsOfServicePage from './components/TermsOfServicePage';
-import HelpCenterPage from './components/HelpCenterPage';
-import PricingPage from './components/PricingPage';
-import OpportunitiesPage from './components/OpportunitiesPage';
 import { globalBrandingSettings, getRawAppName } from './constants';
+
+const LoginPage = lazy(() => import('./components/LoginPage'));
+const CreateAccountPage = lazy(() => import('./components/CreateAccountPage'));
+const AdminLoginPage = lazy(() => import('./components/AdminLoginPage'));
+const BrandDashboard = lazy(() => import('./components/BrandDashboard'));
+const CreatorDashboard = lazy(() => import('./components/CreatorDashboard'));
+const AssociationDashboard = lazy(() => import('./components/AssociationDashboard'));
+const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
+const AboutPage = lazy(() => import('./components/AboutPage'));
+const CareersPage = lazy(() => import('./components/CareersPage'));
+const ContactPage = lazy(() => import('./components/ContactPage'));
+const ScheduleCallPage = lazy(() => import('./components/ScheduleCallPage'));
+const BlogPage = lazy(() => import('./components/BlogPage'));
+const EventsPage = lazy(() => import('./components/EventsPage'));
+const ForAssociationsPage = lazy(() => import('./components/ForAssociationsPage'));
+const PrivacyPolicyPage = lazy(() => import('./components/PrivacyPolicyPage'));
+const TermsOfServicePage = lazy(() => import('./components/TermsOfServicePage'));
+const HelpCenterPage = lazy(() => import('./components/HelpCenterPage'));
+const PricingPage = lazy(() => import('./components/PricingPage'));
+const OpportunitiesPage = lazy(() => import('./components/OpportunitiesPage'));
+const BrandsPage = lazy(() => import('./components/BrandsPage'));
+const CreatorsPage = lazy(() => import('./components/CreatorsPage'));
+
+const PageLoader: React.FC = () => (
+  <div className="min-h-[60vh] flex items-center justify-center">
+    <div className="w-10 h-10 border-4 border-spark-red border-t-transparent rounded-full animate-spin" />
+  </div>
+);
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState('home');
@@ -210,6 +217,8 @@ const App: React.FC = () => {
       // Info pages
       'careers', 'opportunities', 'events', 'contact', 'admin-login', 'schedule-call', 'blog',
       'privacy', 'terms', 'help', 'pricing',
+      // Webhook redirects
+      'api/escrow/webhook', 'webhook'
     ];
 
     /**
@@ -235,6 +244,24 @@ const App: React.FC = () => {
       // Legacy alias
       setCurrentPage('association-dashboard');
       window.history.replaceState({}, '', '/association-dashboard');
+    } else if (path === 'api/escrow/webhook' || path === 'webhook') {
+      const userStr = localStorage.getItem('user');
+      const storedUser = userStr ? JSON.parse(userStr) : null;
+      if (storedUser) {
+        let allowedDashboard = 'creator-dashboard';
+        if (storedUser.role === 'Admin') {
+          allowedDashboard = 'admin-dashboard';
+        } else if (storedUser.role === 'Brand') {
+          allowedDashboard = 'brand-dashboard';
+        } else if (storedUser.role === 'Organization' || storedUser.role === 'Association') {
+          allowedDashboard = 'association-dashboard';
+        }
+        setCurrentPage(allowedDashboard);
+        window.history.replaceState({}, '', `/${allowedDashboard}`);
+      } else {
+        setCurrentPage('login');
+        window.history.replaceState({}, '', '/login');
+      }
     } else if (allRenderablePages.includes(path)) {
       // Role protection: non-admins cannot directly open /admin-dashboard
       const adminOnly = ['admin-dashboard'];
@@ -321,28 +348,28 @@ const App: React.FC = () => {
 
   const renderPageContent = () => {
     switch (currentPage) {
-      case 'login': return <LoginPage onNavigate={navigateTo} />;
-      case 'admin-login': return <AdminLoginPage onNavigate={navigateTo} />;
-      case 'create-account': return <CreateAccountPage onNavigate={navigateTo} />;
-      case 'brand-dashboard': return <BrandDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} themeMode={themeMode} user={user} />;
-      case 'creator-dashboard': return <CreatorDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} themeMode={themeMode} user={user} />;
-      case 'association-dashboard': return <AssociationDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} themeMode={themeMode} user={user} />;
-      case 'admin-dashboard': return <AdminDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} themeMode={themeMode} user={user} />;
+      case 'login': return <Suspense fallback={<PageLoader />}><LoginPage onNavigate={navigateTo} /></Suspense>;
+      case 'admin-login': return <Suspense fallback={<PageLoader />}><AdminLoginPage onNavigate={navigateTo} /></Suspense>;
+      case 'create-account': return <Suspense fallback={<PageLoader />}><CreateAccountPage onNavigate={navigateTo} /></Suspense>;
+      case 'brand-dashboard': return <Suspense fallback={<PageLoader />}><BrandDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} themeMode={themeMode} user={user} /></Suspense>;
+      case 'creator-dashboard': return <Suspense fallback={<PageLoader />}><CreatorDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} themeMode={themeMode} user={user} /></Suspense>;
+      case 'association-dashboard': return <Suspense fallback={<PageLoader />}><AssociationDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} themeMode={themeMode} user={user} /></Suspense>;
+      case 'admin-dashboard': return <Suspense fallback={<PageLoader />}><AdminDashboard onNavigate={navigateTo} onLogout={handleLogout} isDarkMode={isDarkMode} toggleTheme={toggleTheme} themeMode={themeMode} user={user} /></Suspense>;
       case 'how-it-works':
-      case 'about': return <AboutPage onNavigate={navigateTo} />;
-      case 'for-brands': return <BrandsPage onNavigate={navigateTo} />;
-      case 'for-creators': return <CreatorsPage onNavigate={navigateTo} />;
-      case 'for-associations': return <ForAssociationsPage onNavigate={navigateTo} />;
-      case 'careers': return <CareersPage onNavigate={navigateTo} user={user} />;
-      case 'opportunities': return <OpportunitiesPage onNavigate={navigateTo} user={user} />;
-      case 'events': return <EventsPage onNavigate={navigateTo} user={user} />;
-      case 'contact': return <ContactPage onNavigate={navigateTo} />;
-      case 'schedule-call': return <ScheduleCallPage onNavigate={navigateTo} />;
-      case 'blog': return <BlogPage onNavigate={navigateTo} />;
-      case 'privacy': return <PrivacyPolicyPage onNavigate={navigateTo} />;
-      case 'terms': return <TermsOfServicePage onNavigate={navigateTo} />;
-      case 'help': return <HelpCenterPage onNavigate={navigateTo} />;
-      case 'pricing': return <PricingPage onNavigate={navigateTo} />;
+      case 'about': return <Suspense fallback={<PageLoader />}><AboutPage onNavigate={navigateTo} /></Suspense>;
+      case 'for-brands': return <Suspense fallback={<PageLoader />}><BrandsPage onNavigate={navigateTo} /></Suspense>;
+      case 'for-creators': return <Suspense fallback={<PageLoader />}><CreatorsPage onNavigate={navigateTo} /></Suspense>;
+      case 'for-associations': return <Suspense fallback={<PageLoader />}><ForAssociationsPage onNavigate={navigateTo} /></Suspense>;
+      case 'careers': return <Suspense fallback={<PageLoader />}><CareersPage onNavigate={navigateTo} user={user} /></Suspense>;
+      case 'opportunities': return <Suspense fallback={<PageLoader />}><OpportunitiesPage onNavigate={navigateTo} user={user} /></Suspense>;
+      case 'events': return <Suspense fallback={<PageLoader />}><EventsPage onNavigate={navigateTo} user={user} /></Suspense>;
+      case 'contact': return <Suspense fallback={<PageLoader />}><ContactPage onNavigate={navigateTo} /></Suspense>;
+      case 'schedule-call': return <Suspense fallback={<PageLoader />}><ScheduleCallPage onNavigate={navigateTo} /></Suspense>;
+      case 'blog': return <Suspense fallback={<PageLoader />}><BlogPage onNavigate={navigateTo} /></Suspense>;
+      case 'privacy': return <Suspense fallback={<PageLoader />}><PrivacyPolicyPage onNavigate={navigateTo} /></Suspense>;
+      case 'terms': return <Suspense fallback={<PageLoader />}><TermsOfServicePage onNavigate={navigateTo} /></Suspense>;
+      case 'help': return <Suspense fallback={<PageLoader />}><HelpCenterPage onNavigate={navigateTo} /></Suspense>;
+      case 'pricing': return <Suspense fallback={<PageLoader />}><PricingPage onNavigate={navigateTo} /></Suspense>;
       case 'home':
       default:
         return (

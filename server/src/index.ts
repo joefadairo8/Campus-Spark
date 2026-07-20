@@ -10,6 +10,7 @@ import fs from 'fs';
 import { exec } from 'child_process';
 import https from 'https';
 import zlib from 'zlib';
+import admin from 'firebase-admin';
 import pool from './db.js';
 import {
     sendWelcomeEmail, sendAdminNewUserAlert,
@@ -22,6 +23,17 @@ import {
 } from './emailService.js';
 
 dotenv.config();
+
+// Read service account from JSON file and initialize Firebase Admin
+const serviceAccount = JSON.parse(
+    fs.readFileSync(new URL('../../serviceAccountKey.json', import.meta.url), 'utf8')
+);
+
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
+
+const firestoreDb = admin.firestore();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -817,7 +829,7 @@ app.post('/api/email/notify', async (req, res) => {
 });
 
 // ─── PANDASCROW ESCROW ENDPOINTS ──────────────────────────────────────────────
-const PANDASCROW_BASE = process.env.PANDASCROW_BASE_URL || 'https://sandbox.pandascrow.io';
+const PANDASCROW_BASE = process.env.PANDASCROW_BASE_URL || 'https://api.pandascrow.io';
 const PANDASCROW_TOKEN = process.env.PANDASCROW_TOKEN || '';
 const PANDASCROW_UUID = process.env.PANDASCROW_UUID || '';
 
@@ -862,7 +874,7 @@ app.post('/api/escrow/initialize', async (req: any, res: any) => {
             who_pay_fees: 'seller',
             amount: Number(amount), // Amount in NGN (Naira) — Pandascrow expects Naira, NOT Kobo
             dispute_window: '5',
-            callback_url: `${process.env.APP_URL || 'https://abc-rally.com'}/api/escrow/webhook`,
+            callback_url: `${process.env.API_URL || process.env.APP_URL || 'https://api.abc-rally.com'}/api/escrow/webhook`,
             partner_escrow_fee: '5', // Platform earns 5% partner commission; Pandascrow takes ~5% standard fee = 10% total
             buyer_details: {
                 name: brandName || 'Brand Partner',
@@ -907,6 +919,137 @@ app.post('/api/escrow/initialize', async (req: any, res: any) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+/**
+ * POST /api/escrow/webhook
+ * Receives payment lifecycle events from Pandascrow.
+ * When status is "funded" or "completed", marks the related GigApplication as escrow_funded.
+ * Pandascrow sends: { escrow_id, transaction_ref, status, amount, event, data: {...} }
+ */
+app.post('/api/escrow/webhook', async (req: any, res: any) => {
+    try {
+        const body = req.body || {};
+        const escrowId = body.escrow_id ?? body.data?.escrow_id;
+        const transactionRef = body.transaction_ref ?? body.data?.transaction_ref;
+        const status = body.status ?? body.event ?? body.data?.status ?? '';
+
+        console.log(`[Webhook] Pandascrow event received — escrow_id=${escrowId}, ref=${transactionRef}, status=${status}`);
+
+        // Funded events — various forms Pandascrow might use
+        const isFundedEvent = typeof status === 'string' && (
+            status.toLowerCase().includes('fund') ||
+            status.toLowerCase().includes('paid') ||
+            status.toLowerCase().includes('complet') ||
+            status === 'success'
+        );
+
+        if (isFundedEvent && (escrowId || transactionRef)) {
+            console.log(`[Webhook] Escrow funded — escrow_id=${escrowId}, ref=${transactionRef}. Processing updates.`);
+
+            // Optional: store a webhook_events log in MySQL if table exists
+            try {
+                await pool.query(
+                    `INSERT IGNORE INTO WebhookEvent (id, escrowId, transactionRef, status, payload, createdAt)
+                     VALUES (UUID(), ?, ?, ?, ?, NOW())`,
+                    [String(escrowId || ''), String(transactionRef || ''), String(status), JSON.stringify(body)]
+                );
+            } catch (_) {
+                // WebhookEvent table may not exist — non-blocking
+            }
+
+            // Sync with Firestore campaignAllocations & wallets
+            try {
+                const allocationsRef = firestoreDb.collection('campaignAllocations');
+                let allocationQuery = null;
+                if (escrowId) {
+                    const snap = await allocationsRef.where('escrowId', '==', String(escrowId)).limit(1).get();
+                    if (!snap.empty) {
+                        allocationQuery = snap;
+                    }
+                }
+                if ((!allocationQuery || allocationQuery.empty) && transactionRef) {
+                    const snap = await allocationsRef.where('escrowRef', '==', String(transactionRef)).limit(1).get();
+                    if (!snap.empty) {
+                        allocationQuery = snap;
+                    }
+                }
+
+                if (allocationQuery && !allocationQuery.empty) {
+                    const allocationDoc = allocationQuery.docs[0];
+                    const allocationData = allocationDoc.data();
+                    const allocationId = allocationDoc.id;
+                    const amount = Number(allocationData.amount) || 0;
+                    const brandId = allocationData.brandId;
+
+                    if (allocationData.status !== 'in_progress' || !allocationData.escrowFunded) {
+                        // 1. Update allocation status
+                        await allocationDoc.ref.update({
+                            status: 'in_progress',
+                            escrowFunded: true,
+                            updatedAt: new Date().toISOString()
+                        });
+                        console.log(`[Webhook] Updated campaign allocation ${allocationId} to in_progress & escrowFunded = true`);
+
+                        if (brandId) {
+                            // 2. Retrieve & Update Brand Wallet
+                            const walletRef = firestoreDb.collection('wallets').doc(brandId);
+                            const walletSnap = await walletRef.get();
+                            
+                            let currentEscrow = 0;
+                            let currentBalance = 0;
+                            let currentPending = 0;
+                            
+                            if (walletSnap.exists) {
+                                const walletData = walletSnap.data() || {};
+                                currentEscrow = Number(walletData.escrow) || 0;
+                                currentBalance = Number(walletData.balance) || 0;
+                                currentPending = Number(walletData.pending) || 0;
+                                await walletRef.update({
+                                    escrow: currentEscrow + amount,
+                                    lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+                                });
+                            } else {
+                                await walletRef.set({
+                                    balance: 0,
+                                    pending: 0,
+                                    escrow: amount,
+                                    lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+                                });
+                            }
+                            console.log(`[Webhook] Updated brand ${brandId} wallet escrow by +₦${amount}`);
+
+                            // 3. Record transaction document
+                            const transRef = firestoreDb.collection('transactions').doc();
+                            await transRef.set({
+                                id: transRef.id,
+                                userId: brandId,
+                                amount: amount,
+                                type: 'credit',
+                                status: 'escrow',
+                                description: `Escrow funded for campaign: ${allocationData.campaignTitle || 'Collaboration'}`,
+                                reference: String(escrowId || transactionRef || 'N/A'),
+                                createdAt: admin.firestore.FieldValue.serverTimestamp()
+                            });
+                            console.log(`[Webhook] Recorded escrow transaction for brand ${brandId}`);
+                        }
+                    }
+                } else {
+                    console.log(`[Webhook] No matching campaign allocation found for escrow_id=${escrowId}, ref=${transactionRef}`);
+                }
+            } catch (firestoreErr) {
+                console.error('[Webhook] Firestore update failed:', firestoreErr);
+            }
+        }
+
+        // Always acknowledge Pandascrow with 200 so they don't retry
+        res.status(200).json({ received: true });
+    } catch (err: any) {
+        console.error('[Webhook] Exception:', err);
+        res.status(200).json({ received: true }); // still 200 to prevent Pandascrow retries
+    }
+});
+
+
 
 /**
  * POST /api/escrow/complete

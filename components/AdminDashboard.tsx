@@ -7,12 +7,13 @@ import { UserRole } from '../types';
 import ProfileView from './ProfileView';
 import DashboardPlaceholder from './DashboardPlaceholder';
 import { WalletService, REVENUE_WALLET_ID } from '../WalletService';
-import { globalBrandingSettings } from '../constants';
+import { globalBrandingSettings, BACKEND_URL } from '../constants';
 import { 
     BarChart3, Users, Megaphone, Building2, Shield, Wallet, 
     Search, ArrowUpRight, ArrowDownLeft, Clock, CheckCircle2, 
     XCircle, ArrowRight, Calendar, Activity, Database, Trash2, Edit,
-    Eye, Ban, CheckCircle, Info, ExternalLink, MapPin, TrendingUp, FileText, Plus, Settings, MessageSquare, Scale
+    Eye, Ban, CheckCircle, Info, ExternalLink, MapPin, TrendingUp, FileText, Plus, Settings, MessageSquare, Scale, HelpCircle,
+    Download, Mail, Send, Loader2
 } from 'lucide-react';
 import { DisputesPanel } from './DisputesPanel';
 import * as LucideIcons from 'lucide-react';
@@ -86,6 +87,7 @@ const AdminDashboard: React.FC<{
     const [allEvents, setAllEvents] = useState<any[]>([]);
     const [allTransactions, setAllTransactions] = useState<any[]>([]);
     
+    
     // Past Events State
     const [allPastEvents, setAllPastEvents] = useState<any[]>([]);
     const [showPastEventModal, setShowPastEventModal] = useState(false);
@@ -103,7 +105,8 @@ const AdminDashboard: React.FC<{
     const [allBlogs, setAllBlogs] = useState<any[]>([]);
     const [showBlogModal, setShowBlogModal] = useState(false);
     const [blogFormData, setBlogFormData] = useState({ title: '', excerpt: '', content: '', imageUrl: '', status: 'draft', id: '' });
-    
+
+    // Core UI State
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [currentView, setCurrentView] = useState('overview');
@@ -113,6 +116,13 @@ const AdminDashboard: React.FC<{
     const [userDetailData, setUserDetailData] = useState<{gigs: any[], events: any[], transactions: any[], allocations: any[]}>({gigs: [], events: [], transactions: [], allocations: []});
     const [detailLoading, setDetailLoading] = useState(false);
     const [selectedWithdrawal, setSelectedWithdrawal] = useState<any>(null);
+
+    // Email Blast State
+    const [showEmailBlast, setShowEmailBlast] = useState(false);
+    const [emailBlastForm, setEmailBlastForm] = useState({ subject: '', title: '', body: '', role: 'all' });
+    const [emailBlastLoading, setEmailBlastLoading] = useState(false);
+    const [emailBlastResult, setEmailBlastResult] = useState<{ sent: number; failed: number; total: number } | null>(null);
+    const [csvDownloading, setCsvDownloading] = useState<string | null>(null);
 
     // Branding settings state
     const [brandingForm, setBrandingForm] = useState({
@@ -130,6 +140,15 @@ const AdminDashboard: React.FC<{
     const [logoUploadProgress, setLogoUploadProgress] = useState(0);
     const [faviconUploadProgress, setFaviconUploadProgress] = useState(0);
     const [landingImageUploadProgress, setLandingImageUploadProgress] = useState(0);
+
+    // Support Tickets State
+    const [supportTickets, setSupportTickets] = useState<any[]>([]);
+    const [selectedTicket, setSelectedTicket] = useState<any>(null);
+    const [replyBody, setReplyBody] = useState('');
+    const [replyLoading, setReplyLoading] = useState(false);
+
+    // Platform Reviews State
+    const [platformReviews, setPlatformReviews] = useState<any[]>([]);
 
     const handleImageUpload = (
         file: File,
@@ -285,6 +304,16 @@ const AdminDashboard: React.FC<{
                 const items = snap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
                 items.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
                 setAllTestimonials(items);
+            } else if (currentView === 'support') {
+                const snap = await getDocs(collection(db, 'support_tickets'));
+                const tickets = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+                tickets.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                setSupportTickets(tickets);
+            } else if (currentView === 'platform_reviews') {
+                const snap = await getDocs(collection(db, 'platformReviews'));
+                const reviews = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+                reviews.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+                setPlatformReviews(reviews);
             }
         } catch (tabErr: any) {
             console.error(`Admin tab fetch error [${currentView}]:`, tabErr);
@@ -357,6 +386,137 @@ const AdminDashboard: React.FC<{
             fetchAdminData();
         } catch (err: any) {
             alert(err.response?.data?.error || `Failed to delete from ${collection}`);
+        }
+    };
+
+    // Download user emails as CSV entirely client-side using allUsers array
+    const handleDownloadEmails = async (role: string) => {
+        setCsvDownloading(role);
+        try {
+            // Filter allUsers based on selected role
+            const filtered = allUsers.filter(u => {
+                if (role === 'all') return true;
+                const userRole = (u.role || '').toLowerCase();
+                
+                if (role === 'Creator') {
+                    // Match creator role variants
+                    return userRole.includes('creator') || userRole.includes('student') || userRole.includes('ambassador');
+                }
+                if (role === 'Brand') {
+                    return userRole.includes('brand');
+                }
+                if (role === 'Association') {
+                    return userRole.includes('association') || userRole.includes('organization') || userRole.includes('club');
+                }
+                return userRole.includes(role.toLowerCase());
+            });
+
+            if (filtered.length === 0) {
+                alert(`No users found with role type: ${role}`);
+                return;
+            }
+
+            // Create CSV content (Name, Email, Role)
+            const header = 'Name,Email,Role\r\n';
+            const rows = filtered.map(u => {
+                const name = `"${(u.name || 'Anonymous').replace(/"/g, '""')}"`;
+                const email = `"${(u.email || '').replace(/"/g, '""')}"`;
+                const userRole = `"${(u.role || 'Member').replace(/"/g, '""')}"`;
+                return `${name},${email},${userRole}`;
+            }).join('\r\n');
+
+            const csvContent = header + rows;
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = role === 'all' ? 'campus-spark-all-emails.csv' : `campus-spark-${role.toLowerCase()}-emails.csv`;
+            link.click();
+            URL.revokeObjectURL(link.href);
+        } catch (err: any) {
+            alert('Failed to download CSV: ' + err.message);
+        } finally {
+            setCsvDownloading(null);
+        }
+    };
+
+    // Send bulk email blast
+    const handleEmailBlast = async (e: React.FormEvent) => {
+        e.preventDefault();
+        
+        // Filter recipients
+        const targetRole = emailBlastForm.role;
+        const targetUsers = allUsers.filter(u => {
+            if (targetRole === 'all') return true;
+            const userRole = (u.role || '').toLowerCase();
+            if (targetRole === 'Creator') {
+                return userRole.includes('creator') || userRole.includes('student') || userRole.includes('ambassador');
+            }
+            if (targetRole === 'Brand') {
+                return userRole.includes('brand');
+            }
+            if (targetRole === 'Association') {
+                return userRole.includes('association') || userRole.includes('organization') || userRole.includes('club');
+            }
+            return userRole.includes(targetRole.toLowerCase());
+        });
+
+        const recipients = targetUsers.map(u => u.email).filter(Boolean);
+
+        if (recipients.length === 0) {
+            alert(`No recipients found for segment: ${targetRole}`);
+            return;
+        }
+
+        if (!window.confirm(`You are about to send an email to ${recipients.length} ${targetRole === 'all' ? 'users' : targetRole + '(s)'} on the platform. Proceed?`)) return;
+        
+        setEmailBlastLoading(true);
+        setEmailBlastResult(null);
+
+        let sent = 0;
+        let failed = 0;
+
+        try {
+            // Process in batches of 5 to avoid overloading browser connections or server rate-limits
+            const batchSize = 5;
+            for (let i = 0; i < recipients.length; i += batchSize) {
+                const batch = recipients.slice(i, i + batchSize);
+                await Promise.all(
+                    batch.map(async (email) => {
+                        try {
+                            const res = await fetch(`${BACKEND_URL}/api/email/notify`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    type: 'generic',
+                                    to: email,
+                                    subject: emailBlastForm.subject,
+                                    title: emailBlastForm.title,
+                                    body: emailBlastForm.body
+                                })
+                            });
+                            if (!res.ok) throw new Error();
+                            sent++;
+                        } catch {
+                            failed++;
+                        }
+                    })
+                );
+                // Pause 300ms between batches
+                if (i + batchSize < recipients.length) {
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                }
+            }
+
+            setEmailBlastResult({ 
+                sent, 
+                failed, 
+                total: recipients.length 
+            });
+        } catch (err: any) {
+            alert('Email blast failed: ' + err.message);
+        } finally {
+            setEmailBlastLoading(false);
         }
     };
 
@@ -552,6 +712,8 @@ const AdminDashboard: React.FC<{
         { id: 'testimonials', label: 'Testimonials', icon: <MessageSquare className="w-5 h-5" /> },
         { id: 'branding', label: 'Site Config', icon: <Settings className="w-5 h-5" /> },
         { id: 'disputes', label: 'Disputes & Mediation', icon: <Scale className="w-5 h-5" />, badge: 0 },
+        { id: 'support', label: 'Support Inbox', icon: <HelpCircle className="w-5 h-5" />, badge: supportTickets.filter(t => t.status === 'open').length || undefined },
+        { id: 'platform_reviews', label: 'Platform Reviews', icon: <LucideIcons.Star className="w-5 h-5" /> },
     ];
 
     const renderContent = () => {
@@ -968,104 +1130,280 @@ const AdminDashboard: React.FC<{
                     (u.role || '').toLowerCase().includes(searchTerm.toLowerCase())
                 );
                 return (
-                    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-                         <div className="bg-[var(--bg-primary)] rounded-[3rem] border border-[var(--border-color)] shadow-sm overflow-hidden">
-                            <div className="p-8 border-b border-[var(--border-color)] flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                                <div>
-                                    <h3 className="text-2xl font-black text-[var(--text-primary)]">Network Directory</h3>
-                                    <p className="text-[var(--text-secondary)] font-bold text-sm">Monitor and moderate {allUsers.length} network participants.</p>
+                    <>
+                        <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                            {/* Email Tools Row */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* CSV Download Card */}
+                                <div className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] p-6 shadow-sm">
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <div className="w-10 h-10 bg-green-500/10 text-green-600 rounded-xl flex items-center justify-center">
+                                            <Download className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <h4 className="font-black text-[var(--text-primary)] text-sm">Export Email Lists</h4>
+                                            <p className="text-[10px] text-[var(--text-secondary)] font-bold uppercase tracking-widest">Download as CSV</p>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {[
+                                            { label: 'All Users', role: 'all', color: 'bg-spark-black text-white hover:bg-gray-800' },
+                                            { label: 'Creators', role: 'Creator', color: 'bg-spark-red/10 text-spark-red border border-spark-red/20 hover:bg-spark-red hover:text-white' },
+                                            { label: 'Brands', role: 'Brand', color: 'bg-blue-500/10 text-blue-600 border border-blue-200 hover:bg-blue-600 hover:text-white' },
+                                            { label: 'Associations', role: 'Association', color: 'bg-green-500/10 text-green-600 border border-green-200 hover:bg-green-600 hover:text-white' },
+                                        ].map(({ label, role: r, color }) => (
+                                            <button
+                                                key={r}
+                                                onClick={() => handleDownloadEmails(r)}
+                                                disabled={csvDownloading !== null}
+                                                className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all active:scale-95 disabled:opacity-60 ${color}`}
+                                            >
+                                                {csvDownloading === r ? (
+                                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                                ) : (
+                                                    <Download className="w-3 h-3" />
+                                                )}
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                                <div className="relative w-full md:w-80">
-                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                    <input
-                                        type="text"
-                                        placeholder="Search by name, email, or role..."
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        className="w-full pl-12 pr-4 py-4 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-spark-red/20 transition-all"
-                                    />
+
+                                {/* Email Blast Card */}
+                                <div className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] p-6 shadow-sm">
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <div className="w-10 h-10 bg-spark-red/10 text-spark-red rounded-xl flex items-center justify-center">
+                                            <Mail className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <h4 className="font-black text-[var(--text-primary)] text-sm">Send Email Blast</h4>
+                                            <p className="text-[10px] text-[var(--text-secondary)] font-bold uppercase tracking-widest">Broadcast to user segments</p>
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-[var(--text-secondary)] font-medium mb-4 leading-relaxed">Compose and send a custom email to all users or a specific role group instantly.</p>
+                                    <button
+                                        onClick={() => { setShowEmailBlast(true); setEmailBlastResult(null); setEmailBlastForm({ subject: '', title: '', body: '', role: 'all' }); }}
+                                        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-spark-red text-white font-black rounded-xl text-xs uppercase tracking-wider hover:bg-red-600 transition-all active:scale-95 shadow-lg shadow-red-100"
+                                    >
+                                        <Send className="w-4 h-4" /> Compose & Send
+                                    </button>
                                 </div>
                             </div>
-                            <div className="overflow-x-auto">
-                                <table className="w-full">
-                                    <thead className="bg-[var(--bg-secondary)]/50">
-                                        <tr>
-                                            <th className="px-8 py-5 text-left text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">User Profile</th>
-                                            <th className="px-8 py-5 text-left text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Platform Role</th>
-                                            <th className="px-8 py-5 text-left text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Status</th>
-                                            <th className="px-8 py-5 text-right text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-[var(--border-color)]">
-                                        {filteredUsers.map((u) => (
-                                            <tr key={u.id} className={`hover:bg-[var(--bg-secondary)]/30 transition-colors ${u.status === 'suspended' ? 'bg-red-50/50 grayscale-[0.5]' : ''}`}>
-                                                <td className="px-8 py-5">
-                                                    <div className="flex items-center gap-4">
-                                                        <div className="w-12 h-12 bg-spark-red text-white rounded-2xl flex items-center justify-center font-black text-xl relative">
-                                                            {(u.name || u.email || '?').charAt(0).toUpperCase()}
-                                                            {u.status === 'suspended' && <div className="absolute -top-1 -right-1 bg-red-600 rounded-full p-1 border-2 border-white"><Ban className="w-3 h-3 text-white" /></div>}
-                                                        </div>
-                                                        <div>
-                                                            <p className="font-black text-[var(--text-primary)] text-base">{u.name || 'Anonymous'}</p>
-                                                            <p className="text-xs text-[var(--text-secondary)] font-bold">{u.email}</p>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td className="px-8 py-5">
-                                                    <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border ${
-                                                        u.role === 'Brand' ? 'bg-blue-500/10 text-blue-600 border-blue-500/20' :
-                                                        (u.role?.includes('Creator')) ? 'bg-spark-red/10 text-spark-red border-spark-red/20' : 
-                                                        'bg-green-500/10 text-green-600 border-green-500/20'
-                                                    }`}>
-                                                        {u.role || 'Member'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-8 py-5">
-                                                     <span className={`text-[10px] font-black uppercase tracking-widest ${u.status === 'suspended' ? 'text-red-600' : 'text-green-600'}`}>
-                                                        {u.status === 'suspended' ? 'Suspended' : 'Active'}
-                                                     </span>
-                                                </td>
-                                                <td className="px-8 py-5 text-right">
-                                                    <div className="flex justify-end gap-2">
-                                                        <button
-                                                            onClick={() => handleViewUserDetail(u)}
-                                                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                                                            title="Deep Dive Analysis"
-                                                        >
-                                                            <Eye className="w-5 h-5" />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleToggleUserSuspension(u)}
-                                                            className={`p-2 rounded-lg transition-all ${u.status === 'suspended' ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:text-red-600 hover:bg-red-50'}`}
-                                                            title={u.status === 'suspended' ? 'Reinstate User' : 'Suspend User'}
-                                                        >
-                                                            {u.status === 'suspended' ? <CheckCircle className="w-5 h-5" /> : <Ban className="w-5 h-5" />}
-                                                        </button>
-                                                        {u.role !== 'Admin' && (
-                                                            <button
-                                                                onClick={() => handlePromoteToAdmin(u.id)}
-                                                                className="p-2 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-all"
-                                                                title="Promote to Admin"
-                                                            >
-                                                                <Shield className="w-5 h-5" />
-                                                            </button>
-                                                        )}
-                                                        <button
-                                                            onClick={() => handleDeleteRecord('users', u.id)}
-                                                            className="p-2 text-gray-400 hover:text-spark-red hover:bg-red-50 rounded-lg transition-all"
-                                                            title="Delete User"
-                                                        >
-                                                            <Trash2 className="w-5 h-5" />
-                                                        </button>
-                                                    </div>
-                                                </td>
+
+                            <div className="bg-[var(--bg-primary)] rounded-[3rem] border border-[var(--border-color)] shadow-sm overflow-hidden">
+                                <div className="p-8 border-b border-[var(--border-color)] flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                    <div>
+                                        <h3 className="text-2xl font-black text-[var(--text-primary)]">Network Directory</h3>
+                                        <p className="text-[var(--text-secondary)] font-bold text-sm">Monitor and moderate {allUsers.length} network participants.</p>
+                                    </div>
+                                    <div className="relative w-full md:w-80">
+                                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                        <input
+                                            type="text"
+                                            placeholder="Search by name, email, or role..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            className="w-full pl-12 pr-4 py-4 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-spark-red/20 transition-all"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full">
+                                        <thead className="bg-[var(--bg-secondary)]/50">
+                                            <tr>
+                                                <th className="px-8 py-5 text-left text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">User Profile</th>
+                                                <th className="px-8 py-5 text-left text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Platform Role</th>
+                                                <th className="px-8 py-5 text-left text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Status</th>
+                                                <th className="px-8 py-5 text-right text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Actions</th>
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                        </thead>
+                                        <tbody className="divide-y divide-[var(--border-color)]">
+                                            {filteredUsers.map((u) => (
+                                                <tr key={u.id} className={`hover:bg-[var(--bg-secondary)]/30 transition-colors ${u.status === 'suspended' ? 'bg-red-50/50 grayscale-[0.5]' : ''}`}>
+                                                    <td className="px-8 py-5">
+                                                        <div className="flex items-center gap-4">
+                                                            <div className="w-12 h-12 bg-spark-red text-white rounded-2xl flex items-center justify-center font-black text-xl relative">
+                                                                {(u.name || u.email || '?').charAt(0).toUpperCase()}
+                                                                {u.status === 'suspended' && <div className="absolute -top-1 -right-1 bg-red-600 rounded-full p-1 border-2 border-white"><Ban className="w-3 h-3 text-white" /></div>}
+                                                            </div>
+                                                            <div>
+                                                                <p className="font-black text-[var(--text-primary)] text-base">{u.name || 'Anonymous'}</p>
+                                                                <p className="text-xs text-[var(--text-secondary)] font-bold">{u.email}</p>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-8 py-5">
+                                                        <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border ${
+                                                            u.role === 'Brand' ? 'bg-blue-500/10 text-blue-600 border-blue-500/20' :
+                                                            (u.role?.includes('Creator')) ? 'bg-spark-red/10 text-spark-red border-spark-red/20' : 
+                                                            'bg-green-500/10 text-green-600 border-green-500/20'
+                                                        }`}>
+                                                            {u.role || 'Member'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-8 py-5">
+                                                         <span className={`text-[10px] font-black uppercase tracking-widest ${u.status === 'suspended' ? 'text-red-600' : 'text-green-600'}`}>
+                                                            {u.status === 'suspended' ? 'Suspended' : 'Active'}
+                                                         </span>
+                                                    </td>
+                                                    <td className="px-8 py-5 text-right">
+                                                        <div className="flex justify-end gap-2">
+                                                            <button
+                                                                onClick={() => handleViewUserDetail(u)}
+                                                                className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                                                title="Deep Dive Analysis"
+                                                            >
+                                                                <Eye className="w-5 h-5" />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleToggleUserSuspension(u)}
+                                                                className={`p-2 rounded-lg transition-all ${u.status === 'suspended' ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:text-red-600 hover:bg-red-50'}`}
+                                                                title={u.status === 'suspended' ? 'Reinstate User' : 'Suspend User'}
+                                                            >
+                                                                {u.status === 'suspended' ? <CheckCircle className="w-5 h-5" /> : <Ban className="w-5 h-5" />}
+                                                            </button>
+                                                            {u.role !== 'Admin' && (
+                                                                <button
+                                                                    onClick={() => handlePromoteToAdmin(u.id)}
+                                                                    className="p-2 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-all"
+                                                                    title="Promote to Admin"
+                                                                >
+                                                                    <Shield className="w-5 h-5" />
+                                                                </button>
+                                                            )}
+                                                            <button
+                                                                onClick={() => handleDeleteRecord('users', u.id)}
+                                                                className="p-2 text-gray-400 hover:text-spark-red hover:bg-red-50 rounded-lg transition-all"
+                                                                title="Delete User"
+                                                            >
+                                                                <Trash2 className="w-5 h-5" />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
-                    </div>
+
+                        {/* Email Blast Modal */}
+                        {showEmailBlast && (
+                            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                                <div className="bg-[var(--bg-primary)] p-8 rounded-[2rem] border border-[var(--border-color)] max-w-xl w-full relative animate-in zoom-in-95 duration-300 shadow-2xl">
+                                    <button
+                                        onClick={() => setShowEmailBlast(false)}
+                                        className="absolute top-6 right-6 p-2 text-[var(--text-secondary)] hover:text-spark-red hover:bg-red-50 rounded-full transition-all"
+                                    >
+                                        <XCircle className="w-6 h-6" />
+                                    </button>
+                                    <div className="flex items-center gap-3 mb-6">
+                                        <div className="w-12 h-12 bg-spark-red/10 text-spark-red rounded-2xl flex items-center justify-center">
+                                            <Mail className="w-6 h-6" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-2xl font-black text-[var(--text-primary)]">Email Broadcast</h3>
+                                            <p className="text-xs text-[var(--text-secondary)] font-bold uppercase tracking-widest">Admin-to-platform communication</p>
+                                        </div>
+                                    </div>
+
+                                    {emailBlastResult ? (
+                                        <div className="text-center py-8 space-y-4">
+                                            <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto">
+                                                <CheckCircle className="w-10 h-10" />
+                                            </div>
+                                            <h4 className="text-xl font-black text-[var(--text-primary)]">Blast Sent!</h4>
+                                            <div className="grid grid-cols-3 gap-3 mt-4">
+                                                <div className="p-4 bg-green-50 rounded-2xl text-center">
+                                                    <p className="text-2xl font-black text-green-600">{emailBlastResult.sent}</p>
+                                                    <p className="text-[10px] font-black text-green-500 uppercase tracking-widest">Sent</p>
+                                                </div>
+                                                <div className="p-4 bg-red-50 rounded-2xl text-center">
+                                                    <p className="text-2xl font-black text-red-600">{emailBlastResult.failed}</p>
+                                                    <p className="text-[10px] font-black text-red-500 uppercase tracking-widest">Failed</p>
+                                                </div>
+                                                <div className="p-4 bg-[var(--bg-secondary)] rounded-2xl text-center">
+                                                    <p className="text-2xl font-black text-[var(--text-primary)]">{emailBlastResult.total}</p>
+                                                    <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Total</p>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => { setShowEmailBlast(false); setEmailBlastResult(null); }}
+                                                className="mt-4 px-6 py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-600 transition-all text-sm uppercase tracking-widest"
+                                            >
+                                                Done
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <form onSubmit={handleEmailBlast} className="space-y-5">
+                                            <div>
+                                                <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-[0.2em] mb-2">Target Audience</label>
+                                                <select
+                                                    value={emailBlastForm.role}
+                                                    onChange={e => setEmailBlastForm({...emailBlastForm, role: e.target.value})}
+                                                    className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-bold text-sm focus:ring-2 focus:ring-spark-red/20 outline-none text-[var(--text-primary)]"
+                                                >
+                                                    <option value="all">All Users</option>
+                                                    <option value="Creator">Creators Only</option>
+                                                    <option value="Brand">Brands Only</option>
+                                                    <option value="Association">Associations Only</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-[0.2em] mb-2">Email Subject</label>
+                                                <input
+                                                    required
+                                                    type="text"
+                                                    value={emailBlastForm.subject}
+                                                    onChange={e => setEmailBlastForm({...emailBlastForm, subject: e.target.value})}
+                                                    className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-medium text-sm focus:ring-2 focus:ring-spark-red/20 outline-none text-[var(--text-primary)]"
+                                                    placeholder="e.g. Important Update from Campus Spark"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-[0.2em] mb-2">Email Headline</label>
+                                                <input
+                                                    required
+                                                    type="text"
+                                                    value={emailBlastForm.title}
+                                                    onChange={e => setEmailBlastForm({...emailBlastForm, title: e.target.value})}
+                                                    className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-medium text-sm focus:ring-2 focus:ring-spark-red/20 outline-none text-[var(--text-primary)]"
+                                                    placeholder="e.g. Exciting news for our community!"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-[0.2em] mb-2">Message Body</label>
+                                                <textarea
+                                                    required
+                                                    rows={5}
+                                                    value={emailBlastForm.body}
+                                                    onChange={e => setEmailBlastForm({...emailBlastForm, body: e.target.value})}
+                                                    className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-medium text-sm focus:ring-2 focus:ring-spark-red/20 outline-none resize-none text-[var(--text-primary)]"
+                                                    placeholder="Write your message here. Be clear and concise."
+                                                />
+                                            </div>
+                                            <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-100 rounded-xl">
+                                                <Info className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                                                <p className="text-[11px] font-bold text-amber-700">This will send a real email to every {emailBlastForm.role === 'all' ? 'user' : emailBlastForm.role} on the platform. Double-check before sending.</p>
+                                            </div>
+                                            <button
+                                                type="submit"
+                                                disabled={emailBlastLoading}
+                                                className="w-full flex items-center justify-center gap-2 py-4 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-100/50 uppercase tracking-widest text-sm disabled:opacity-60"
+                                            >
+                                                {emailBlastLoading ? (
+                                                    <><Loader2 className="w-4 h-4 animate-spin" /> Sending...</>
+                                                ) : (
+                                                    <><Send className="w-4 h-4" /> Send Email Blast</>
+                                                )}
+                                            </button>
+                                        </form>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </>
                 );
             case 'withdrawals':
                 const pendingWithdrawals = allTransactions.filter(t => t.type === 'debit' && t.status === 'pending');
@@ -1677,6 +2015,182 @@ const AdminDashboard: React.FC<{
                         preSelectedEntity={preSelectedDisputeEntity}
                         onClearPreSelected={() => setPreSelectedDisputeEntity(null)}
                     />
+                );
+
+            case 'platform_reviews':
+                return (
+                    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                        <div>
+                            <h2 className="text-3xl font-black text-[var(--text-primary)]">Platform Reviews</h2>
+                            <p className="text-[var(--text-secondary)] font-medium mt-1">Feedback and reviews submitted by brands, creators, and associations.</p>
+                        </div>
+
+                        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {platformReviews.length === 0 ? (
+                                <div className="col-span-full text-center py-20 bg-[var(--bg-primary)] rounded-[3rem] border border-[var(--border-color)] text-[var(--text-secondary)] font-bold italic">
+                                    No platform reviews submitted yet.
+                                </div>
+                            ) : (
+                                platformReviews.map((r) => (
+                                    <div key={r.id} className="bg-[var(--bg-primary)] p-6 rounded-[2rem] border border-[var(--border-color)] shadow-sm space-y-4 hover:shadow-md transition-all">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <h4 className="font-black text-[var(--text-primary)] text-base">{r.userName || 'Anonymous'}</h4>
+                                                <span className={`inline-block mt-1 px-2.5 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-wider ${
+                                                    r.userRole === 'Brand' ? 'bg-spark-red/10 text-spark-red' : 
+                                                    r.userRole === 'Creator' ? 'bg-spark-black text-white' : 
+                                                    'bg-[var(--bg-secondary)] text-[var(--text-secondary)]'
+                                                }`}>
+                                                    {r.userRole || 'User'}
+                                                </span>
+                                            </div>
+                                            <div className="flex gap-0.5">
+                                                {Array.from({ length: 5 }).map((_, i) => (
+                                                    <LucideIcons.Star 
+                                                        key={i} 
+                                                        className={`w-4 h-4 ${i < (r.stars || 5) ? 'fill-yellow-400 text-yellow-400' : 'text-[var(--border-color)]'}`} 
+                                                    />
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <p className="text-sm text-[var(--text-secondary)] font-medium italic leading-relaxed">
+                                            "{r.reviewText || 'No comment provided.'}"
+                                        </p>
+                                        <div className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest pt-2 border-t border-[var(--border-color)]">
+                                            {r.createdAt ? new Date(r.createdAt).toLocaleDateString() : 'N/A'}
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                );
+
+            case 'support':
+                return (
+                    <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                                <h2 className="text-3xl font-black text-[var(--text-primary)]">Support Inbox</h2>
+                                <p className="text-[var(--text-secondary)] font-medium mt-1">Manage and respond to user support tickets.</p>
+                            </div>
+                            <div className="flex gap-3">
+                                <span className="px-4 py-2 bg-spark-red/10 text-spark-red text-xs font-black uppercase tracking-widest rounded-xl border border-spark-red/20">
+                                    {supportTickets.filter(t => t.status === 'open').length} Open
+                                </span>
+                                <span className="px-4 py-2 bg-green-500/10 text-green-700 text-xs font-black uppercase tracking-widest rounded-xl border border-green-500/20">
+                                    {supportTickets.filter(t => t.status === 'responded').length} Responded
+                                </span>
+                            </div>
+                        </div>
+
+                        {selectedTicket ? (
+                            <div className="bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] shadow-sm p-8 space-y-6">
+                                <button onClick={() => { setSelectedTicket(null); setReplyBody(''); }} className="text-xs font-black text-spark-red uppercase tracking-widest hover:underline flex items-center gap-1">← Back to Inbox</button>
+                                <div className="border-b border-[var(--border-color)] pb-6">
+                                    <div className="flex justify-between items-start flex-wrap gap-4">
+                                        <div>
+                                            <h3 className="text-xl font-black text-[var(--text-primary)]">{selectedTicket.name}</h3>
+                                            <p className="text-xs text-spark-red font-black uppercase tracking-widest mt-1">{selectedTicket.enquiryType?.replace(/-/g, ' ')}</p>
+                                        </div>
+                                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${selectedTicket.status === 'responded' ? 'bg-green-500/10 text-green-700 border border-green-500/20' : 'bg-spark-red/10 text-spark-red border border-spark-red/20'}`}>
+                                            {selectedTicket.status}
+                                        </span>
+                                    </div>
+                                    <div className="grid sm:grid-cols-3 gap-4 mt-4 text-xs text-[var(--text-secondary)] font-medium">
+                                        <p><span className="font-black text-[var(--text-primary)]">Email:</span> {selectedTicket.email}</p>
+                                        <p><span className="font-black text-[var(--text-primary)]">Phone:</span> {selectedTicket.phone || 'N/A'}</p>
+                                        <p><span className="font-black text-[var(--text-primary)]">User Type:</span> {selectedTicket.userType}</p>
+                                        <p><span className="font-black text-[var(--text-primary)]">Organisation:</span> {selectedTicket.organisation || 'N/A'}</p>
+                                        <p><span className="font-black text-[var(--text-primary)]">Callback:</span> {selectedTicket.callbackTime}</p>
+                                        <p><span className="font-black text-[var(--text-primary)]">Submitted:</span> {selectedTicket.createdAt?.seconds ? new Date(selectedTicket.createdAt.seconds * 1000).toLocaleString() : 'N/A'}</p>
+                                    </div>
+                                </div>
+                                <div className="bg-[var(--bg-secondary)] rounded-2xl p-6 border border-[var(--border-color)]">
+                                    <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-3">Message</p>
+                                    <p className="text-sm text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap">{selectedTicket.message}</p>
+                                </div>
+                                {selectedTicket.status !== 'responded' && (
+                                    <div className="space-y-4">
+                                        <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Send Reply to {selectedTicket.email}</p>
+                                        <textarea
+                                            value={replyBody}
+                                            onChange={e => setReplyBody(e.target.value)}
+                                            placeholder="Type your reply here..."
+                                            className="w-full px-6 py-4 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl outline-none font-medium text-[var(--text-primary)] focus:border-spark-red min-h-[120px] resize-none"
+                                        />
+                                        <button
+                                            disabled={!replyBody.trim() || replyLoading}
+                                            onClick={async () => {
+                                                if (!replyBody.trim()) return;
+                                                setReplyLoading(true);
+                                                try {
+                                                    await apiClient.post('email/notify', {
+                                                        type: 'generic',
+                                                        recipientEmail: selectedTicket.email,
+                                                        recipientName: selectedTicket.name,
+                                                        subject: `Re: Your ABC-Rally Support Request — ${selectedTicket.enquiryType?.replace(/-/g, ' ')}`,
+                                                        title: 'Response to Your Support Request',
+                                                        body: replyBody,
+                                                    });
+                                                    await updateDoc(doc(db, 'support_tickets', selectedTicket.id), { status: 'responded', respondedAt: new Date().toISOString(), replyBody });
+                                                    setSupportTickets(prev => prev.map(t => t.id === selectedTicket.id ? { ...t, status: 'responded' } : t));
+                                                    setSelectedTicket({ ...selectedTicket, status: 'responded' });
+                                                    setReplyBody('');
+                                                    alert('Reply sent successfully!');
+                                                } catch (err: any) {
+                                                    alert('Failed to send reply: ' + (err?.response?.data?.error || err.message));
+                                                } finally {
+                                                    setReplyLoading(false);
+                                                }
+                                            }}
+                                            className="px-8 py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all text-xs uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                        >
+                                            {replyLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending...</> : <><Send className="w-4 h-4" /> Send Reply</>}
+                                        </button>
+                                    </div>
+                                )}
+                                {selectedTicket.status === 'responded' && (
+                                    <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-2xl flex items-center gap-3">
+                                        <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+                                        <p className="text-sm font-bold text-green-700">This ticket has been responded to. A reply was sent to {selectedTicket.email}.</p>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            supportTickets.length === 0 ? (
+                                <div className="text-center py-24 bg-[var(--bg-primary)] rounded-[3rem] border-2 border-dashed border-[var(--border-color)]">
+                                    <HelpCircle className="w-12 h-12 text-[var(--text-secondary)] mx-auto mb-4" />
+                                    <h3 className="text-xl font-black text-[var(--text-primary)] mb-2">No Support Tickets</h3>
+                                    <p className="text-[var(--text-secondary)]">When users submit the support/contact form, tickets will appear here.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {supportTickets.map(ticket => (
+                                        <div key={ticket.id} className="bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-spark-red/30 transition-all cursor-pointer group" onClick={() => { setSelectedTicket(ticket); setReplyBody(''); }}>
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-12 h-12 bg-spark-red/10 rounded-2xl flex items-center justify-center text-spark-red font-black text-lg flex-shrink-0">
+                                                    {ticket.name?.charAt(0) || '?'}
+                                                </div>
+                                                <div>
+                                                    <h4 className="font-black text-[var(--text-primary)] group-hover:text-spark-red transition-colors">{ticket.name}</h4>
+                                                    <p className="text-xs text-[var(--text-secondary)] font-medium">{ticket.email} · {ticket.userType}</p>
+                                                    <p className="text-[10px] text-spark-red font-black uppercase tracking-widest mt-1">{ticket.enquiryType?.replace(/-/g, ' ')}</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${ticket.status === 'responded' ? 'bg-green-500/10 text-green-700 border border-green-500/20' : 'bg-spark-red/10 text-spark-red border border-spark-red/20'}`}>
+                                                    {ticket.status}
+                                                </span>
+                                                <span className="text-xs text-[var(--text-secondary)] font-medium">{ticket.createdAt?.seconds ? new Date(ticket.createdAt.seconds * 1000).toLocaleDateString() : ''}</span>
+                                                <ArrowRight className="w-4 h-4 text-[var(--text-secondary)] group-hover:text-spark-red transition-colors" />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )
+                        )}
+                    </div>
                 );
 
             case 'overview':
