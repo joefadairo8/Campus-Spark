@@ -832,6 +832,7 @@ app.post('/api/email/notify', async (req, res) => {
 const PANDASCROW_BASE = process.env.PANDASCROW_BASE_URL || 'https://api.pandascrow.io';
 const PANDASCROW_TOKEN = process.env.PANDASCROW_TOKEN || '';
 const PANDASCROW_UUID = process.env.PANDASCROW_UUID || '';
+const PANDASCROW_INITIATOR_ROLE = process.env.PANDASCROW_INITIATOR_ROLE || '';
 
 /**
  * POST /api/escrow/initialize
@@ -848,19 +849,59 @@ app.post('/api/escrow/initialize', async (req: any, res: any) => {
             deadline,
             brandName,
             brandEmail,
-            creatorName,
-            creatorEmail,
+            brandPhone,
+            creatorId,
         } = req.body;
 
-        if (!amount || !gigTitle || !brandEmail || !creatorEmail) {
-            return res.status(400).json({ error: 'Missing required fields: amount, gigTitle, brandEmail, creatorEmail.' });
+        // Basic validation
+        if (!amount || !gigTitle || !brandEmail || !creatorId) {
+            return res.status(400).json({ error: 'Missing required fields: amount, gigTitle, brandEmail, creatorId.' });
         }
 
-        const payload = {
+        // Ensure integrator provided the exact initiator role value from Pandascrow docs
+        if (!PANDASCROW_INITIATOR_ROLE) {
+            console.error('[Pandascrow] Missing PANDASCROW_INITIATOR_ROLE environment variable');
+            return res.status(500).json({ error: 'Server misconfiguration: PANDASCROW_INITIATOR_ROLE not set. Please set the exact initiator role value provided by Pandascrow.' });
+        }
+
+        // Fetch creator (seller) details from our primary database (MySQL)
+        const [[creator]]: any = await pool.query(
+            'SELECT id, name, email, phoneNumber, accountName, accountNumber, bankCode, bankName FROM User WHERE id = ?',
+            [creatorId]
+        );
+
+        if (!creator) {
+            return res.status(404).json({ error: 'Creator not found.' });
+        }
+
+        // Validate creator payout setup
+        const creatorPhone = creator.phoneNumber || creator.phone || '';
+        const creatorAccountNumber = creator.accountNumber || creator.account_number || '';
+        const creatorBankCode = creator.bankCode || creator.bank_code || '';
+        const creatorAccountName = creator.accountName || creator.account_name || '';
+
+        if (!creatorPhone || !creatorAccountNumber || !creatorBankCode || !creatorAccountName) {
+            return res.status(400).json({ error: 'Creator has not completed payout setup.' });
+        }
+
+        // Build seller_details using only fields we store and Pandascrow supports
+        const sellerDetails: any = {
+            name: creator.name,
+            email: creator.email,
+            phone: creatorPhone,
+            account_name: creatorAccountName,
+            account_number: creatorAccountNumber,
+            bank_code: creatorBankCode,
+        };
+        if (creator.bankName) sellerDetails.bank_name = creator.bankName;
+
+        // Build payload for Pandascrow in broker/marketplace mode
+        const payload: any = {
             uuid: PANDASCROW_UUID,
             escrow_type: 'onetime',
-            initiator_role: 'buyer',
+            initiator_role: PANDASCROW_INITIATOR_ROLE, // exact value must be provided via env var
             initiator_id: PANDASCROW_UUID,
+            partner_id: PANDASCROW_UUID,
             title: `Campaign Gig: ${gigTitle}`,
             currency: 'NGN',
             description: gigDescription || `Escrow for creator gig: ${gigTitle}`,
@@ -868,31 +909,25 @@ app.post('/api/escrow/initialize', async (req: any, res: any) => {
             inspection_period: '3',
             delivery_date: deadline || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
             how_dispute_is_handled: 'platform',
-            // Fees are deducted from the seller/platform payout, NOT added on top of what the brand pays.
-            // This means: brand pays exactly the allocated amount, and 10% is deducted from the platform's
-            // received payout (5% Pandascrow fee + 5% platform partner commission = 10% total).
+            // Business model: Brand (buyer) pays exactly the campaign amount.
+            // Creator (seller) receives payout net of partner + Pandascrow fees.
             who_pay_fees: 'seller',
-            amount: Number(amount), // Amount in NGN (Naira) — Pandascrow expects Naira, NOT Kobo
+            amount: Number(amount),
             dispute_window: '5',
             callback_url: `${process.env.API_URL || process.env.APP_URL || 'https://api.abc-rally.com'}/api/escrow/webhook`,
-            partner_escrow_fee: '5', // Platform earns 5% partner commission; Pandascrow takes ~5% standard fee = 10% total
+            partner_escrow_fee: '5',
             buyer_details: {
                 name: brandName || 'Brand Partner',
                 email: brandEmail,
-                phone: '+2340000000000',
+                phone: brandPhone || '+2340000000000',
             },
-            // Seller is the platform admin — Pandascrow pays out to the platform,
-            // which then manually disburses to the creator via the admin dashboard.
-            seller_details: {
-                name: 'ABC-Rally Admin',
-                email: process.env.ADMIN_EMAIL || 'olathetechboy@gmail.com',
-                phone: '+2340000000000',
-            },
-            payout: {
-                payout_type: 'bank',
-            },
+            //seller_details: sellerDetails,
+           // payout: {
+            //    payout_type: 'bank',
+            //},
         };
 
+        // Send to Pandascrow
         const pandaRes = await fetch(`${PANDASCROW_BASE}/escrow/initialize`, {
             method: 'POST',
             headers: {
@@ -902,13 +937,16 @@ app.post('/api/escrow/initialize', async (req: any, res: any) => {
             body: JSON.stringify(payload),
         });
 
-        const pandaData: any = await pandaRes.json();
+        let pandaData: any = {};
+        try { pandaData = await pandaRes.json(); } catch (e) { pandaData = { raw: 'non-json-response' }; }
 
         if (!pandaRes.ok || pandaData.status === false) {
             console.error('[Pandascrow] Initialize error:', pandaData);
-            return res.status(502).json({ error: pandaData?.data?.message || 'Escrow initialization failed.' });
+            const message = pandaData?.data?.message || pandaData?.message || JSON.stringify(pandaData);
+            return res.status(502).json({ error: message || 'Escrow initialization failed.' });
         }
 
+        // Preserve original return contract
         res.json({
             escrow_id: pandaData.data?.escrow_id,
             payment_url: pandaData.data?.payment_url,

@@ -80,6 +80,10 @@ export interface User {
   bio?: string;
   location?: string;
   phoneNumber?: string;
+  accountName?: string;
+  accountNumber?: string;
+  bankCode?: string;
+  bankName?: string;
   website?: string;
   instagram?: string;
   twitter?: string;

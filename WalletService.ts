@@ -189,6 +189,7 @@ export const WalletService = {
             const iData = iSnap.exists() ? iSnap.data() as Wallet : { balance: 0, pending: 0, escrow: 0 };
             const sData = sSnap.exists() ? sSnap.data() as Wallet : { balance: 0, pending: 0, escrow: 0 };
 
+
             const serviceFee = amount * SERVICE_FEE_PCT;
             const creatorPay = amount - serviceFee;
 
@@ -207,12 +208,30 @@ export const WalletService = {
                 lastUpdated: fsTimestamp()
             });
 
-            // 3. Add to System Revenue (10%)
-            transaction.set(systemRef, {
-                ...sData,
-                balance: (sData.balance || 0) + serviceFee,
-                lastUpdated: fsTimestamp()
-            });
+            // 3. Add to System Revenue (10%) — if this allocation is linked to a Pandascrow escrow,
+            // do NOT credit the system wallet here. In broker mode Pandascrow will disburse
+            // the partner commission directly to the platform; record a pending partner
+            // transaction instead and let the webhook finalize the credit when Pandascrow
+            // confirms the payout.
+            if (!allocData.escrowId) {
+                transaction.set(systemRef, {
+                    ...sData,
+                    balance: (sData.balance || 0) + serviceFee,
+                    lastUpdated: fsTimestamp()
+                });
+            } else {
+                // Create a pending transaction record for partner commission — do NOT update balance
+                const pendingTransRef = fsDoc(fsCollection(db, 'transactions'));
+                transaction.set(pendingTransRef, {
+                    userId: REVENUE_WALLET_ID,
+                    amount: serviceFee,
+                    type: 'credit',
+                    status: 'pending',
+                    description: `Partner commission pending: ${gigTitle} (Creator: ${creatorId})`,
+                    relatedUserId: creatorId,
+                    createdAt: fsTimestamp()
+                });
+            }
 
             // 4. Record Transactions
             const iTransRef = fsDoc(fsCollection(db, 'transactions'));

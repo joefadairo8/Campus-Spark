@@ -312,8 +312,8 @@ const BrandDashboard: React.FC<{
                         deadline: viewingApplicants.deadline,
                         brandName: brandProfile.name || brandProfile.companyName || 'Brand',
                         brandEmail: brandProfile.email || user?.email,
-                        creatorName: selectedAppToApprove.name || selectedAppToApprove.creatorName || 'Creator',
-                        creatorEmail: selectedAppToApprove.email || selectedAppToApprove.creatorEmail,
+                        brandPhone: brandProfile.phoneNumber || brandProfile.phone || '',
+                        creatorId: selectedAppToApprove.userId || selectedAppToApprove.id || selectedAppToApprove.appId,
                     }),
                 });
                 const escrowJson = await escrowRes.json();
@@ -566,8 +566,8 @@ const BrandDashboard: React.FC<{
                         deadline: campaign.deadline,
                         brandName: brandProfile.name || brandProfile.companyName || 'Brand',
                         brandEmail: brandProfile.email || user?.email,
-                        creatorName: allocationTarget.name || 'Creator',
-                        creatorEmail: allocationTarget.email || '',
+                        brandPhone: brandProfile.phoneNumber || brandProfile.phone || '',
+                        creatorId: allocationTarget.id,
                     }),
                 });
                 const escrowJson = await escrowRes.json();
