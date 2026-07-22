@@ -1151,8 +1151,9 @@ app.post('/api/escrow/complete', async (req: any, res: any) => {
                 const creatorId = allocData.creatorId;
                 const brandId = allocData.brandId;
                 const amount = Number(allocData.amount) || 0;
-                const serviceFee = amount * 0.1;
-                const creatorPay = amount - serviceFee;
+                // Platform fee: Pandascrow takes 5%, ABC-Rally takes 5% = 10% total.
+                // Creator receives 90% of the original gig amount.
+                const creatorPay = amount * 0.9;
 
                 // 1. Mark allocation as approved / completed
                 await allocDoc.ref.update({
@@ -1169,6 +1170,7 @@ app.post('/api/escrow/complete', async (req: any, res: any) => {
                         const cData = cSnap.data() || {};
                         await cWalletRef.update({
                             balance: (Number(cData.balance) || 0) + creatorPay,
+                            // Escrow lock is cleared: funds have moved to available balance.
                             escrow: Math.max(0, (Number(cData.escrow) || 0) - amount),
                             lastUpdated: admin.firestore.FieldValue.serverTimestamp()
                         });
@@ -1195,17 +1197,39 @@ app.post('/api/escrow/complete', async (req: any, res: any) => {
                     });
                 }
 
-                // 3. Deduct from Brand Escrow
+                // 3. Zero out Brand Escrow lock on release — funds have left escrow.
                 if (brandId) {
                     const bWalletRef = firestoreDb.collection('wallets').doc(brandId);
                     const bSnap = await bWalletRef.get();
                     if (bSnap.exists) {
                         const bData = bSnap.data() || {};
                         await bWalletRef.update({
+                            // Subtract this allocation's amount; clamp to 0 so it never goes negative.
+                            // If this is the only / final allocation, escrow becomes exactly 0.
                             escrow: Math.max(0, (Number(bData.escrow) || 0) - amount),
                             lastUpdated: admin.firestore.FieldValue.serverTimestamp()
                         });
+                    } else {
+                        // Wallet doesn't exist yet — create it with escrow already zeroed.
+                        await bWalletRef.set({
+                            balance: 0,
+                            pending: 0,
+                            escrow: 0,
+                            lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+                        });
                     }
+                    // Record debit transaction for brand (escrow released)
+                    const bTransRef = firestoreDb.collection('transactions').doc();
+                    await bTransRef.set({
+                        id: bTransRef.id,
+                        userId: brandId,
+                        amount: amount,
+                        type: 'debit',
+                        status: 'completed',
+                        description: `Escrow Released: ${allocData.campaignTitle || 'Gig'} — Funds disbursed to creator`,
+                        relatedUserId: creatorId,
+                        createdAt: admin.firestore.FieldValue.serverTimestamp()
+                    });
                 }
             }
         } catch (fErr) {
