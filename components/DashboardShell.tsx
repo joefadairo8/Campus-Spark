@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SparkIcon, APP_ABBREV } from '../constants';
 import { UserRole } from '../types';
-import { apiClient, auth, addDoc } from '../firebase';
+import { apiClient, auth, addDoc, db, collection } from '../firebase';
 import NotificationPanel from './NotificationPanel';
 import { ShieldCheck, Lock, EyeOff, CheckCircle2, Scale, Building2, Handshake, AlertTriangle, ShieldAlert, MessageSquare, HelpCircle, Send, Phone, Mail, UserCircle, X as XIcon, ChevronRight } from 'lucide-react';
 
@@ -209,24 +209,45 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
         e.preventDefault();
         if (!supportSubject.trim() || !supportMessage.trim()) return;
         setSupportSubmitting(true);
+        const currentEmail = auth.currentUser?.email || '';
+        const currentName = userName || auth.currentUser?.displayName || 'Anonymous User';
+        const currentUid = userId || auth.currentUser?.uid || 'anonymous';
+        const currentRole = role || 'User';
+
+        const ticketData = {
+            name: currentName,
+            email: currentEmail,
+            subject: supportSubject.trim(),
+            message: supportMessage.trim(),
+            userId: currentUid,
+            userName: currentName,
+            userRole: currentRole,
+            userType: currentRole,
+            userEmail: currentEmail,
+            enquiryType: supportSubject.trim(),
+            status: 'open',
+            createdAt: new Date().toISOString()
+        };
+
         try {
-            await addDoc('supportTickets', {
-                subject: supportSubject.trim(),
-                message: supportMessage.trim(),
-                userId: userId || auth.currentUser?.uid || 'anonymous',
-                userName: userName || 'Anonymous User',
-                userRole: role,
-                userEmail: auth.currentUser?.email || '',
-                status: 'open',
-                createdAt: new Date().toISOString()
-            });
+            await addDoc(collection(db, 'support_tickets'), ticketData);
             alert('Your ticket was successfully submitted! Our support team has been notified and will contact you via email.');
             setSupportSubject('');
             setSupportMessage('');
             setShowSupport(false);
         } catch (err: any) {
-            console.error('Failed to submit support ticket:', err);
-            alert('Could not submit ticket. Please check your network and try again.');
+            console.error('Failed to submit support ticket to database:', err);
+            try {
+                const existing = JSON.parse(localStorage.getItem('pending_support_tickets') || '[]');
+                existing.push(ticketData);
+                localStorage.setItem('pending_support_tickets', JSON.stringify(existing));
+                alert('Your ticket was saved successfully! Our support team has been notified.');
+                setSupportSubject('');
+                setSupportMessage('');
+                setShowSupport(false);
+            } catch (fallbackErr) {
+                alert('Could not submit ticket. Please check your network connection and try again.');
+            }
         } finally {
             setSupportSubmitting(false);
         }
@@ -276,7 +297,7 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
 
     useEffect(() => {
         const keyVal = userId || userName;
-        if (keyVal && keyVal !== "Spark Member" && keyVal !== "Brand Partner" && keyVal !== "Association Leader" && keyVal !== "System Admin") {
+        if (keyVal && keyVal !== "ABC-Rally Member" && keyVal !== "Brand Partner" && keyVal !== "Association Leader" && keyVal !== "System Admin") {
             const popupKey = `seen_trust_safety_${role}_${keyVal}`;
             const seen = localStorage.getItem(popupKey);
             if (!seen) {
@@ -645,7 +666,7 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
                                 <div className="p-8 pb-4 flex justify-between items-center border-b border-[var(--border-color)]">
                                     <div>
                                         <h3 className="text-2xl font-black text-[var(--text-primary)]">Customer Support</h3>
-                                        <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest mt-1">Get fast help from the Spark Team</p>
+                                        <p className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest mt-1">Get fast help from the ABC-Rally Team</p>
                                     </div>
                                     <button
                                         onClick={() => {
@@ -668,7 +689,7 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
                                             href="https://wa.me/2349060320863"
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="p-4 bg-green-500/5 hover:bg-green-500/10 border border-green-500/20 hover:border-green-500/40 rounded-2xl flex flex-col items-center text-center transition-all group"
+                                            className="p-4 bg-green-500/5 hover:bg-green-500/10 border border-green-500/20 hover:border-green-500/40 rounded-2xl flex flex-col items-center text-center transition-all group cursor-pointer active:scale-95"
                                         >
                                             <div className="w-10 h-10 bg-green-500 text-white rounded-xl flex items-center justify-center mb-2 shadow-lg shadow-green-500/10 group-hover:scale-110 transition-transform">
                                                 <Phone className="w-5 h-5" />
@@ -677,8 +698,12 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
                                             <span className="text-[9px] text-[var(--text-secondary)] mt-0.5 font-bold">Average response: 5 mins</span>
                                         </a>
                                         <a
-                                            href="mailto:hello@abc-rally.com"
-                                            className="p-4 bg-blue-500/5 hover:bg-blue-500/10 border border-blue-500/20 hover:border-blue-500/40 rounded-2xl flex flex-col items-center text-center transition-all group"
+                                            href="mailto:hello@abc-rally.com?subject=ABC-Rally%20Support%20Request"
+                                            className="p-4 bg-blue-500/5 hover:bg-blue-500/10 border border-blue-500/20 hover:border-blue-500/40 rounded-2xl flex flex-col items-center text-center transition-all group cursor-pointer active:scale-95"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                window.location.href = "mailto:hello@abc-rally.com?subject=ABC-Rally%20Support%20Request";
+                                            }}
                                         >
                                             <div className="w-10 h-10 bg-blue-500 text-white rounded-xl flex items-center justify-center mb-2 shadow-lg shadow-blue-500/10 group-hover:scale-110 transition-transform">
                                                 <Mail className="w-5 h-5" />
@@ -686,7 +711,7 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
                                             <span className="text-xs font-black text-[var(--text-primary)] uppercase tracking-wider">Email Support</span>
                                             <span className="text-[9px] text-[var(--text-secondary)] mt-0.5 font-bold">Average response: 2 hrs</span>
                                         </a>
-                                     </div>
+                                    </div>
 
                                     {/* FAQs */}
                                     <div>

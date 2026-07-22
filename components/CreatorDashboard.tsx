@@ -1402,7 +1402,7 @@ const CreatorDashboard: React.FC<{
                                         disabled={portfolioSubmitting}
                                         className="w-full py-5 bg-gradient-red text-white font-black rounded-2xl shadow-xl shadow-red-100 hover:scale-[1.02] transition-all active:scale-95 disabled:opacity-50 uppercase tracking-[0.2em] text-sm mt-4"
                                     >
-                                        {portfolioSubmitting ? 'Uploading to Spark...' : 'Add to Portfolio'}
+                                        {portfolioSubmitting ? 'Uploading to ABC-Rally...' : 'Add to Portfolio'}
                                     </button>
                                 </div>
                             </form>
@@ -2993,7 +2993,7 @@ const CreatorDashboard: React.FC<{
             onViewChange={setCurrentSection}
             onLogout={onLogout}
             sidebarItems={sidebarItems}
-            userName={userProfile?.name || "Spark Member"}
+            userName={userProfile?.name || "ABC-Rally Member"}
             userSub={userProfile?.university || "Creator"}
             userId={user?.id || user?.uid}
             userImage={userProfile?.imageUrl}

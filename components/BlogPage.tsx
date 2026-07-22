@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { db, collection, query, where, getDocs, orderBy } from '../firebase';
 import { FileText, Calendar, ArrowLeft, ArrowRight } from 'lucide-react';
 
@@ -78,7 +78,7 @@ const BlogPage: React.FC<{ onNavigate: (page: string) => void }> = ({ onNavigate
                 </div>
                 <div className="max-w-7xl mx-auto relative z-10 pt-10">
                     <h1 className="text-3xl md:text-5xl font-fancy font-black text-[var(--text-primary)] mb-6 tracking-tighter">
-                        The <span className="text-gradient-red italic">Spark</span> Blog
+                        The <span className="text-gradient-red italic">ABC-Rally</span> Blog
                     </h1>
                     <p className="text-base md:text-lg text-[var(--text-secondary)] max-w-2xl mx-auto font-medium">Stories, insights, and opportunities from the heart of Nigeria's youth scene.</p>
                 </div>

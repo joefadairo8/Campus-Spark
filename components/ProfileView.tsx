@@ -349,7 +349,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
                             {success && (
                                 <div className="mb-8 p-6 bg-green-500/10 text-green-500 rounded-2xl font-black text-center animate-in fade-in zoom-in-95 flex items-center justify-center gap-3 text-xs uppercase tracking-widest">
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
-                                    Profile Synced with Spark!
+                                    Profile Synced with ABC-Rally!
                                 </div>
                             )}
 

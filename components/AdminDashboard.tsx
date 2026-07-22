@@ -1368,7 +1368,7 @@ const AdminDashboard: React.FC<{
                                                     value={emailBlastForm.subject}
                                                     onChange={e => setEmailBlastForm({...emailBlastForm, subject: e.target.value})}
                                                     className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-medium text-sm focus:ring-2 focus:ring-spark-red/20 outline-none text-[var(--text-primary)]"
-                                                    placeholder="e.g. Important Update from Campus Spark"
+                                                    placeholder="e.g. Important Update from ABC-Rally"
                                                 />
                                             </div>
                                             <div>

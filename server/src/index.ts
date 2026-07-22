@@ -412,7 +412,7 @@ app.post('/api/gigs', authenticateToken, async (req: any, res) => {
 });
 
 app.patch('/api/gigs/:id', authenticateToken, async (req: any, res) => {
-    const { status, studentId, title, description, reward } = req.body;
+    const { status, studentId, title, description, reward, budget, brief, category, deadline, location } = req.body;
     try {
         const [[gig]]: any = await pool.query('SELECT * FROM Gig WHERE id = ?', [req.params.id]);
         if (!gig) return res.status(404).json({ error: 'Gig not found' });
@@ -421,7 +421,9 @@ app.patch('/api/gigs/:id', authenticateToken, async (req: any, res) => {
         const isAdmin = req.user.role === 'Admin';
         const isOwner = currentUser && (gig.brand === currentUser.name || gig.brand === currentUser.email);
 
-        const isContentUpdate = title || description || reward;
+        const newReward = budget !== undefined ? Number(budget) : (reward !== undefined ? Number(reward) : undefined);
+
+        const isContentUpdate = title || description || newReward !== undefined;
         if (isContentUpdate && !isAdmin && !isOwner) {
             return res.status(403).json({ error: 'Unauthorized to edit this gig' });
         }
@@ -431,7 +433,7 @@ app.patch('/api/gigs/:id', authenticateToken, async (req: any, res) => {
         if (studentId) updateData.studentId = studentId;
         if (title) updateData.title = title;
         if (description) updateData.description = description;
-        if (reward) updateData.reward = Number(reward);
+        if (newReward !== undefined) updateData.reward = newReward;
 
         const fields = Object.keys(updateData);
         if (fields.length > 0) {
@@ -439,6 +441,27 @@ app.patch('/api/gigs/:id', authenticateToken, async (req: any, res) => {
             const values = fields.map(field => updateData[field]);
             values.push(req.params.id);
             await pool.query(`UPDATE Gig SET ${setClause} WHERE id = ?`, values);
+        }
+
+        // Sync Firestore document so both MySQL AND Firestore hold the updated budget & reward
+        try {
+            const gigRef = firestoreDb.collection('gigs').doc(req.params.id);
+            const fsUpdate: any = { updatedAt: new Date().toISOString() };
+            if (title) fsUpdate.title = title;
+            if (description) fsUpdate.description = description;
+            if (brief) fsUpdate.brief = brief;
+            if (newReward !== undefined) {
+                fsUpdate.reward = newReward;
+                fsUpdate.budget = newReward;
+            }
+            if (category) fsUpdate.category = category;
+            if (deadline) fsUpdate.deadline = deadline;
+            if (location) fsUpdate.location = location;
+            if (status) fsUpdate.status = status;
+
+            await gigRef.set(fsUpdate, { merge: true });
+        } catch (fsErr) {
+            console.warn('[Gig Patch] Firestore sync non-blocking warning:', fsErr);
         }
 
         const [[updatedGig]]: any = await pool.query('SELECT * FROM Gig WHERE id = ?', [req.params.id]);

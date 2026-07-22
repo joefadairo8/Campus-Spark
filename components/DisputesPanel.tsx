@@ -243,7 +243,7 @@ export const DisputesPanel: React.FC<DisputesPanelProps> = ({
                 status: 'open',
                 amount: Number(disputedAmount) || 0,
                 createdBy: userId,
-                createdByName: userProfile?.name || 'Spark Member',
+                createdByName: userProfile?.name || 'ABC-Rally Member',
                 createdByEmail: userProfile?.email || '',
                 createdByRole: userRole || '',
                 createdAt: new Date().toISOString(),

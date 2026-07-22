@@ -692,6 +692,11 @@ export const apiClient = {
         const cleanPatchData = Object.fromEntries(
           Object.entries(data).filter(([_, v]) => v !== undefined)
         );
+        if (cleanPatchData.reward !== undefined || cleanPatchData.budget !== undefined) {
+          const newAmount = Number(cleanPatchData.budget ?? cleanPatchData.reward);
+          cleanPatchData.reward = newAmount;
+          cleanPatchData.budget = newAmount;
+        }
         await firebaseUpdateDoc(docRef, cleanPatchData);
 
         // Generic Sync for applications (Sub -> Top)

@@ -2995,12 +2995,14 @@ const BrandDashboard: React.FC<{
                                                     await apiClient.patch(`gigs/${editingGig.id}`, {
                                                         title: campaignForm.title,
                                                         description: campaignForm.brief,
+                                                        brief: campaignForm.brief,
                                                         reward: Number(campaignForm.budget),
+                                                        budget: Number(campaignForm.budget),
                                                         category: campaignForm.category,
                                                         deadline: campaignForm.deadline,
                                                         location: campaignForm.location
                                                     });
-                                                    setCampaigns(prev => prev.map(c => c.id === editingGig.id ? { ...c, ...campaignForm, reward: Number(campaignForm.budget) } : c));
+                                                    setCampaigns(prev => prev.map(c => c.id === editingGig.id ? { ...c, ...campaignForm, reward: Number(campaignForm.budget), budget: Number(campaignForm.budget) } : c));
                                                     alert('Campaign updated successfully!');
                                                 } else {
                                                     // Pay ₦20,000 listing fee via Paystack, then create the gig

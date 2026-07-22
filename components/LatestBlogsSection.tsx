@@ -45,7 +45,7 @@ const LatestBlogsSection: React.FC<{ onNavigate: (page: string) => void }> = ({ 
                 <div className="flex flex-col md:flex-row md:items-end justify-between mb-16 gap-6">
                     <div>
                         <div className="inline-flex items-center gap-2 px-4 py-2 bg-spark-red/10 text-spark-red rounded-full text-sm font-black uppercase tracking-widest mb-6">
-                            <FileText className="w-4 h-4" /> The Spark Blog
+                            <FileText className="w-4 h-4" /> The ABC-Rally Blog
                         </div>
                         <h2 className="text-4xl md:text-5xl font-black text-[var(--text-primary)] tracking-tighter">
                             Latest from our <span className="text-spark-red italic">Newsroom</span>
