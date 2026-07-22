@@ -16,7 +16,7 @@ import {
     Download, Mail, Send, Loader2
 } from 'lucide-react';
 import { DisputesPanel } from './DisputesPanel';
-import { notifyWithdrawalCompleted } from '../emailNotifier';
+import { notifyWithdrawalCompleted, notifyGeneric } from '../emailNotifier';
 import * as LucideIcons from 'lucide-react';
 
 const isTransactionActive = (trans: any, myCampaigns: any[]) => {
@@ -2135,17 +2135,15 @@ const AdminDashboard: React.FC<{
                                                 if (!replyBody.trim()) return;
                                                 setReplyLoading(true);
                                                 try {
-                                                    await apiClient.post('email/notify', {
-                                                        type: 'generic',
-                                                        recipientEmail: selectedTicket.email,
-                                                        recipientName: selectedTicket.name,
-                                                        subject: `Re: Your ABC-Rally Support Request — ${selectedTicket.enquiryType?.replace(/-/g, ' ')}`,
-                                                        title: 'Response to Your Support Request',
-                                                        body: replyBody,
-                                                    });
+                                                    notifyGeneric(
+                                                        selectedTicket.email,
+                                                        `Re: Your ABC-Rally Support Request — ${selectedTicket.enquiryType?.replace(/-/g, ' ') || 'General'}`,
+                                                        'Response to Your Support Request',
+                                                        replyBody
+                                                    );
                                                     await updateDoc(doc(db, 'support_tickets', selectedTicket.id), { status: 'responded', respondedAt: new Date().toISOString(), replyBody });
-                                                    setSupportTickets(prev => prev.map(t => t.id === selectedTicket.id ? { ...t, status: 'responded' } : t));
-                                                    setSelectedTicket({ ...selectedTicket, status: 'responded' });
+                                                    setSupportTickets(prev => prev.map(t => t.id === selectedTicket.id ? { ...t, status: 'responded', replyBody } : t));
+                                                    setSelectedTicket({ ...selectedTicket, status: 'responded', replyBody });
                                                     setReplyBody('');
                                                     alert('Reply sent successfully!');
                                                 } catch (err: any) {
