@@ -68,7 +68,13 @@ export const WalletService = {
             const snap = await fsGetDoc(walletRef);
             
             if (snap.exists()) {
-                return snap.data() as Wallet;
+                const data = snap.data() as Wallet;
+                const cleanEscrow = Math.max(0, Number(data.escrow) || 0);
+                if (data.escrow < 0) {
+                    // Auto-repair existing negative escrow balance in Firestore
+                    fsUpdateDoc(walletRef, { escrow: 0 }).catch(() => {});
+                }
+                return { ...data, escrow: cleanEscrow };
             } else {
                 const newWallet: Wallet = {
                     balance: 0,
@@ -203,7 +209,7 @@ export const WalletService = {
 
             // 1. Deduct from Brand Escrow
             transaction.update(brandRef, {
-                escrow: (bData.escrow || 0) - amount,
+                escrow: Math.max(0, (bData.escrow || 0) - amount),
                 lastUpdated: fsTimestamp()
             });
 
@@ -322,7 +328,7 @@ export const WalletService = {
 
             // 1. Deduct from Creator Escrow
             transaction.update(creatorRef, {
-                escrow: (iData.escrow || 0) - amount,
+                escrow: Math.max(0, (iData.escrow || 0) - amount),
                 balance: (iData.balance || 0) + creatorPay,
                 lastUpdated: fsTimestamp()
             });
@@ -715,7 +721,7 @@ export const WalletService = {
 
             // 1. Deduct from Brand Escrow
             transaction.update(brandRef, {
-                escrow: (bData.escrow || 0) - amount,
+                escrow: Math.max(0, (bData.escrow || 0) - amount),
                 lastUpdated: fsTimestamp()
             });
 
