@@ -2133,21 +2133,36 @@ const AdminDashboard: React.FC<{
                                             disabled={!replyBody.trim() || replyLoading}
                                             onClick={async () => {
                                                 if (!replyBody.trim()) return;
+                                                const targetEmail = selectedTicket.email || selectedTicket.userEmail || selectedTicket.createdByEmail || '';
+                                                if (!targetEmail) {
+                                                    alert('Cannot send email reply: No email address found for this support ticket.');
+                                                    return;
+                                                }
                                                 setReplyLoading(true);
                                                 try {
-                                                    notifyGeneric(
-                                                        selectedTicket.email,
-                                                        `Re: Your ABC-Rally Support Request — ${selectedTicket.enquiryType?.replace(/-/g, ' ') || 'General'}`,
-                                                        'Response to Your Support Request',
-                                                        replyBody
-                                                    );
+                                                    const res = await fetch(`${BACKEND_URL}/api/email/notify`, {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify({
+                                                            type: 'generic',
+                                                            to: targetEmail,
+                                                            subject: `Re: Your ABC-Rally Support Request — ${selectedTicket.enquiryType?.replace(/-/g, ' ') || 'General'}`,
+                                                            title: 'Response to Your Support Request',
+                                                            body: replyBody
+                                                        }),
+                                                    });
+                                                    if (!res.ok) {
+                                                        const errData = await res.json().catch(() => ({}));
+                                                        throw new Error(errData.error || `Server responded with status ${res.status}`);
+                                                    }
                                                     await updateDoc(doc(db, 'support_tickets', selectedTicket.id), { status: 'responded', respondedAt: new Date().toISOString(), replyBody });
                                                     setSupportTickets(prev => prev.map(t => t.id === selectedTicket.id ? { ...t, status: 'responded', replyBody } : t));
                                                     setSelectedTicket({ ...selectedTicket, status: 'responded', replyBody });
                                                     setReplyBody('');
-                                                    alert('Reply sent successfully!');
+                                                    alert(`Reply sent successfully to ${targetEmail}!`);
                                                 } catch (err: any) {
-                                                    alert('Failed to send reply: ' + (err?.response?.data?.error || err.message));
+                                                    console.error('Failed to send support ticket reply email:', err);
+                                                    alert('Failed to send reply email: ' + (err?.message || 'Could not reach email server.'));
                                                 } finally {
                                                     setReplyLoading(false);
                                                 }

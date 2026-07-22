@@ -4,7 +4,7 @@ import { db, auth, collection, query, where, getDocs, limit, doc, getDoc, apiCli
 import { UserRole } from '../types';
 import ProfileView from './ProfileView';
 import DashboardPlaceholder from './DashboardPlaceholder';
-import { notifyWithdrawal, notifyReportSubmitted, notifyProposalReceived, notifyProposalStatus, notifyRatingRequest } from '../emailNotifier';
+import { notifyWithdrawal, notifyReportSubmitted, notifyProposalReceived, notifyProposalStatus, notifyRatingRequest, notifyApplicationDecision, notifyGeneric } from '../emailNotifier';
 import { ProposalFormModal } from './ProposalFormModal';
 import { ProposalDetailsModal } from './ProposalDetailsModal';
 import { EventDetailsModal } from './EventDetailsModal';
@@ -549,8 +549,26 @@ const CreatorDashboard: React.FC<{
     const handleAcceptOffer = async (offer: any) => {
         if (!window.confirm('Accept this campaign offer?')) return;
         try {
-            // Update allocation status to in_progress
             await WalletService.updateAllocationStatus(offer.id, 'in_progress');
+            const creatorEmail = userProfile?.email || auth.currentUser?.email;
+            const creatorName = userProfile?.name || 'Creator';
+            if (creatorEmail) {
+                notifyApplicationDecision(
+                    creatorEmail,
+                    creatorName,
+                    offer.campaignTitle || offer.title || 'Campaign',
+                    offer.brandName || 'Brand Partner',
+                    'accepted'
+                );
+            }
+            if (offer.brandEmail) {
+                notifyGeneric(
+                    offer.brandEmail,
+                    `Offer Accepted: ${creatorName} accepted "${offer.campaignTitle || offer.title || 'Campaign'}"`,
+                    'Campaign Offer Accepted 🎉',
+                    `Good news! <strong>${creatorName}</strong> has accepted your campaign offer for <strong>"${offer.campaignTitle || offer.title || 'Campaign'}"</strong> and can now begin work.`
+                );
+            }
             alert('Offer accepted! You can now start working on this campaign.');
             await fetchProposals();
             await fetchMyCampaigns();
@@ -565,8 +583,26 @@ const CreatorDashboard: React.FC<{
     const handleAcceptAssignment = async (camp: any) => {
         if (!window.confirm('Accept this assignment?')) return;
         try {
-            // Update allocation status to in_progress
             await WalletService.updateAllocationStatus(camp.id, 'in_progress');
+            const creatorEmail = userProfile?.email || auth.currentUser?.email;
+            const creatorName = userProfile?.name || 'Creator';
+            if (creatorEmail) {
+                notifyApplicationDecision(
+                    creatorEmail,
+                    creatorName,
+                    camp.campaignTitle || camp.title || 'Campaign',
+                    camp.brandName || 'Brand Partner',
+                    'accepted'
+                );
+            }
+            if (camp.brandEmail) {
+                notifyGeneric(
+                    camp.brandEmail,
+                    `Gig Assignment Accepted: ${creatorName}`,
+                    'Gig Assignment Accepted 🎉',
+                    `Good news! <strong>${creatorName}</strong> has accepted your gig assignment for <strong>"${camp.campaignTitle || camp.title || 'Campaign'}"</strong>.`
+                );
+            }
             alert('Assignment accepted! You can now start working on this campaign.');
             await fetchMyCampaigns();
         } catch (e) {
@@ -579,11 +615,28 @@ const CreatorDashboard: React.FC<{
     const handleDeclineAssignment = async (camp: any) => {
         if (!window.confirm('Decline this assignment?')) return;
         try {
-            // Update allocation status to rejected
             await WalletService.updateAllocationStatus(camp.id, 'rejected');
-            // Refund the allocated amount back to the brand
             if (camp.brandId && camp.amount) {
                 await WalletService.refundAllocation(camp.brandId, camp.amount, 'Assignment declined', camp.creatorId);
+            }
+            const creatorEmail = userProfile?.email || auth.currentUser?.email;
+            const creatorName = userProfile?.name || 'Creator';
+            if (creatorEmail) {
+                notifyApplicationDecision(
+                    creatorEmail,
+                    creatorName,
+                    camp.campaignTitle || camp.title || 'Campaign',
+                    camp.brandName || 'Brand Partner',
+                    'rejected'
+                );
+            }
+            if (camp.brandEmail) {
+                notifyGeneric(
+                    camp.brandEmail,
+                    `Gig Assignment Declined: ${creatorName}`,
+                    'Gig Assignment Declined ❌',
+                    `<strong>${creatorName}</strong> has declined the assignment for <strong>"${camp.campaignTitle || camp.title || 'Campaign'}"</strong>. Escrow funds have been refunded to your brand wallet.`
+                );
             }
             alert('Assignment declined and funds refunded to the brand.');
             await fetchMyCampaigns();

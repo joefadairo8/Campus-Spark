@@ -500,14 +500,26 @@ export const apiClient = {
     }
   const docRef = await firebaseAddDoc(colRef, enrichedData);
 
-  // Notify Proposal Recipient
-  if (parts[0] === 'proposals' && enrichedData.recipient?.email) {
-      notifyProposalReceived(
-          enrichedData.recipient.email,
-          enrichedData.recipient.name,
-          enrichedData.sender?.name || 'A user',
-          data.message || ''
-      );
+  // Notify Proposal Recipient (Email + In-App Notification)
+  if (parts[0] === 'proposals' && data.recipientId) {
+      if (enrichedData.recipient?.email) {
+          notifyProposalReceived(
+              enrichedData.recipient.email,
+              enrichedData.recipient.name,
+              enrichedData.sender?.name || 'A user',
+              data.message || ''
+          );
+      }
+      try {
+          await firebaseAddDoc(firebaseCollection(db, 'notifications'), {
+              userId: data.recipientId,
+              type: 'proposal_received',
+              title: 'New Partnership Proposal 📩',
+              message: `You received a new proposal from ${enrichedData.sender?.name || 'a member'}.`,
+              read: false,
+              createdAt: new Date().toISOString()
+          });
+      } catch (_) {}
   }
 
   // Track proposal send

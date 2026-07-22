@@ -267,10 +267,21 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    useEffect(() => {
+        fetchNotifications();
+    }, [userId, auth.currentUser?.uid]);
+
     const fetchNotifications = async () => {
+        const currentUid = userId || auth.currentUser?.uid;
+        if (!currentUid) {
+            setNotifications([]);
+            return;
+        }
         try {
-            const res = await apiClient.get('notifications');
-            setNotifications(res.data);
+            const res = await apiClient.get(`notifications?userId=${currentUid}`);
+            const list = res.data || [];
+            list.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+            setNotifications(list);
         } catch (err) {
             console.error('Failed to fetch notifications:', err);
         }

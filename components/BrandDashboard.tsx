@@ -341,14 +341,24 @@ const BrandDashboard: React.FC<{
                 creatorId: selectedAppToApprove.userId || selectedAppToApprove.id || selectedAppToApprove.appId,
                 creatorName: selectedAppToApprove.name || selectedAppToApprove.creatorName || 'Creator',
                 creatorUniversity: selectedAppToApprove.university || '',
-                creatorEmail: selectedAppToApprove.email || selectedAppToApprove.creatorEmail || '',
+                creatorEmail: selectedAppToApprove.email || selectedAppToApprove.creatorEmail || selectedAppToApprove.creator?.email || '',
                 amount,
                 status: 'selected',
                 escrowFunded: false,
                 ...(escrowData?.escrow_id ? { escrowId: escrowData.escrow_id, escrowPaymentUrl: escrowData.payment_url, escrowRef: escrowData.transaction_ref } : {}),
             });
 
-            // Note: Creator notification email will be sent automatically by the escrow webhook once funding is completed.
+            // Notify Creator via Email
+            const targetEmail = selectedAppToApprove.email || selectedAppToApprove.creatorEmail || selectedAppToApprove.creator?.email;
+            if (targetEmail) {
+                notifyGigAssigned(
+                    targetEmail,
+                    selectedAppToApprove.name || selectedAppToApprove.creatorName || 'Creator',
+                    viewingApplicants.title || 'Campaign',
+                    brandProfile.name || brandProfile.companyName || 'Brand Partner',
+                    amount
+                );
+            }
 
             // Refresh
             const res = await apiClient.get(`gigs/${viewingApplicants.id}/applications`);
@@ -607,7 +617,16 @@ const BrandDashboard: React.FC<{
                 ...(escrowData?.escrow_id ? { escrowId: escrowData.escrow_id, escrowPaymentUrl: escrowData.payment_url, escrowRef: escrowData.transaction_ref } : {}),
             });
 
-            // Note: Creator notification email will be sent automatically by the escrow webhook once funding is completed.
+            // Notify Creator via Email
+            if (allocationTarget.email) {
+                notifyGigAssigned(
+                    allocationTarget.email,
+                    allocationTarget.name || 'Creator',
+                    campaign.title || 'Campaign',
+                    brandProfile.name || brandProfile.brandName || 'Brand Partner',
+                    amount
+                );
+            }
 
             await fetchAllAllocations(brandProfile.id);
             setShowAllocationModal(false);

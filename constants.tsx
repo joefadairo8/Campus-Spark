@@ -47,7 +47,7 @@ export const APP_ABBREV = <DynamicText type="abbrev" />;
 export const getRawAppName = () => globalBrandingSettings.title;
 export const getRawAppAbbrev = () => globalBrandingSettings.abbrev;
 
-export const BACKEND_URL = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
+export const BACKEND_URL = import.meta.env.VITE_SERVER_URL || 'https://abc-rally.onrender.com';
 
 export const SparkIcon = ({ className }: { className?: string }) => {
     const [logoType, setLogoType] = useState(globalBrandingSettings.logoType);
