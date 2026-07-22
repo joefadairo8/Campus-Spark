@@ -332,7 +332,7 @@ const BrandDashboard: React.FC<{
                 escrowData = { _err: escrowErr.message };
             }
 
-            // 3. Save escrow info to the allocation record in Firestore
+            // 3. Save allocation record in Firestore with pending escrow status
             await WalletService.createAllocation({
                 campaignId: viewingApplicants.id,
                 campaignTitle: viewingApplicants.title,
@@ -344,20 +344,11 @@ const BrandDashboard: React.FC<{
                 creatorEmail: selectedAppToApprove.email || selectedAppToApprove.creatorEmail || '',
                 amount,
                 status: 'selected',
+                escrowFunded: false,
                 ...(escrowData?.escrow_id ? { escrowId: escrowData.escrow_id, escrowPaymentUrl: escrowData.payment_url, escrowRef: escrowData.transaction_ref } : {}),
             });
 
-            // Trigger email notification to creator
-            const creatorEmail = selectedAppToApprove.email || selectedAppToApprove.creatorEmail;
-            if (creatorEmail) {
-                notifyApplicationDecision(
-                    creatorEmail,
-                    selectedAppToApprove.name || selectedAppToApprove.creatorName || 'Creator',
-                    viewingApplicants.title,
-                    brandProfile.name || brandProfile.companyName || 'Brand',
-                    'accepted'
-                );
-            }
+            // Note: Creator notification email will be sent automatically by the escrow webhook once funding is completed.
 
             // Refresh
             const res = await apiClient.get(`gigs/${viewingApplicants.id}/applications`);
@@ -600,7 +591,7 @@ const BrandDashboard: React.FC<{
                 escrowData = { _err: escrowErr.message };
             }
 
-            // 2. Create campaign allocation with escrow details in Firestore
+            // 2. Create campaign allocation in Firestore with pending escrow status
             await WalletService.createAllocation({
                 campaignId: campaign.id,
                 campaignTitle: campaign.title,
@@ -612,19 +603,11 @@ const BrandDashboard: React.FC<{
                 creatorEmail: allocationTarget.email || '',
                 amount,
                 status: 'selected',
+                escrowFunded: false,
                 ...(escrowData?.escrow_id ? { escrowId: escrowData.escrow_id, escrowPaymentUrl: escrowData.payment_url, escrowRef: escrowData.transaction_ref } : {}),
             });
 
-            // Trigger email notification to allocated creator
-            if (allocationTarget.email) {
-                notifyGigAssigned(
-                    allocationTarget.email,
-                    allocationTarget.name,
-                    campaign.title,
-                    brandProfile.name || brandProfile.companyName || 'Brand',
-                    amount
-                );
-            }
+            // Note: Creator notification email will be sent automatically by the escrow webhook once funding is completed.
 
             await fetchAllAllocations(brandProfile.id);
             setShowAllocationModal(false);
@@ -699,6 +682,23 @@ const BrandDashboard: React.FC<{
             }
         } catch (err: any) {
             alert(`Escrow setup error: ${err.message}`);
+        }
+    };
+
+    // Cancel pending allocation if brand decides not to fund escrow
+    const handleCancelPendingAllocation = async (alloc: CampaignAllocation) => {
+        if (!window.confirm(`Cancel pending allocation for ${alloc.creatorName}?`)) return;
+        try {
+            if (alloc.id) {
+                await WalletService.deleteAllocation(alloc.id);
+            }
+            if (selectedCampaignDetail) {
+                const updated = await WalletService.getAllocationsForCampaign(selectedCampaignDetail.id);
+                setDetailAllocations(updated);
+            }
+            await fetchAllAllocations(brandProfile.id);
+        } catch (e: any) {
+            alert('Failed to cancel allocation.');
         }
     };
 
@@ -2597,7 +2597,13 @@ const BrandDashboard: React.FC<{
                                                         <td className="px-6 py-4 text-[var(--text-secondary)] text-xs">{(alloc as any).creatorLocation || alloc.creatorUniversity || '—'}</td>
                                                         <td className="px-6 py-4 font-black text-[var(--text-primary)]">₦{alloc.amount.toLocaleString()}</td>
                                                         <td className="px-6 py-4">
-                                                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${allocStatusColors[alloc.status] || 'bg-[var(--bg-tertiary)] text-gray-500'}`}>{alloc.status.replace('_', ' ')}</span>
+                                                             <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                                                                 alloc.escrowFunded === false && alloc.status === 'selected' 
+                                                                     ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' 
+                                                                     : (allocStatusColors[alloc.status] || 'bg-[var(--bg-tertiary)] text-gray-500')
+                                                             }`}>
+                                                                 {alloc.escrowFunded === false && alloc.status === 'selected' ? 'Pending Escrow Funding' : alloc.status.replace('_', ' ')}
+                                                             </span>
                                                         </td>
                                                         <td className="px-6 py-4">
                                                             {alloc.status === 'rejected' || alloc.status === 'paid' ? (
@@ -2648,23 +2654,31 @@ const BrandDashboard: React.FC<{
                                                                         {(alloc.status === 'selected' || alloc.status === 'in_progress' || alloc.status === 'revision') && (
                                                                             <div className="flex flex-col gap-2">
                                                                                 {alloc.status === 'selected' && (
-                                                                                    alloc.escrowPaymentUrl ? (
-                                                                                        <a
-                                                                                            href={alloc.escrowPaymentUrl}
-                                                                                            target="_blank"
-                                                                                            rel="noopener noreferrer"
-                                                                                            className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-[10px] font-black uppercase hover:bg-amber-600 transition-colors flex items-center gap-1 text-center"
-                                                                                        >
-                                                                                            <Lock className="w-3 h-3" /> Fund Escrow
-                                                                                        </a>
-                                                                                    ) : (
+                                                                                    <div className="flex gap-2">
+                                                                                        {alloc.escrowPaymentUrl ? (
+                                                                                            <a
+                                                                                                href={alloc.escrowPaymentUrl}
+                                                                                                target="_blank"
+                                                                                                rel="noopener noreferrer"
+                                                                                                className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-[10px] font-black uppercase hover:bg-amber-600 transition-colors flex items-center gap-1 text-center"
+                                                                                            >
+                                                                                                <Lock className="w-3 h-3" /> Fund Escrow
+                                                                                            </a>
+                                                                                        ) : (
+                                                                                            <button
+                                                                                                onClick={() => handleSetUpEscrow(alloc)}
+                                                                                                className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-[10px] font-black uppercase hover:bg-amber-600 transition-colors flex items-center gap-1"
+                                                                                            >
+                                                                                                <Lock className="w-3 h-3" /> Set Up Escrow
+                                                                                            </button>
+                                                                                        )}
                                                                                         <button
-                                                                                            onClick={() => handleSetUpEscrow(alloc)}
-                                                                                            className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-[10px] font-black uppercase hover:bg-amber-600 transition-colors flex items-center gap-1"
+                                                                                            onClick={() => handleCancelPendingAllocation(alloc)}
+                                                                                            className="px-2 py-1.5 bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 rounded-lg text-[10px] font-black uppercase hover:bg-red-200 transition-colors"
                                                                                         >
-                                                                                            <Lock className="w-3 h-3" /> Set Up Escrow
+                                                                                            Cancel
                                                                                         </button>
-                                                                                    )
+                                                                                    </div>
                                                                                 )}
                                                                                 {(alloc.status === 'in_progress' || alloc.status === 'revision') && (
                                                                                     <span className="px-3 py-1.5 bg-[var(--bg-secondary)] text-[var(--text-secondary)] rounded-lg text-[10px] font-black uppercase border border-[var(--border-color)]">

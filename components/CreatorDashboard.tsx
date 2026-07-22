@@ -188,7 +188,9 @@ const CreatorDashboard: React.FC<{
     const fetchMyCampaigns = async () => {
         if (!userProfile?.id) return;
         try {
-            const campaigns = await WalletService.getAllocationsByCreator(userProfile.id);
+            const allAllocations = await WalletService.getAllocationsByCreator(userProfile.id);
+            // Only show allocations where escrow funding has succeeded (or legacy funded statuses)
+            const campaigns = allAllocations.filter(c => c.escrowFunded === true || ['in_progress', 'submitted', 'approved', 'paid'].includes(c.status));
             // Enrich with campaign details from gigs or campaigns collection
             const enriched = await Promise.all(campaigns.map(async (c) => {
                 let gigDoc = await getDoc(doc(db, 'gigs', c.campaignId));
@@ -546,6 +548,18 @@ const CreatorDashboard: React.FC<{
     };
 
     const handleOpenApplyModal = (gig: any) => {
+        const activeCamp = myCampaigns.find(c => c.campaignId === gig.id && ['selected', 'in_progress', 'submitted', 'approved', 'revision'].includes(c.status));
+        const pendingApp = myApplications.find((a: any) => a.gigId === gig.id && a.status === 'pending');
+        
+        if (activeCamp) {
+            alert(`You currently have an active campaign assignment for "${gig.displayTitle || gig.title}". Please complete it before applying again.`);
+            return;
+        }
+        if (pendingApp) {
+            alert(`You already have a pending application under review for "${gig.displayTitle || gig.title}".`);
+            return;
+        }
+
         setApplyingToGig(gig);
         setPitchText('');
     };
@@ -553,6 +567,15 @@ const CreatorDashboard: React.FC<{
     const handleSubmitApplication = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!applyingToGig) return;
+
+        const activeCamp = myCampaigns.find(c => c.campaignId === applyingToGig.id && ['selected', 'in_progress', 'submitted', 'approved', 'revision'].includes(c.status));
+        const pendingApp = myApplications.find((a: any) => a.gigId === applyingToGig.id && a.status === 'pending');
+        if (activeCamp || pendingApp) {
+            alert('You have an active assignment or pending application for this campaign.');
+            setApplyingToGig(null);
+            return;
+        }
+
         setPitchSubmitting(true);
         try {
             const coll = applyingToGig.sourceCollection || 'gigs';
@@ -783,21 +806,21 @@ const CreatorDashboard: React.FC<{
                 return (
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in slide-in-from-bottom-4 duration-500">
                         {data.map(gig => {
-                            const myApp = getMyApplication(gig.id);
-                            const myCamp = myCampaigns.find(c => c.campaignId === gig.id);
+                            const activeCamp = myCampaigns.find(c => c.campaignId === gig.id && ['selected', 'in_progress', 'submitted', 'approved', 'revision'].includes(c.status));
+                            const completedCamp = myCampaigns.find(c => c.campaignId === gig.id && c.status === 'paid');
+                            const pendingApp = myApplications.find((a: any) => a.gigId === gig.id && a.status === 'pending');
                             
                             let statusBadge = { label: 'Open', classes: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' };
-                            if (myCamp) {
-                                const s = myCamp.status;
-                                statusBadge = s === 'paid' ? { label: 'Paid', classes: 'bg-green-500/20 text-green-800 dark:text-green-300 border border-green-500/30' } :
-                                              s === 'approved' ? { label: 'Approved', classes: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' } :
+                            if (activeCamp) {
+                                const s = activeCamp.status;
+                                statusBadge = s === 'approved' ? { label: 'Approved', classes: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' } :
                                               s === 'submitted' ? { label: 'Submitted', classes: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border border-yellow-500/20' } :
                                               s === 'selected' ? { label: '⚡ Direct Offer', classes: 'bg-orange-500/10 text-orange-700 dark:text-orange-400 border border-orange-500/20' } :
                                               { label: 'In Progress', classes: 'bg-spark-red/10 text-spark-red border border-spark-red/20' };
-                            } else if (myApp) {
-                                statusBadge = myApp.status === 'pending' ? { label: 'Applied', classes: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' } :
-                                              myApp.status === 'rejected' ? { label: 'Not Selected', classes: 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border border-[var(--border-color)]' } :
-                                              { label: 'Open', classes: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' };
+                            } else if (pendingApp) {
+                                statusBadge = { label: 'Applied', classes: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' };
+                            } else if (completedCamp) {
+                                statusBadge = { label: 'Completed (Paid)', classes: 'bg-green-500/20 text-green-800 dark:text-green-300 border border-green-500/30' };
                             }
 
                             return (
@@ -830,39 +853,52 @@ const CreatorDashboard: React.FC<{
                                         </div>
                                     </div>
 
-                                    {myCamp ? (
-                                        myCamp.status === 'selected' ? (
+                                    {activeCamp ? (
+                                        activeCamp.status === 'selected' ? (
                                             <div className="flex gap-2 w-full">
                                                 <button
-                                                    onClick={() => handleAcceptAssignment(myCamp)}
+                                                    onClick={() => handleAcceptAssignment(activeCamp)}
                                                     className="flex-1 py-3.5 bg-green-600 hover:bg-green-700 text-white font-black rounded-2xl transition-all text-[10px] uppercase tracking-widest shadow-lg shadow-black/5"
                                                 >
                                                     Accept Offer
                                                 </button>
                                                 <button
-                                                    onClick={() => handleDeclineAssignment(myCamp)}
+                                                    onClick={() => handleDeclineAssignment(activeCamp)}
                                                     className="flex-1 py-3.5 bg-red-600 hover:bg-red-700 text-white font-black rounded-2xl transition-all text-[10px] uppercase tracking-widest shadow-lg shadow-black/5"
                                                 >
                                                     Decline Offer
                                                 </button>
                                             </div>
                                         ) : (
-                                            <button onClick={() => { setSelectedCampaign(myCamp); setActiveTab('my-campaigns'); }} className="w-full px-4 py-3.5 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all text-[10px] uppercase tracking-widest shadow-lg shadow-black/5">
+                                            <button onClick={() => { setSelectedCampaign(activeCamp); setActiveTab('my-campaigns'); }} className="w-full px-4 py-3.5 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all text-[10px] uppercase tracking-widest shadow-lg shadow-black/5">
                                                 Manage Active Campaign
                                             </button>
                                         )
+                                    ) : pendingApp ? (
+                                        <div className="space-y-2 w-full">
+                                            <div className="px-4 py-2.5 bg-blue-500/10 border border-blue-500/20 text-blue-700 dark:text-blue-400 font-black rounded-2xl text-center text-[10px] uppercase tracking-widest flex items-center justify-center gap-1.5">
+                                                <CheckCircle className="w-3.5 h-3.5 text-blue-500" />
+                                                Application Under Review
+                                            </div>
+                                            <button 
+                                                disabled={true}
+                                                className="w-full py-3.5 bg-[var(--bg-tertiary)] text-[var(--text-secondary)] font-black rounded-2xl text-[10px] uppercase tracking-widest cursor-not-allowed opacity-60"
+                                            >
+                                                Already Applied
+                                            </button>
+                                        </div>
                                     ) : (
-                                        <div className="space-y-3">
-                                            {myApp && (
-                                                <div className="px-4 py-2 bg-spark-black/5 dark:bg-white/5 rounded-xl border border-spark-black/10 dark:border-white/10 text-center text-[9px] font-black uppercase text-[var(--text-secondary)] tracking-widest">
-                                                    Latest Application: {myApp.status}
+                                        <div className="space-y-2 w-full">
+                                            {completedCamp && (
+                                                <div className="px-4 py-2 bg-green-500/10 border border-green-500/20 text-green-700 dark:text-green-400 rounded-xl text-center text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1">
+                                                    <CheckCircle className="w-3 h-3 text-green-600" /> Previous Payout Received (₦{completedCamp.amount?.toLocaleString()})
                                                 </div>
                                             )}
                                             <button 
                                                 onClick={() => gig.category === 'Event' ? handleContactHost(gig) : handleOpenApplyModal(gig)} 
                                                 className="w-full py-4 bg-[var(--text-primary)] text-[var(--bg-primary)] font-black rounded-2xl hover:bg-spark-red hover:text-white transition-all text-sm shadow-lg shadow-black/5"
                                             >
-                                                {gig.category === 'Event' ? 'Contact Host' : myApp ? 'Submit Another Pitch' : 'Apply to Campaign'}
+                                                {gig.category === 'Event' ? 'Contact Host' : completedCamp ? 'Apply Again for Another Slot' : 'Apply to Campaign'}
                                             </button>
                                         </div>
                                     )}
@@ -1657,21 +1693,21 @@ const CreatorDashboard: React.FC<{
                 ) : (
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
                         {filteredGigs.map(gig => {
-                            const myApp = getMyApplication(gig.id);
-                            const myCamp = myCampaigns.find(c => c.campaignId === gig.id);
+                            const activeCamp = myCampaigns.find(c => c.campaignId === gig.id && ['selected', 'in_progress', 'submitted', 'approved', 'revision'].includes(c.status));
+                            const completedCamp = myCampaigns.find(c => c.campaignId === gig.id && c.status === 'paid');
+                            const pendingApp = myApplications.find((a: any) => a.gigId === gig.id && a.status === 'pending');
                             
                             let statusBadge = { label: 'Open', classes: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' };
-                            if (myCamp) {
-                                const s = myCamp.status;
-                                statusBadge = s === 'paid' ? { label: 'Paid', classes: 'bg-green-500/20 text-green-800 dark:text-green-300 border border-green-500/30' } :
-                                              s === 'approved' ? { label: 'Approved', classes: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' } :
+                            if (activeCamp) {
+                                const s = activeCamp.status;
+                                statusBadge = s === 'approved' ? { label: 'Approved', classes: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' } :
                                               s === 'submitted' ? { label: 'Submitted', classes: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border border-yellow-500/20' } :
                                               s === 'selected' ? { label: '⚡ Direct Offer', classes: 'bg-orange-500/10 text-orange-700 dark:text-orange-400 border border-orange-500/20' } :
                                               { label: 'In Progress', classes: 'bg-spark-red/10 text-spark-red border border-spark-red/20' };
-                            } else if (myApp) {
-                                statusBadge = myApp.status === 'pending' ? { label: 'Applied', classes: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' } :
-                                              myApp.status === 'rejected' ? { label: 'Not Selected', classes: 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border border-[var(--border-color)]' } :
-                                              { label: 'Open', classes: 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20' };
+                            } else if (pendingApp) {
+                                statusBadge = { label: 'Applied', classes: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20' };
+                            } else if (completedCamp) {
+                                statusBadge = { label: 'Completed (Paid)', classes: 'bg-green-500/20 text-green-800 dark:text-green-300 border border-green-500/30' };
                             }
 
                             return (
@@ -1704,17 +1740,17 @@ const CreatorDashboard: React.FC<{
                                         </div>
                                     </div>
 
-                                    {myCamp ? (
-                                        myCamp.status === 'selected' ? (
+                                    {activeCamp ? (
+                                        activeCamp.status === 'selected' ? (
                                             <div className="flex gap-2 w-full">
                                                 <button
-                                                    onClick={() => handleAcceptAssignment(myCamp)}
+                                                    onClick={() => handleAcceptAssignment(activeCamp)}
                                                     className="flex-1 py-3.5 bg-green-600 hover:bg-green-700 text-white font-black rounded-2xl transition-all text-[10px] uppercase tracking-widest shadow-lg shadow-black/5"
                                                 >
                                                     Accept Offer
                                                 </button>
                                                 <button
-                                                    onClick={() => handleDeclineAssignment(myCamp)}
+                                                    onClick={() => handleDeclineAssignment(activeCamp)}
                                                     className="flex-1 py-3.5 bg-red-600 hover:bg-red-700 text-white font-black rounded-2xl transition-all text-[10px] uppercase tracking-widest shadow-lg shadow-black/5"
                                                 >
                                                     Decline Offer
@@ -1722,24 +1758,37 @@ const CreatorDashboard: React.FC<{
                                             </div>
                                         ) : (
                                             <button
-                                                onClick={() => { setSelectedCampaign(myCamp); setCurrentSection('active_gigs'); }}
+                                                onClick={() => { setSelectedCampaign(activeCamp); setCurrentSection('active_gigs'); }}
                                                 className="w-full px-4 py-3.5 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all text-[10px] uppercase tracking-widest shadow-lg shadow-black/5"
                                             >
                                                 Manage Active Campaign
                                             </button>
                                         )
+                                    ) : pendingApp ? (
+                                        <div className="space-y-2 w-full">
+                                            <div className="px-4 py-2.5 bg-blue-500/10 border border-blue-500/20 text-blue-700 dark:text-blue-400 font-black rounded-2xl text-center text-[10px] uppercase tracking-widest flex items-center justify-center gap-1.5">
+                                                <CheckCircle className="w-3.5 h-3.5 text-blue-500" />
+                                                Application Under Review
+                                            </div>
+                                            <button 
+                                                disabled={true}
+                                                className="w-full py-3.5 bg-[var(--bg-tertiary)] text-[var(--text-secondary)] font-black rounded-2xl text-[10px] uppercase tracking-widest cursor-not-allowed opacity-60"
+                                            >
+                                                Already Applied
+                                            </button>
+                                        </div>
                                     ) : (
-                                        <div className="space-y-3">
-                                            {myApp && (
-                                                <div className="px-4 py-2 bg-spark-black/5 dark:bg-white/5 rounded-xl border border-spark-black/10 dark:border-white/10 text-center text-[9px] font-black uppercase text-[var(--text-secondary)] tracking-widest">
-                                                    Latest Application: {myApp.status}
+                                        <div className="space-y-2 w-full">
+                                            {completedCamp && (
+                                                <div className="px-4 py-2 bg-green-500/10 border border-green-500/20 text-green-700 dark:text-green-400 rounded-xl text-center text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1">
+                                                    <CheckCircle className="w-3 h-3 text-green-600" /> Previous Payout Received (₦{completedCamp.amount?.toLocaleString()})
                                                 </div>
                                             )}
                                             <button 
                                                 onClick={() => gig.category === 'Event' ? handleContactHost(gig) : handleOpenApplyModal(gig)} 
                                                 className="w-full py-4 bg-[var(--text-primary)] text-[var(--bg-primary)] font-black rounded-2xl hover:bg-spark-red hover:text-white transition-all text-sm shadow-lg shadow-black/5"
                                             >
-                                                {gig.category === 'Event' ? 'Contact Host' : myApp ? 'Submit Another Pitch' : 'Apply to Campaign'}
+                                                {gig.category === 'Event' ? 'Contact Host' : completedCamp ? 'Apply Again for Another Slot' : 'Apply to Campaign'}
                                             </button>
                                         </div>
                                     )}

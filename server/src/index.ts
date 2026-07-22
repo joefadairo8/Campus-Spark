@@ -484,8 +484,8 @@ app.post('/api/gigs/:id/apply', authenticateToken, async (req: any, res) => {
         if (!gig) return res.status(404).json({ error: 'Gig not found' });
         if (gig.status !== 'open') return res.status(400).json({ error: 'This gig is no longer accepting applications.' });
 
-        const [[existing]]: any = await pool.query('SELECT id FROM GigApplication WHERE gigId = ? AND studentId = ?', [gigId, studentId]);
-        if (existing) return res.status(400).json({ error: 'You have already applied to this gig.' });
+        const [[existing]]: any = await pool.query('SELECT id FROM GigApplication WHERE gigId = ? AND studentId = ? AND status = "pending"', [gigId, studentId]);
+        if (existing) return res.status(400).json({ error: 'You already have a pending application under review for this gig.' });
 
         const appId = crypto.randomUUID();
         await pool.query(
@@ -1026,6 +1026,17 @@ app.post('/api/escrow/webhook', async (req: any, res: any) => {
                             updatedAt: new Date().toISOString()
                         });
                         console.log(`[Webhook] Updated campaign allocation ${allocationId} to in_progress & escrowFunded = true`);
+
+                        // Send email notification to creator now that escrow is funded
+                        if (allocationData.creatorEmail) {
+                            sendGigAssignedEmail(
+                                allocationData.creatorEmail,
+                                allocationData.creatorName || 'Creator',
+                                allocationData.campaignTitle || 'Campaign',
+                                allocationData.brandName || 'Brand',
+                                amount
+                            ).catch((err) => console.warn('[Webhook] Error sending creator assignment email:', err));
+                        }
 
                         if (brandId) {
                             // 2. Retrieve & Update Brand Wallet

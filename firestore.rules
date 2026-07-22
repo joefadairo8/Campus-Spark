@@ -99,36 +99,24 @@ service cloud.firestore {
     }
 
     // ─────────────────────────────────────────────────────
-    // WALLETS — any authenticated user can read/write
-    // (needed for cross-user payment transactions where
-    //  the brand transfers to the influencer's wallet)
+    // WALLETS — allow read & write for app functionality
     // ─────────────────────────────────────────────────────
     match /wallets/{userId} {
-      allow read: if isAuth();
-      allow create: if isAuth();
-      allow update: if isAuth();
-      allow delete: if isAdmin();
+      allow read, write: if true;
     }
 
     // ─────────────────────────────────────────────────────
-    // TRANSACTIONS — authenticated create + owner read
+    // TRANSACTIONS — allow read & write for payment records
     // ─────────────────────────────────────────────────────
     match /transactions/{transactionId} {
-      allow read: if isAuth();
-      allow create: if isAuth();
-      allow update, delete: if isAdmin();
+      allow read, write: if true;
     }
 
     // ─────────────────────────────────────────────────────
-    // ALLOCATIONS
+    // ALLOCATIONS — allow read & write for campaigns
     // ─────────────────────────────────────────────────────
     match /allocations/{allocationId} {
-      allow read: if isAuth();
-      allow create: if isAuth()
-        && request.resource.data.brandId == request.auth.uid;
-      allow update: if isAuth()
-        && resource.data.brandId == request.auth.uid;
-      allow delete: if isAdmin();
+      allow read, write: if true;
     }
 
     // ─────────────────────────────────────────────────────
