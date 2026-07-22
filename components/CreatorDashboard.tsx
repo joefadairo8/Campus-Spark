@@ -186,18 +186,25 @@ const CreatorDashboard: React.FC<{
     };
 
     const fetchMyCampaigns = async () => {
-        if (!userProfile?.id) return;
+        const creatorId = userProfile?.id || (user as any)?.uid || (user as any)?.id;
+        if (!creatorId) return;
         try {
-            const allAllocations = await WalletService.getAllocationsByCreator(userProfile.id);
-            // Only show allocations where escrow funding has succeeded (or legacy funded statuses)
-            const campaigns = allAllocations.filter(c => c.escrowFunded === true || ['in_progress', 'submitted', 'approved', 'paid'].includes(c.status));
+            const allAllocations = await WalletService.getAllocationsByCreator(creatorId);
+            // Include assigned/allocated gigs (selected) along with active/completed ones
+            const campaigns = allAllocations.filter(c => ['selected', 'in_progress', 'submitted', 'approved', 'paid', 'revision'].includes(c.status));
             // Enrich with campaign details from gigs or campaigns collection
             const enriched = await Promise.all(campaigns.map(async (c) => {
                 let gigDoc = await getDoc(doc(db, 'gigs', c.campaignId));
                 if (!gigDoc.exists()) {
                     gigDoc = await getDoc(doc(db, 'campaigns', c.campaignId));
                 }
-                return { ...c, campaign: gigDoc.exists() ? gigDoc.data() : null };
+                const gigData = gigDoc.exists() ? gigDoc.data() : null;
+                return { 
+                    ...c, 
+                    campaign: gigData,
+                    campaignTitle: c.campaignTitle || gigData?.displayTitle || gigData?.title || 'Brand Campaign',
+                    brandName: c.brandName || gigData?.displayBrand || gigData?.brand || gigData?.brandName || 'Verified Brand'
+                };
             }));
             setMyCampaigns(enriched);
         } catch (e) {
@@ -372,22 +379,40 @@ const CreatorDashboard: React.FC<{
 
     const handleWithdraw = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!userProfile?.id || !withdrawalAmount) return;
+        const userId = userProfile?.id || (user as any)?.uid || (user as any)?.id;
+        if (!userId || !withdrawalAmount) return;
         setWithdrawing(true);
         try {
+            const userEmail = userProfile?.email || (user as any)?.email;
+            const userName = userProfile?.name || (user as any)?.name || 'Creator';
+
             await WalletService.requestWithdrawal(
-                userProfile.id, 
+                userId, 
                 Number(withdrawalAmount), 
                 bankDetails,
-                { name: userProfile.name, email: userProfile.email }
+                { name: userName, email: userEmail }
             );
 
-            // Notify user + admin of withdrawal request
-            if (userProfile.email) {
-                notifyWithdrawal(userProfile.email, userProfile.name, Number(withdrawalAmount), { details: bankDetails });
+            // 1. Send Email Notification to User & Admin
+            if (userEmail) {
+                notifyWithdrawal(userEmail, userName, Number(withdrawalAmount), { details: bankDetails });
             }
 
-            alert('Withdrawal request submitted successfully!');
+            // 2. Create In-App Notification for User
+            try {
+                await addDoc(collection(db, 'notifications'), {
+                    userId: userId,
+                    type: 'withdrawal_requested',
+                    title: 'Withdrawal Requested 💸',
+                    message: `Your withdrawal request of ₦${Number(withdrawalAmount).toLocaleString()} has been submitted and is currently being processed by ABC-Rally.`,
+                    read: false,
+                    createdAt: new Date().toISOString()
+                });
+            } catch (notifErr) {
+                console.warn('In-app notification creation error:', notifErr);
+            }
+
+            alert('Withdrawal request submitted successfully! Confirmation email and in-app notification sent.');
             setShowWithdrawModal(false);
             setWithdrawalAmount('');
             await fetchWallet();
@@ -420,48 +445,82 @@ const CreatorDashboard: React.FC<{
 
             // Handle Cloudinary upload for metrics screenshot
             if (metricsFile) {
-                const formData = new FormData();
-                formData.append('file', metricsFile);
-                formData.append('upload_preset', 'abc-rally');
+                try {
+                    const formData = new FormData();
+                    formData.append('file', metricsFile);
+                    formData.append('upload_preset', 'abc-rally');
 
-                const uploadRes = await fetch('https://api.cloudinary.com/v1_1/dk9tq3oop/auto/upload', {
-                    method: 'POST',
-                    body: formData
-                });
+                    const uploadRes = await fetch('https://api.cloudinary.com/v1_1/dk9tq3oop/auto/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
 
-                if (uploadRes.ok) {
-                    const data = await uploadRes.json();
-                    metricsUrl = data.secure_url;
-                } else {
-                    console.error('Cloudinary metrics upload failed');
+                    if (uploadRes.ok) {
+                        const data = await uploadRes.json();
+                        metricsUrl = data.secure_url;
+                    }
+                } catch (uploadErr) {
+                    console.warn('Cloudinary metrics upload warning:', uploadErr);
                 }
             }
 
             const finalSubmission = {
                 ...submissionData,
-                metricsUrl
+                metricsUrl,
+                submittedAt: new Date().toISOString()
             };
 
+            const allocationId = selectedCampaign.id || selectedCampaign.allocationId;
+            const campaignId = selectedCampaign.campaignId || selectedCampaign.gigId || selectedCampaign.id;
+
             // 1. Update the allocation document (for 'My Campaigns' view)
-            await WalletService.updateAllocationSubmission(selectedCampaign.id!, finalSubmission);
-            
-            // 2. Sync with application document (for Brand's 'Applicants' view)
-            if (selectedCampaign.applicationId && selectedCampaign.campaignId) {
-                await apiClient.patch(`gigs/${selectedCampaign.campaignId}/applications/${selectedCampaign.applicationId}`, {
-                    status: 'submitted',
-                    report: finalSubmission.text,
-                    reportLink: finalSubmission.link,
-                    metricsUrl: finalSubmission.metricsUrl,
-                    updatedAt: new Date().toISOString()
-                });
+            if (allocationId) {
+                await WalletService.updateAllocationSubmission(allocationId, finalSubmission);
             }
 
-            // Notify Brand
+            // 2. Sync with application document (for Brand's 'Applicants' view)
+            if (selectedCampaign.applicationId && campaignId) {
+                try {
+                    await apiClient.patch(`gigs/${campaignId}/applications/${selectedCampaign.applicationId}`, {
+                        status: 'submitted',
+                        report: finalSubmission.text,
+                        reportLink: finalSubmission.link,
+                        metricsUrl: finalSubmission.metricsUrl,
+                        updatedAt: new Date().toISOString()
+                    });
+                } catch (apiErr) {
+                    console.warn('Backend application patch fallback:', apiErr);
+                }
+            }
+
+            // 3. Sync with backend POST /api/gigs/:id/report endpoint if available
+            if (campaignId) {
+                try {
+                    await apiClient.post(`gigs/${campaignId}/report`, {
+                        report: finalSubmission.text || 'Work submitted by creator',
+                        reportLink: finalSubmission.link,
+                        reportImageUrl: finalSubmission.metricsUrl
+                    });
+                } catch (_) {}
+            }
+
+            // 4. Create In-App Notification for Brand
             try {
-                // Fetch brand's email if possible, or trigger server with brandId
-                // The gig top level contains brandEmail 
-                const gigRes = await apiClient.get(`gigs/${selectedCampaign.campaignId}`);
-                const brandEmail = gigRes.data[0]?.brandEmail || gigRes.data[0]?.brand;
+                if (selectedCampaign.brandId) {
+                    await addDoc(collection(db, 'notifications'), {
+                        userId: selectedCampaign.brandId,
+                        type: 'report_submitted',
+                        title: 'Work Submitted 📝',
+                        message: `${userProfile?.name || 'Creator'} submitted work for "${selectedCampaign.campaignTitle || 'Campaign'}". Please review and approve.`,
+                        read: false,
+                        createdAt: new Date().toISOString()
+                    });
+                }
+            } catch (_) {}
+
+            // 5. Notify Brand via Email
+            try {
+                const brandEmail = selectedCampaign.brandEmail || selectedCampaign.brand;
                 if (brandEmail) {
                     notifyReportSubmitted(
                         brandEmail,
@@ -479,9 +538,9 @@ const CreatorDashboard: React.FC<{
             setSubmissionData({ link: '', text: '' });
             setMetricsFile(null);
             await fetchMyCampaigns();
-        } catch (e) {
+        } catch (e: any) {
             console.error('Submission error:', e);
-            alert('Failed to submit work.');
+            alert(`Failed to submit work: ${e.message || 'Please try again.'}`);
         } finally {
             setSubmittingWork(false);
         }

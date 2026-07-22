@@ -563,7 +563,7 @@ const DashboardShell: React.FC<DashboardShellProps> = ({
                     {children}
 
                     {/* ── First-Login Profile Completion Prompt ── */}
-                    {showProfilePrompt && (
+                    {showProfilePrompt && isProfileIncomplete && (
                         <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-[990] p-4 animate-in fade-in duration-300">
                             <div className="relative w-full max-w-md bg-[var(--bg-primary)] border-2 border-[var(--border-color)] rounded-[2.5rem] shadow-2xl p-8 flex flex-col gap-6 overflow-hidden animate-in zoom-in-95 duration-300">
                                 {/* Decorative glow */}

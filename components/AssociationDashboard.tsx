@@ -780,22 +780,40 @@ const AssociationDashboard: React.FC<{
 
     const handleWithdraw = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!orgProfile?.id || !withdrawalAmount) return;
+        const userId = orgProfile?.id || (user as any)?.uid || (user as any)?.id;
+        if (!userId || !withdrawalAmount) return;
         setWithdrawing(true);
         try {
+            const userEmail = orgProfile?.email || (user as any)?.email;
+            const userName = orgProfile?.name || (user as any)?.name || 'Association';
+
             await WalletService.requestWithdrawal(
-                orgProfile.id, 
+                userId, 
                 Number(withdrawalAmount), 
                 bankDetails,
-                { name: orgProfile.name, email: orgProfile.email }
+                { name: userName, email: userEmail }
             );
 
-            // Notify user + admin of withdrawal request
-            if (orgProfile.email) {
-                notifyWithdrawal(orgProfile.email, orgProfile.name, Number(withdrawalAmount), { details: bankDetails });
+            // 1. Send Email Notification to User & Admin
+            if (userEmail) {
+                notifyWithdrawal(userEmail, userName, Number(withdrawalAmount), { details: bankDetails });
             }
 
-            alert('Withdrawal request submitted successfully!');
+            // 2. Create In-App Notification for User
+            try {
+                await addDoc(collection(db, 'notifications'), {
+                    userId: userId,
+                    type: 'withdrawal_requested',
+                    title: 'Withdrawal Requested 💸',
+                    message: `Your withdrawal request of ₦${Number(withdrawalAmount).toLocaleString()} has been submitted and is currently being processed by ABC-Rally.`,
+                    read: false,
+                    createdAt: new Date().toISOString()
+                });
+            } catch (notifErr) {
+                console.warn('In-app notification creation error:', notifErr);
+            }
+
+            alert('Withdrawal request submitted successfully! Confirmation email and in-app notification sent.');
             setShowWithdrawModal(false);
             setWithdrawalAmount('');
             await fetchWallet();

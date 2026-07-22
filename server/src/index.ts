@@ -902,13 +902,14 @@ app.post('/api/escrow/initialize', async (req: any, res: any) => {
             inspection_period: '3',
             delivery_date: deadline || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
             how_dispute_is_handled: 'platform',
-            // Business model: Brand (buyer) pays exactly the campaign amount.
-            // Creator (seller) receives payout net of partner + Pandascrow fees.
+            // Business model: Brand (buyer) pays exact campaign amount.
+            // Pandascrow removes 5% base fee and credits 95% to ABC-Rally (seller).
+            // ABC-Rally credits 90% to Creator wallet, retaining 5% platform fee.
             who_pay_fees: 'seller',
             amount: Number(amount),
             dispute_window: '5',
             callback_url: `${process.env.API_URL || process.env.APP_URL || 'https://api.abc-rally.com'}/api/escrow/webhook`,
-            partner_escrow_fee: '5',
+            partner_escrow_fee: process.env.PARTNER_ESCROW_FEE || '0',
             buyer_details: {
                 name: brandName || 'Brand Partner',
                 email: brandEmail,

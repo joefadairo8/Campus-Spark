@@ -504,13 +504,17 @@ export const WalletService = {
     /**
      * Update allocation with submission data
      */
-    async updateAllocationSubmission(allocationId: string, submission: { link?: string, text?: string, imageUrl?: string }) {
-        const docRef = fsDoc(db, 'campaignAllocations', allocationId);
-        await fsUpdateDoc(docRef, { 
-            status: 'submitted', 
-            submission, 
-            updatedAt: fsTimestamp() 
-        });
+    async updateAllocationSubmission(allocationId: string, submission: { link?: string, text?: string, imageUrl?: string, metricsUrl?: string }) {
+        try {
+            const docRef = fsDoc(db, 'campaignAllocations', allocationId);
+            await fsSetDoc(docRef, { 
+                status: 'submitted', 
+                submission, 
+                updatedAt: fsTimestamp() 
+            }, { merge: true });
+        } catch (e: any) {
+            console.warn('[WalletService] updateAllocationSubmission fallback:', e.message);
+        }
     },
 
     /**

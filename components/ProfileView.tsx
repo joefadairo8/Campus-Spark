@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { updateDoc, doc, db } from '../firebase';
+import { updateDoc, setDoc, doc, db } from '../firebase';
 import { User, UserRole } from '../types';
 
 interface ProfileViewProps {
@@ -119,12 +119,22 @@ const ProfileView: React.FC<ProfileViewProps> = ({ user, onUpdate }) => {
         setLoading(true);
         setSuccess(false);
         try {
-            await updateDoc(doc(db, "users", user.id), formData as any);
+            const userId = user?.id || (user as any)?.uid || (user as any)?._id;
+            if (!userId) throw new Error('User ID missing');
+
+            const cleanedData: any = {};
+            Object.entries(formData).forEach(([k, v]) => {
+                if (v !== undefined) {
+                    cleanedData[k] = v;
+                }
+            });
+
+            await setDoc(doc(db, "users", userId), cleanedData, { merge: true });
             setSuccess(true);
             onUpdate();
-        } catch (err) {
+        } catch (err: any) {
             console.error("Profile update error:", err);
-            alert("Failed to update profile");
+            alert(err.message || "Failed to update profile");
         } finally {
             setLoading(false);
         }
