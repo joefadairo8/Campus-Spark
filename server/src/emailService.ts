@@ -15,24 +15,21 @@ const APP_URL = process.env.APP_URL || 'https://abc-rally.com';
 // ─── Core Send Helper ────────────────────────────────────────────────────────
 export async function sendEmail(to: string, subject: string, html: string): Promise<void> {
     if (!process.env.RESEND_API_KEY) {
-        console.warn('[Email] RESEND_API_KEY not configured — skipping email send.');
-        return;
+        const msg = '[Email] RESEND_API_KEY not configured — skipping email send.';
+        console.warn(msg);
+        throw new Error(msg);
     }
-    try {
-        const { error } = await resend.emails.send({
-            from: `${FROM_NAME} <${FROM_EMAIL}>`,
-            to,
-            subject,
-            html,
-        });
-        if (error) {
-            console.error(`[Email] Resend error sending "${subject}" → ${to}:`, error.message);
-        } else {
-            console.log(`[Email] Sent "${subject}" → ${to}`);
-        }
-    } catch (err: any) {
-        console.error(`[Email] Failed to send "${subject}" → ${to}:`, err.message);
+    const { data, error } = await resend.emails.send({
+        from: `${FROM_NAME} <${FROM_EMAIL}>`,
+        to,
+        subject,
+        html,
+    });
+    if (error) {
+        console.error(`[Email] Resend error sending "${subject}" → ${to}:`, error.message);
+        throw new Error(`Resend email delivery error: ${error.message}`);
     }
+    console.log(`[Email] Sent "${subject}" → ${to} (id: ${data?.id})`);
 }
 
 function layout(content: string): string {
