@@ -316,3 +316,67 @@ export function sendRatingRequestEmail(to: string, brandName: string, creatorNam
     `);
     return sendEmail(to, `⭐ ${creatorName} Requests a Rating for "${gigTitle}"`, html);
 }
+
+/** Sent to creator when escrow funds are released and credited to their wallet */
+export function sendFundsReleasedEmail(to: string, creatorName: string, amount: number, gigTitle: string, brandName: string): Promise<void> {
+    const html = layout(`
+        ${tag('Funds Unlocked 💸', '#22c55e')}
+        <div style="margin-top:16px;">
+            ${heading(`Good news, ${creatorName}!`)}
+            ${para(`<strong>${brandName}</strong> has approved your work for <strong>"${gigTitle}"</strong>. Payment of <strong>₦${amount.toLocaleString()}</strong> has been released and credited to your available wallet balance.`)}
+            ${para('You can now request a withdrawal directly to your Nigerian bank account from your Creator Dashboard.')}
+            ${btn('View My Wallet & Withdraw', APP_URL)}
+        </div>
+    `);
+    return sendEmail(to, `💸 ₦${amount.toLocaleString()} Released for "${gigTitle}"!`, html);
+}
+
+/** Sent to brand confirming escrow funds release */
+export function sendFundsReleasedBrandEmail(to: string, brandName: string, amount: number, gigTitle: string, creatorName: string): Promise<void> {
+    const html = layout(`
+        ${tag('Escrow Released ✅', '#22c55e')}
+        <div style="margin-top:16px;">
+            ${heading('Escrow Payment Released')}
+            ${para(`Hi <strong>${brandName}</strong>, your escrow release of <strong>₦${amount.toLocaleString()}</strong> for <strong>${creatorName}</strong> on campaign <strong>"${gigTitle}"</strong> has been completed successfully.`)}
+            ${para('Thank you for collaborating on ABC-Rally!')}
+            ${btn('View Campaign', APP_URL)}
+        </div>
+    `);
+    return sendEmail(to, `✅ Escrow Payment Released for "${gigTitle}"`, html);
+}
+
+/** Sent to user when admin completes their withdrawal payout */
+export function sendWithdrawalCompletedEmail(to: string, userName: string, amount: number, bankDetails?: any): Promise<void> {
+    const html = layout(`
+        ${tag('Payout Transferred 🏦', '#22c55e')}
+        <div style="margin-top:16px;">
+            ${heading(`Funds Sent to Your Bank, ${userName}!`)}
+            ${para(`Your withdrawal payout of <strong>₦${amount.toLocaleString()}</strong> has been completed and transferred to your registered bank account.`)}
+            ${divider()}
+            <table cellpadding="0" cellspacing="0" style="width:100%;">
+                ${infoRow('Amount', `₦${amount.toLocaleString()}`)}
+                ${infoRow('Bank', bankDetails?.bank || bankDetails?.bankName || 'Bank Account')}
+                ${infoRow('Account', bankDetails?.account || bankDetails?.accountNumber || 'N/A')}
+                ${infoRow('Status', 'Completed ✅')}
+            </table>
+            ${btn('View Wallet History', APP_URL)}
+        </div>
+    `);
+    return sendEmail(to, `🏦 ₦${amount.toLocaleString()} Transferred to Your Bank Account`, html);
+}
+
+/** Sent to creator when assigned / hired for a gig */
+export function sendGigAssignedEmail(to: string, creatorName: string, gigTitle: string, brandName: string, amount?: number): Promise<void> {
+    const amountStr = amount ? ` with an agreed budget of <strong>₦${amount.toLocaleString()}</strong>` : '';
+    const html = layout(`
+        ${tag('You\'re Hired! 🎯', '#22c55e')}
+        <div style="margin-top:16px;">
+            ${heading(`Congratulations, ${creatorName}!`)}
+            ${para(`You have been selected by <strong>${brandName}</strong> for the campaign <strong>"${gigTitle}"</strong>${amountStr}.`)}
+            ${para('Log in to your Creator Dashboard now to view the campaign brief, start working, and submit your report when finished.')}
+            ${btn('Open Creator Dashboard', APP_URL)}
+        </div>
+    `);
+    return sendEmail(to, `🎯 You've Been Hired for "${gigTitle}" by ${brandName}!`, html);
+}
+

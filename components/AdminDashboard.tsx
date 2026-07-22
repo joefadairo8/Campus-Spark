@@ -16,6 +16,7 @@ import {
     Download, Mail, Send, Loader2
 } from 'lucide-react';
 import { DisputesPanel } from './DisputesPanel';
+import { notifyWithdrawalCompleted } from '../emailNotifier';
 import * as LucideIcons from 'lucide-react';
 
 const isTransactionActive = (trans: any, myCampaigns: any[]) => {
@@ -524,6 +525,15 @@ const AdminDashboard: React.FC<{
         if (!window.confirm('Mark this withdrawal as DISBURSED? Ensure you have actually sent the funds to the user bank.')) return;
         try {
             await WalletService.completeWithdrawal(transactionId);
+            const trans = allTransactions.find(t => t.id === transactionId);
+            if (trans && (trans.userEmail || trans.email)) {
+                notifyWithdrawalCompleted(
+                    trans.userEmail || trans.email,
+                    trans.userName || trans.name || 'User',
+                    trans.amount,
+                    { bank: trans.bankName, account: trans.accountNumber }
+                );
+            }
             alert('Withdrawal marked as completed.');
             fetchAdminData();
         } catch (err: any) {

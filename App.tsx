@@ -18,27 +18,38 @@ import LatestBlogsSection from './components/LatestBlogsSection';
 import MarketplaceModules from './components/MarketplaceModules';
 import { globalBrandingSettings, getRawAppName } from './constants';
 
-const LoginPage = lazy(() => import('./components/LoginPage'));
-const CreateAccountPage = lazy(() => import('./components/CreateAccountPage'));
-const AdminLoginPage = lazy(() => import('./components/AdminLoginPage'));
-const BrandDashboard = lazy(() => import('./components/BrandDashboard'));
-const CreatorDashboard = lazy(() => import('./components/CreatorDashboard'));
-const AssociationDashboard = lazy(() => import('./components/AssociationDashboard'));
-const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
-const AboutPage = lazy(() => import('./components/AboutPage'));
-const CareersPage = lazy(() => import('./components/CareersPage'));
-const ContactPage = lazy(() => import('./components/ContactPage'));
-const ScheduleCallPage = lazy(() => import('./components/ScheduleCallPage'));
-const BlogPage = lazy(() => import('./components/BlogPage'));
-const EventsPage = lazy(() => import('./components/EventsPage'));
-const ForAssociationsPage = lazy(() => import('./components/ForAssociationsPage'));
-const PrivacyPolicyPage = lazy(() => import('./components/PrivacyPolicyPage'));
-const TermsOfServicePage = lazy(() => import('./components/TermsOfServicePage'));
-const HelpCenterPage = lazy(() => import('./components/HelpCenterPage'));
-const PricingPage = lazy(() => import('./components/PricingPage'));
-const OpportunitiesPage = lazy(() => import('./components/OpportunitiesPage'));
-const BrandsPage = lazy(() => import('./components/BrandsPage'));
-const CreatorsPage = lazy(() => import('./components/CreatorsPage'));
+// Helper to handle dynamic chunk fetch errors gracefully (e.g. post-deployment stale cache)
+function safeLazy(importFn: () => Promise<any>) {
+  return lazy(() => 
+    importFn().catch(err => {
+      console.warn('[Lazy Chunk Fetch Error] Reloading page to fetch latest deployment bundle:', err);
+      window.location.reload();
+      return new Promise(() => {});
+    })
+  );
+}
+
+const LoginPage = safeLazy(() => import('./components/LoginPage'));
+const CreateAccountPage = safeLazy(() => import('./components/CreateAccountPage'));
+const AdminLoginPage = safeLazy(() => import('./components/AdminLoginPage'));
+const BrandDashboard = safeLazy(() => import('./components/BrandDashboard'));
+const CreatorDashboard = safeLazy(() => import('./components/CreatorDashboard'));
+const AssociationDashboard = safeLazy(() => import('./components/AssociationDashboard'));
+const AdminDashboard = safeLazy(() => import('./components/AdminDashboard'));
+const AboutPage = safeLazy(() => import('./components/AboutPage'));
+const CareersPage = safeLazy(() => import('./components/CareersPage'));
+const ContactPage = safeLazy(() => import('./components/ContactPage'));
+const ScheduleCallPage = safeLazy(() => import('./components/ScheduleCallPage'));
+const BlogPage = safeLazy(() => import('./components/BlogPage'));
+const EventsPage = safeLazy(() => import('./components/EventsPage'));
+const ForAssociationsPage = safeLazy(() => import('./components/ForAssociationsPage'));
+const PrivacyPolicyPage = safeLazy(() => import('./components/PrivacyPolicyPage'));
+const TermsOfServicePage = safeLazy(() => import('./components/TermsOfServicePage'));
+const HelpCenterPage = safeLazy(() => import('./components/HelpCenterPage'));
+const PricingPage = safeLazy(() => import('./components/PricingPage'));
+const OpportunitiesPage = safeLazy(() => import('./components/OpportunitiesPage'));
+const BrandsPage = safeLazy(() => import('./components/BrandsPage'));
+const CreatorsPage = safeLazy(() => import('./components/CreatorsPage'));
 
 const PageLoader: React.FC = () => (
   <div className="min-h-[60vh] flex items-center justify-center">

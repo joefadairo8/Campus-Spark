@@ -210,9 +210,6 @@ const MarketplaceModules: React.FC = () => {
             <button className="flex-1 py-3 bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] border border-[var(--border-color)] text-[10px] font-black uppercase tracking-wider rounded-xl transition-all">
               Withdraw
             </button>
-            <button className="flex-1 py-3 bg-spark-black text-white dark:bg-white dark:text-spark-black text-[10px] font-black uppercase tracking-wider rounded-xl transition-all shadow-md">
-              + Fund Wallet
-            </button>
           </div>
         </div>
       )

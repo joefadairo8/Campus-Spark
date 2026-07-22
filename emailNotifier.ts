@@ -75,3 +75,16 @@ export function notifyReportRejected(creatorEmail: string, creatorName: string, 
 export function notifyRatingRequest(brandEmail: string, brandName: string, creatorName: string, gigTitle: string): void {
     notifyServer({ type: 'rating_request', to: brandEmail, name: brandName, creatorName, title: gigTitle });
 }
+
+export function notifyGigAssigned(creatorEmail: string, creatorName: string, gigTitle: string, brandName: string, amount?: number): void {
+    notifyServer({ type: 'gig_assigned', to: creatorEmail, name: creatorName, title: gigTitle, brandName, amount });
+}
+
+export function notifyFundsReleased(creatorEmail: string, creatorName: string, amount: number, gigTitle: string, brandName: string, brandEmail?: string): void {
+    notifyServer({ type: 'funds_released', to: creatorEmail, name: creatorName, amount, title: gigTitle, brandName, brandEmail });
+}
+
+export function notifyWithdrawalCompleted(userEmail: string, userName: string, amount: number, bankDetails?: object): void {
+    notifyServer({ type: 'withdrawal_completed', to: userEmail, name: userName, amount, bankDetails });
+}
+

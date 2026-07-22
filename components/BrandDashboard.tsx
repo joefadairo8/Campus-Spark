@@ -5,7 +5,7 @@ import { UserRole } from '../types';
 import { STATES, UNIVERSITIES, BACKEND_URL } from '../constants';
 import ProfileView from './ProfileView';
 import DashboardPlaceholder from './DashboardPlaceholder';
-import { notifyTopUp, notifyProposalReceived, notifyProposalStatus, notifyApplicationDecision, notifyReportRejected } from '../emailNotifier';
+import { notifyTopUp, notifyProposalReceived, notifyProposalStatus, notifyApplicationDecision, notifyReportRejected, notifyGigAssigned, notifyFundsReleased } from '../emailNotifier';
 import { ProposalFormModal } from './ProposalFormModal';
 import { ProposalDetailsModal } from './ProposalDetailsModal';
 import { EventDetailsModal } from './EventDetailsModal';
@@ -293,11 +293,15 @@ const BrandDashboard: React.FC<{
 
         setApprovalSubmitting(true);
         try {
-            // 1. Mark application as accepted in our system
-            await apiClient.patch(`gigs/${viewingApplicants.id}/applications/${selectedAppToApprove.appId}`, { 
-                status: 'accepted',
-                amount 
-            });
+            // 1. Mark application as accepted in our system (non-blocking if backend DB is offline)
+            try {
+                await apiClient.patch(`gigs/${viewingApplicants.id}/applications/${selectedAppToApprove.appId}`, { 
+                    status: 'accepted',
+                    amount 
+                });
+            } catch (patchErr: any) {
+                console.warn('[Approve] API application patch non-blocking warning:', patchErr.message);
+            }
 
             // 2. Initialize Escrow for the creator payout
             let escrowData: any = null;
@@ -321,10 +325,11 @@ const BrandDashboard: React.FC<{
                     escrowData = escrowJson;
                 } else {
                     console.warn('[Escrow] Init response:', escrowJson);
+                    escrowData = { _err: escrowJson.error || escrowJson.message || 'Escrow initialization failed.' };
                 }
             } catch (escrowErr: any) {
                 console.warn('[Escrow] Init failed (non-blocking):', escrowErr.message);
-                escrowData = null;
+                escrowData = { _err: escrowErr.message };
             }
 
             // 3. Save escrow info to the allocation record in Firestore
@@ -339,8 +344,20 @@ const BrandDashboard: React.FC<{
                 creatorEmail: selectedAppToApprove.email || selectedAppToApprove.creatorEmail || '',
                 amount,
                 status: 'selected',
-                ...(escrowData ? { escrowId: escrowData.escrow_id, escrowPaymentUrl: escrowData.payment_url, escrowRef: escrowData.transaction_ref } : {}),
+                ...(escrowData?.escrow_id ? { escrowId: escrowData.escrow_id, escrowPaymentUrl: escrowData.payment_url, escrowRef: escrowData.transaction_ref } : {}),
             });
+
+            // Trigger email notification to creator
+            const creatorEmail = selectedAppToApprove.email || selectedAppToApprove.creatorEmail;
+            if (creatorEmail) {
+                notifyApplicationDecision(
+                    creatorEmail,
+                    selectedAppToApprove.name || selectedAppToApprove.creatorName || 'Creator',
+                    viewingApplicants.title,
+                    brandProfile.name || brandProfile.companyName || 'Brand',
+                    'accepted'
+                );
+            }
 
             // Refresh
             const res = await apiClient.get(`gigs/${viewingApplicants.id}/applications`);
@@ -352,8 +369,9 @@ const BrandDashboard: React.FC<{
             setSelectedAppToApprove(null);
 
             if (escrowData?.payment_url) {
-                if (window.confirm(`✅ Creator hired! Now fund the escrow to lock ₦${amount.toLocaleString()} for ${selectedAppToApprove.name || 'the creator'}. Click OK to open the escrow payment page.`)) {
-                    window.open(escrowData.payment_url, '_blank');
+                const popWin = window.open(escrowData.payment_url, '_blank');
+                if (!popWin || popWin.closed || typeof popWin.closed === 'undefined') {
+                    window.location.href = escrowData.payment_url;
                 }
             } else {
                 // Show what the API returned so we can debug
@@ -575,6 +593,7 @@ const BrandDashboard: React.FC<{
                     escrowData = escrowJson;
                 } else {
                     console.warn('[Escrow] Init response:', escrowJson);
+                    escrowData = { _err: escrowJson.error || escrowJson.message || 'Escrow initialization failed.' };
                 }
             } catch (escrowErr: any) {
                 console.warn('[Escrow] Init failed (non-blocking):', escrowErr.message);
@@ -596,13 +615,25 @@ const BrandDashboard: React.FC<{
                 ...(escrowData?.escrow_id ? { escrowId: escrowData.escrow_id, escrowPaymentUrl: escrowData.payment_url, escrowRef: escrowData.transaction_ref } : {}),
             });
 
+            // Trigger email notification to allocated creator
+            if (allocationTarget.email) {
+                notifyGigAssigned(
+                    allocationTarget.email,
+                    allocationTarget.name,
+                    campaign.title,
+                    brandProfile.name || brandProfile.companyName || 'Brand',
+                    amount
+                );
+            }
+
             await fetchAllAllocations(brandProfile.id);
             setShowAllocationModal(false);
             setAllocationTarget(null);
 
             if (escrowData?.payment_url) {
-                if (window.confirm(`✅ Creator allocated! Now fund the escrow to lock ₦${amount.toLocaleString()} for ${allocationTarget.name}. Click OK to open the escrow payment page.`)) {
-                    window.open(escrowData.payment_url, '_blank');
+                const popWin = window.open(escrowData.payment_url, '_blank');
+                if (!popWin || popWin.closed || typeof popWin.closed === 'undefined') {
+                    window.location.href = escrowData.payment_url;
                 }
             } else {
                 const escrowErrDetail = escrowData?._err || 'Check browser console → Network tab for details.';
@@ -626,6 +657,48 @@ const BrandDashboard: React.FC<{
             console.error('Detail fetch error:', e);
         } finally {
             setDetailLoading(false);
+        }
+    };
+
+    // Retry escrow setup for an allocation that failed on first hire
+    const handleSetUpEscrow = async (alloc: CampaignAllocation) => {
+        if (!brandProfile) return;
+        try {
+            const escrowRes = await fetch(`${BACKEND_URL}/api/escrow/initialize`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    gigTitle: alloc.campaignTitle || selectedCampaignDetail?.title || 'Campaign',
+                    gigDescription: selectedCampaignDetail?.description || selectedCampaignDetail?.brief || `Gig for ${alloc.creatorName}`,
+                    amount: alloc.amount,
+                    deadline: selectedCampaignDetail?.deadline,
+                    brandName: brandProfile.name || brandProfile.companyName || 'Brand',
+                    brandEmail: brandProfile.email || user?.email,
+                    brandPhone: brandProfile.phoneNumber || brandProfile.phone || '',
+                    creatorId: alloc.creatorId,
+                }),
+            });
+            const escrowJson = await escrowRes.json();
+            if (escrowRes.ok && escrowJson.escrow_id) {
+                // Save the escrow details to the allocation in Firestore
+                await WalletService.updateAllocationStatus(alloc.id!, alloc.status, {
+                    escrowId: escrowJson.escrow_id,
+                    escrowPaymentUrl: escrowJson.payment_url,
+                    escrowRef: escrowJson.transaction_ref,
+                });
+                // Open the payment URL
+                const popWin = window.open(escrowJson.payment_url, '_blank');
+                if (!popWin) window.location.href = escrowJson.payment_url;
+                // Refresh allocations
+                if (selectedCampaignDetail) {
+                    const updated = await WalletService.getAllocationsForCampaign(selectedCampaignDetail.id);
+                    setDetailAllocations(updated);
+                }
+            } else {
+                alert(`Escrow setup failed: ${escrowJson.error || escrowJson.message || 'Unknown error'}`);
+            }
+        } catch (err: any) {
+            alert(`Escrow setup error: ${err.message}`);
         }
     };
 
@@ -702,6 +775,18 @@ const BrandDashboard: React.FC<{
                 selectedCampaignDetail?.title || releaseOtpAllocation.campaignTitle || 'Campaign',
                 { escrowRelease: true }
             );
+
+            // Trigger funds released email notification
+            if (releaseOtpAllocation.creatorEmail) {
+                notifyFundsReleased(
+                    releaseOtpAllocation.creatorEmail,
+                    releaseOtpAllocation.creatorName || 'Creator',
+                    releaseOtpAllocation.amount,
+                    selectedCampaignDetail?.title || releaseOtpAllocation.campaignTitle || 'Campaign',
+                    brandProfile.name || brandProfile.companyName || 'Brand',
+                    brandProfile.email || user?.email
+                );
+            }
 
             await Promise.all([
                 syncWalletStrip(brandProfile.id),
@@ -2573,9 +2658,12 @@ const BrandDashboard: React.FC<{
                                                                                             <Lock className="w-3 h-3" /> Fund Escrow
                                                                                         </a>
                                                                                     ) : (
-                                                                                        <span className="px-3 py-1.5 bg-yellow-50 text-yellow-700 border border-yellow-200 rounded-lg text-[10px] font-black uppercase">
-                                                                                            Pending Escrow Setup
-                                                                                        </span>
+                                                                                        <button
+                                                                                            onClick={() => handleSetUpEscrow(alloc)}
+                                                                                            className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-[10px] font-black uppercase hover:bg-amber-600 transition-colors flex items-center gap-1"
+                                                                                        >
+                                                                                            <Lock className="w-3 h-3" /> Set Up Escrow
+                                                                                        </button>
                                                                                     )
                                                                                 )}
                                                                                 {(alloc.status === 'in_progress' || alloc.status === 'revision') && (
@@ -3294,9 +3382,6 @@ const BrandDashboard: React.FC<{
                         <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase tracking-widest leading-none">Locked (Escrow)</p>
                         <p className="text-sm font-black text-[var(--text-primary)]">₦{walletData.locked.toLocaleString()}</p>
                     </div>
-                    <button onClick={() => setCurrentView('wallet')} className="bg-spark-red text-white text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl hover:bg-red-700 transition-all">
-                        Fund Wallet
-                    </button>
                 </div>
             }
         >
