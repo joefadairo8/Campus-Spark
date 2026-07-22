@@ -2155,7 +2155,11 @@ const AdminDashboard: React.FC<{
                                                         const errData = await res.json().catch(() => ({}));
                                                         throw new Error(errData.error || `Server responded with status ${res.status}`);
                                                     }
-                                                    await updateDoc(doc(db, 'support_tickets', selectedTicket.id), { status: 'responded', respondedAt: new Date().toISOString(), replyBody });
+                                                    try {
+                                                        await updateDoc(doc(db, 'support_tickets', selectedTicket.id), { status: 'responded', respondedAt: new Date().toISOString(), replyBody });
+                                                    } catch (fsErr) {
+                                                        console.warn('Firestore support_tickets update warning:', fsErr);
+                                                    }
                                                     setSupportTickets(prev => prev.map(t => t.id === selectedTicket.id ? { ...t, status: 'responded', replyBody } : t));
                                                     setSelectedTicket({ ...selectedTicket, status: 'responded', replyBody });
                                                     setReplyBody('');

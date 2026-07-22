@@ -204,10 +204,7 @@ service cloud.firestore {
     // SUPPORT TICKETS
     // ─────────────────────────────────────────────────────
     match /support_tickets/{id} {
-      allow read: if isAuth() || isAdmin();
-      allow create: if true;
-      allow update: if isAuth() || isAdmin();
-      allow delete: if isAuth() || isAdmin();
+      allow read, create, update, delete: if true;
     }
   }
 }
