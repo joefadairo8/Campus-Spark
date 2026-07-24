@@ -15,9 +15,8 @@ const APP_URL = process.env.APP_URL || 'https://abc-rally.com';
 // ─── Core Send Helper ────────────────────────────────────────────────────────
 export async function sendEmail(to: string, subject: string, html: string): Promise<void> {
     if (!process.env.RESEND_API_KEY) {
-        const msg = '[Email] RESEND_API_KEY not configured — skipping email send.';
-        console.warn(msg);
-        throw new Error(msg);
+        console.warn(`[Email Sim] RESEND_API_KEY not configured. Simulated send to ${to}: "${subject}"`);
+        return;
     }
     const { data, error } = await resend.emails.send({
         from: `${FROM_NAME} <${FROM_EMAIL}>`,
@@ -362,6 +361,224 @@ export function sendWithdrawalCompletedEmail(to: string, userName: string, amoun
     return sendEmail(to, `🏦 ₦${amount.toLocaleString()} Transferred to Your Bank Account`, html);
 }
 
+// ─── Section 9: Creator Profile Review ───────────────────────────────────────
+
+/** Admin alert when a creator submits their profile for review */
+export function sendProfileSubmittedAdminEmail(creatorName: string, creatorEmail: string): Promise<void> {
+    const html = layout(`
+        ${tag('Profile Submitted for Review', '#6366f1')}
+        <div style="margin-top:16px;">
+            ${heading('Creator Profile Awaiting Review')}
+            ${para(`<strong>${creatorName}</strong> (<a href="mailto:${creatorEmail}" style="color:#e53e3e;">${creatorEmail}</a>) has submitted their creator profile for review.`)}
+            ${divider()}
+            <table cellpadding="0" cellspacing="0" style="width:100%;">
+                ${infoRow('Creator', creatorName)}
+                ${infoRow('Email', creatorEmail)}
+                ${infoRow('Submitted', new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }))}
+            </table>
+            ${btn('Review in Admin Dashboard', APP_URL + '/admin-dashboard')}
+        </div>
+    `);
+    return sendEmail(ADMIN_EMAIL, `[Admin] 👤 Creator Profile Submitted: ${creatorName}`, html);
+}
+
+/** Sent to creator when admin approves their profile */
+export function sendProfileApprovedEmail(to: string, creatorName: string): Promise<void> {
+    const html = layout(`
+        ${tag('Profile Approved ✅', '#22c55e')}
+        <div style="margin-top:16px;">
+            ${heading(`Congratulations, ${creatorName}!`)}
+            ${para(`Your ABC-Rally creator profile has been <strong style="color:#22c55e;">approved</strong>! You are now visible in the Creator Directory and eligible to receive hiring requests from brands and associations.`)}
+            ${divider()}
+            <ul style="font-size:14px;color:#444;line-height:2;">
+                <li>Brands can now find and hire you directly</li>
+                <li>Your profile appears in filtered search results</li>
+                <li>Keep your availability up to date to stay hire-ready</li>
+            </ul>
+            ${btn('View My Dashboard', APP_URL + '/creator-dashboard')}
+        </div>
+    `);
+    return sendEmail(to, `✅ Your ABC-Rally Creator Profile is Approved!`, html);
+}
+
+/** Sent to creator when admin sends a Needs Update status */
+export function sendProfileNeedsUpdateEmail(to: string, creatorName: string, adminNote: string): Promise<void> {
+    const html = layout(`
+        ${tag('Profile Update Required ⚠', '#f59e0b')}
+        <div style="margin-top:16px;">
+            ${heading(`Action Required, ${creatorName}`)}
+            ${para(`Our team has reviewed your ABC-Rally creator profile and found areas that need to be updated before approval.`)}
+            ${divider()}
+            <p style="margin:0 0 8px;font-size:12px;font-weight:800;color:#888;text-transform:uppercase;letter-spacing:1px;">Admin Feedback</p>
+            <div style="background:#fff8f0;border-left:4px solid #f59e0b;padding:16px 20px;border-radius:0 8px 8px 0;">
+                <p style="margin:0;font-size:14px;color:#555555;line-height:1.7;">${adminNote}</p>
+            </div>
+            ${para('Log in to your dashboard, update your profile based on the feedback above, and resubmit for review.')}
+            ${btn('Update My Profile', APP_URL + '/creator-dashboard?onboard=true')}
+        </div>
+    `);
+    return sendEmail(to, `⚠ Your ABC-Rally Profile Needs an Update`, html);
+}
+
+// ─── Dispute Notifications ────────────────────────────────────────────────────
+
+/** Sent to a party in a dispute when it is opened */
+export function sendDisputeOpenedEmail(to: string, recipientName: string, opponentName: string, reason: string, disputeId: string): Promise<void> {
+    const html = layout(`
+        ${tag('Dispute Filed ⚖', '#ef4444')}
+        <div style="margin-top:16px;">
+            ${heading('A Dispute Has Been Filed')}
+            ${para(`A dispute has been opened on your ABC-Rally transaction involving <strong>${opponentName}</strong>.`)}
+            ${divider()}
+            <table cellpadding="0" cellspacing="0" style="width:100%;">
+                ${infoRow('Dispute ID', disputeId.slice(0, 8).toUpperCase())}
+                ${infoRow('Reason', reason)}
+                ${infoRow('Filed', new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }))}
+            </table>
+            ${para('Our mediation team will review this case. Please log in to provide your statement and supporting evidence.')}
+            ${btn('View Dispute', APP_URL)}
+        </div>
+    `);
+    return sendEmail(to, `⚖ Dispute Filed — Case #${disputeId.slice(0, 8).toUpperCase()}`, html);
+}
+
+/** Admin alert when a dispute is opened */
+export function sendDisputeOpenedAdminEmail(party1Name: string, party1Email: string, party2Name: string, reason: string, disputeId: string): Promise<void> {
+    const html = layout(`
+        ${tag('New Dispute — Admin Alert', '#ef4444')}
+        <div style="margin-top:16px;">
+            ${heading('New Dispute Requires Mediation')}
+            <table cellpadding="0" cellspacing="0" style="width:100%;">
+                ${infoRow('Dispute ID', disputeId.slice(0, 8).toUpperCase())}
+                ${infoRow('Party 1', party1Name + ' (' + party1Email + ')')}
+                ${infoRow('Party 2', party2Name)}
+                ${infoRow('Reason', reason)}
+                ${infoRow('Filed', new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }))}
+            </table>
+            ${btn('Mediate in Admin Dashboard', APP_URL + '/admin-dashboard')}
+        </div>
+    `);
+    return sendEmail(ADMIN_EMAIL, `[Admin] ⚖ New Dispute: ${party1Name} vs ${party2Name}`, html);
+}
+
+// ─── Event Notifications ──────────────────────────────────────────────────────
+
+/** Sent to organiser when their event is created */
+export function sendEventCreatedEmail(to: string, organizerName: string, eventTitle: string, eventDate: string): Promise<void> {
+    const html = layout(`
+        ${tag('Event Created 🎪', '#8b5cf6')}
+        <div style="margin-top:16px;">
+            ${heading(`Your event is live, ${organizerName}!`)}
+            ${para(`Your event <strong>"${eventTitle}"</strong> has been created on ABC-Rally and is now visible to the community.`)}
+            ${divider()}
+            <table cellpadding="0" cellspacing="0" style="width:100%;">
+                ${infoRow('Event', eventTitle)}
+                ${infoRow('Date', eventDate)}
+            </table>
+            ${btn('View My Event', APP_URL)}
+        </div>
+    `);
+    return sendEmail(to, `🎪 Event Created: "${eventTitle}"`, html);
+}
+
+/** Admin alert when a new event is created */
+export function sendEventCreatedAdminEmail(organizerName: string, organizerEmail: string, eventTitle: string): Promise<void> {
+    const html = layout(`
+        ${tag('New Event — Admin Alert', '#8b5cf6')}
+        <div style="margin-top:16px;">
+            ${heading('New Event Created')}
+            <table cellpadding="0" cellspacing="0" style="width:100%;">
+                ${infoRow('Organizer', organizerName + ' (' + organizerEmail + ')')}
+                ${infoRow('Event', eventTitle)}
+                ${infoRow('Created', new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }))}
+            </table>
+            ${btn('View in Admin Dashboard', APP_URL + '/admin-dashboard')}
+        </div>
+    `);
+    return sendEmail(ADMIN_EMAIL, `[Admin] 🎪 New Event: "${eventTitle}" by ${organizerName}`, html);
+}
+
+// ─── Support Ticket Notifications ─────────────────────────────────────────────
+
+/** Sent to user confirming their support ticket was received */
+export function sendSupportTicketConfirmationEmail(to: string, userName: string, subject: string, ticketId: string): Promise<void> {
+    const html = layout(`
+        ${tag('Support Request Received ✉', '#6366f1')}
+        <div style="margin-top:16px;">
+            ${heading(`We got your message, ${userName}!`)}
+            ${para(`Your support request has been received. Our team will respond within <strong>24–48 hours</strong>.`)}
+            ${divider()}
+            <table cellpadding="0" cellspacing="0" style="width:100%;">
+                ${infoRow('Ref', ticketId.slice(0, 8).toUpperCase())}
+                ${infoRow('Subject', subject)}
+                ${infoRow('Submitted', new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }))}
+            </table>
+            ${btn('Go to Dashboard', APP_URL)}
+        </div>
+    `);
+    return sendEmail(to, `✉ Support Request Received — Ref #${ticketId.slice(0, 8).toUpperCase()}`, html);
+}
+
+/** Admin alert for a new support ticket */
+export function sendSupportTicketAdminEmail(userName: string, userEmail: string, subject: string, message: string, ticketId: string): Promise<void> {
+    const preview = message.length > 300 ? message.slice(0, 300) + '…' : message;
+    const html = layout(`
+        ${tag('New Support Ticket', '#6366f1')}
+        <div style="margin-top:16px;">
+            ${heading('New Support Request')}
+            <table cellpadding="0" cellspacing="0" style="width:100%;">
+                ${infoRow('Ref', ticketId.slice(0, 8).toUpperCase())}
+                ${infoRow('From', userName + ' (' + userEmail + ')')}
+                ${infoRow('Subject', subject)}
+            </table>
+            ${divider()}
+            <div style="background:#f9f9f9;border-left:4px solid #6366f1;padding:16px 20px;border-radius:0 8px 8px 0;">
+                <p style="margin:0;font-size:14px;color:#555555;line-height:1.7;">${preview}</p>
+            </div>
+            ${btn('Reply in Admin Dashboard', APP_URL + '/admin-dashboard')}
+        </div>
+    `);
+    return sendEmail(ADMIN_EMAIL, `[Support] ${subject} — from ${userName}`, html);
+}
+
+/** Sent to user when admin replies to their support ticket */
+export function sendSupportTicketReplyEmail(to: string, userName: string, subject: string, replyText: string): Promise<void> {
+    const html = layout(`
+        ${tag('Support Reply ✅', '#22c55e')}
+        <div style="margin-top:16px;">
+            ${heading(`We've responded to your request, ${userName}`)}
+            ${para(`Here is our response to your support ticket: <strong>"${subject}"</strong>`)}
+            ${divider()}
+            <div style="background:#f9f9f9;border-left:4px solid #22c55e;padding:16px 20px;border-radius:0 8px 8px 0;">
+                <p style="margin:0;font-size:14px;color:#555555;line-height:1.7;">${replyText}</p>
+            </div>
+            ${para('If you need further help, submit another request from your dashboard.')}
+            ${btn('Go to Dashboard', APP_URL)}
+        </div>
+    `);
+    return sendEmail(to, `✅ Support Reply: "${subject}"`, html);
+}
+
+// ─── Campaign Published ───────────────────────────────────────────────────────
+
+/** Admin alert when a brand or association publishes a new gig/campaign */
+export function sendGigPublishedAdminEmail(publisherName: string, publisherEmail: string, gigTitle: string, budget: number): Promise<void> {
+    const html = layout(`
+        ${tag('New Campaign Published 📢', '#f59e0b')}
+        <div style="margin-top:16px;">
+            ${heading('New Campaign is Live')}
+            <table cellpadding="0" cellspacing="0" style="width:100%;">
+                ${infoRow('Campaign', gigTitle)}
+                ${infoRow('Publisher', publisherName + ' (' + publisherEmail + ')')}
+                ${infoRow('Budget', '₦' + budget.toLocaleString())}
+                ${infoRow('Published', new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }))}
+            </table>
+            ${btn('View in Admin Dashboard', APP_URL + '/admin-dashboard')}
+        </div>
+    `);
+    return sendEmail(ADMIN_EMAIL, `[Admin] 📢 New Campaign: "${gigTitle}" by ${publisherName}`, html);
+}
+
 /** Sent to creator when assigned / hired for a gig */
 export function sendGigAssignedEmail(to: string, creatorName: string, gigTitle: string, brandName: string, amount?: number): Promise<void> {
     const amountStr = amount ? ` with an agreed budget of <strong>₦${amount.toLocaleString()}</strong>` : '';
@@ -376,4 +593,20 @@ export function sendGigAssignedEmail(to: string, creatorName: string, gigTitle: 
     `);
     return sendEmail(to, `🎯 You've Been Hired for "${gigTitle}" by ${brandName}!`, html);
 }
+
+/** Admin Email Blast HTML template */
+export function sendBlastHtmlEmail(title: string, bodyHtml: string): string {
+    return layout(`
+        ${tag('Platform Announcement 📢', '#e53e3e')}
+        <div style="margin-top:16px;">
+            ${heading(title)}
+            <div style="margin-top:20px;font-size:15px;color:#333333;line-height:1.7;">
+                ${bodyHtml}
+            </div>
+            ${divider()}
+            ${btn('Open ABC-Rally', APP_URL)}
+        </div>
+    `);
+}
+
 

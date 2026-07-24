@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import DashboardShell from './DashboardShell';
 import { db, auth, collection, query, where, getDocs, limit, doc, getDoc, apiClient, orderBy, logEvent, updateDoc, addDoc } from '../firebase';
 import { UserRole } from '../types';
-import { STATES, UNIVERSITIES, BACKEND_URL } from '../constants';
+import { STATES, UNIVERSITIES, BACKEND_URL, CREATOR_SERVICES_BY_CAPABILITY, ALL_CREATOR_SERVICES } from '../constants';
 import ProfileView from './ProfileView';
 import DashboardPlaceholder from './DashboardPlaceholder';
 import { notifyTopUp, notifyProposalReceived, notifyProposalStatus, notifyApplicationDecision, notifyReportRejected, notifyGigAssigned, notifyFundsReleased } from '../emailNotifier';
@@ -11,8 +11,17 @@ import { ProposalDetailsModal } from './ProposalDetailsModal';
 import { EventDetailsModal } from './EventDetailsModal';
 import { CreatorProfileModal } from './CreatorProfileModal';
 import { WalletService, CampaignAllocation } from '../WalletService';
-import { Calendar, Wallet, BarChart3, Lock, Plus, Minus, Mail, Users, Megaphone, Inbox, TrendingUp, ArrowUpRight, ArrowDownLeft, Activity, Handshake, Building2, Search, Briefcase, FileText, Download, Edit, Trash2, User, Award, Instagram, Twitter, Scale, Star } from 'lucide-react';
+import { Calendar, Wallet, BarChart3, Lock, Plus, Minus, Mail, Users, Megaphone, Inbox, TrendingUp, ArrowUpRight, ArrowDownLeft, Activity, Handshake, Building2, Search, Briefcase, FileText, Download, Edit, Trash2, User, Award, Instagram, Twitter, Scale, Star, MapPin } from 'lucide-react';
 import { DisputesPanel } from './DisputesPanel';
+import { EventListingTermsModal } from './EventListingTermsModal';
+
+/** Capability badge colours — hoisted so all card render paths can use them */
+const CAPABILITY_COLORS: Record<string, string> = {
+    Create: 'bg-spark-red text-white',
+    Manage: 'bg-blue-600 text-white',
+    Distribute: 'bg-green-600 text-white',
+    Activate: 'bg-amber-500 text-white',
+};
 
 const parsePackages = (packagesField: any): { name: string; price: number; entails: string; }[] => {
     if (!packagesField) return [];
@@ -75,6 +84,23 @@ const BrandDashboard: React.FC<{
     const [proposals, setProposals] = useState<any[]>([]);
     const [proposalTab, setProposalTab] = useState<'incoming' | 'outgoing'>('incoming');
     const [creatorTypeTab, setCreatorTypeTab] = useState<'all' | 'professional' | 'student'>('all');
+    // Section 8 filters
+    const [filterCapability, setFilterCapability] = useState('All');
+    const [filterService, setFilterService] = useState('All');
+    const [filterState, setFilterState] = useState('All');
+    const [filterCampus, setFilterCampus] = useState('');
+    const [filterAvailableOnly, setFilterAvailableOnly] = useState(false);
+    const [filterWhatsApp, setFilterWhatsApp] = useState(false);
+    const clearDirectoryFilters = () => {
+        setSearchTerm('');
+        setFilterCapability('All');
+        setFilterService('All');
+        setFilterState('All');
+        setFilterCampus('');
+        setFilterAvailableOnly(false);
+        setFilterWhatsApp(false);
+        setCreatorTypeTab('all');
+    };
     const [selectedCreator, setSelectedCreator] = useState<any>(null);
     const [proposing, setProposing] = useState(false);
     const [showProposalModal, setShowProposalModal] = useState(false);
@@ -134,6 +160,7 @@ const BrandDashboard: React.FC<{
         campaignDeadline: ''
     });
     const [showCreateEventModal, setShowCreateEventModal] = useState(false);
+    const [showListingTermsModal, setShowListingTermsModal] = useState(false);
     const [eventSubmitting, setEventSubmitting] = useState(false);
     const [editingEvent, setEditingEvent] = useState<any>(null);
     const [editEventFormData, setEditEventFormData] = useState({ 
@@ -1390,6 +1417,8 @@ const BrandDashboard: React.FC<{
                 const creatorsData = querySnapshot.docs
                     .map(doc => ({ id: doc.id, ...(doc.data() as any) }))
                     .filter((u: any) => {
+                        // Hide creators with incomplete onboarding or hidden directory status from hire directory
+                        if (u.onboardingCompleted === false || u.directoryHidden === true) return false;
                         if (creatorRoleSet.has(u.role)) return true;
                         const role = (u.role || '').toLowerCase();
                         if (role.includes('influencer') || role.includes('creator')) {
@@ -1567,13 +1596,57 @@ const BrandDashboard: React.FC<{
     };
 
     const filteredCreators = creators.filter((creator) => {
-        const matchesSearch = creator.name.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesUni = selectedUni === 'All' || creator.university === selectedUni;
+        const isAvailable = creator.availability === 'Available Now' || creator.availability === 'Limited';
+
+        // Name / keyword search
+        const term = searchTerm.toLowerCase();
+        const matchesSearch = !searchTerm ||
+            creator.name?.toLowerCase().includes(term) ||
+            creator.professionalHeadline?.toLowerCase().includes(term) ||
+            creator.primaryService?.toLowerCase().includes(term) ||
+            (creator.services || []).some((s: string) => s.toLowerCase().includes(term)) ||
+            creator.campusCommunityReach?.toLowerCase().includes(term) ||
+            creator.city?.toLowerCase().includes(term);
+
+        // Capability filter
+        const matchesCapability = filterCapability === 'All' ||
+            creator.primaryCapability === filterCapability ||
+            (creator.capabilities || []).includes(filterCapability);
+
+        // Service filter — also handles WhatsApp Status TV / WhatsApp Channel
+        const allCreatorServices = [
+            creator.primaryService,
+            ...(creator.services || []),
+            ...(creator.additionalServices || [])
+        ].filter(Boolean);
+        const matchesService = filterService === 'All' ||
+            allCreatorServices.some((s: string) => s === filterService);
+
+        // State filter
+        const creatorStateRaw = (creator.state || creator.location || '').toLowerCase();
+        const matchesState = filterState === 'All' ||
+            creatorStateRaw.includes(filterState.toLowerCase());
+
+        // Campus keyword filter
+        const campusCombined = [
+            creator.campusCommunityReach,
+            creator.university,
+            creator.city
+        ].filter(Boolean).join(' ').toLowerCase();
+        const matchesCampus = !filterCampus || campusCombined.includes(filterCampus.toLowerCase());
+
+        // Availability filter (only applied when toggle is on)
+        const matchesAvailability = !filterAvailableOnly || isAvailable;
+
+        // WhatsApp Media filter
+        const matchesWhatsApp = !filterWhatsApp || !!(creator.whatsappMediaName || creator.whatsappMediaType);
+
+        // Creator type tab
         const creatorType = creator.influencerType || (creator.university ? 'Student Creator' : 'Professional Creator');
         const isProfessional = creatorType === 'Professional Creator';
-        if (creatorTypeTab === 'professional') return matchesSearch && matchesUni && isProfessional;
-        if (creatorTypeTab === 'student') return matchesSearch && matchesUni && !isProfessional;
-        return matchesSearch && matchesUni;
+        const matchesTypeTab = creatorTypeTab === 'all' || (creatorTypeTab === 'professional' ? isProfessional : !isProfessional);
+
+        return matchesSearch && matchesCapability && matchesService && matchesState && matchesCampus && matchesAvailability && matchesWhatsApp && matchesTypeTab;
     });
 
     const filteredPartners = partners.filter((partner) => {
@@ -1844,17 +1917,103 @@ const BrandDashboard: React.FC<{
                             </div>
                         </div>
 
-                        {/* Search Bar */}
-                        <div className="bg-[var(--bg-primary)] p-6 rounded-[2rem] shadow-sm border border-[var(--border-color)] flex flex-col xl:flex-row gap-6 items-center">
-                            <div className="relative flex-1 w-full">
-                                <input
-                                    type="text"
-                                    placeholder="Search creators..."
-                                    className="w-full pl-12 pr-4 py-4 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-2xl outline-none font-medium text-[var(--text-primary)] focus:border-spark-red transition-all"
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                />
-                                <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        {/* Section 8 Filter Panel */}
+                        <div className="bg-[var(--bg-primary)] p-6 rounded-[2rem] shadow-sm border border-[var(--border-color)] space-y-4">
+                            {/* Row 1: Search + Capability + Service */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        placeholder="Search by name, service, campus..."
+                                        className="w-full pl-10 pr-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl outline-none font-medium text-[var(--text-primary)] focus:border-spark-red transition-all text-sm"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                    />
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-secondary)]" />
+                                </div>
+                                <select
+                                    value={filterCapability}
+                                    onChange={(e) => { setFilterCapability(e.target.value); setFilterService('All'); }}
+                                    className="w-full py-3 px-4 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl outline-none font-medium text-[var(--text-primary)] focus:border-spark-red transition-all text-sm"
+                                >
+                                    <option value="All">All Capabilities</option>
+                                    {Object.keys(CREATOR_SERVICES_BY_CAPABILITY).map(cap => (
+                                        <option key={cap} value={cap}>{cap}</option>
+                                    ))}
+                                </select>
+                                <select
+                                    value={filterService}
+                                    onChange={(e) => setFilterService(e.target.value)}
+                                    className="w-full py-3 px-4 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl outline-none font-medium text-[var(--text-primary)] focus:border-spark-red transition-all text-sm"
+                                >
+                                    <option value="All">All Services</option>
+                                    {(filterCapability !== 'All'
+                                        ? CREATOR_SERVICES_BY_CAPABILITY[filterCapability]
+                                        : ALL_CREATOR_SERVICES
+                                    ).map((svc: string) => (
+                                        <option key={svc} value={svc}>{svc}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            {/* Row 2: State + Campus keyword + Toggles + Clear */}
+                            <div className="flex flex-wrap gap-3 items-center">
+                                <select
+                                    value={filterState}
+                                    onChange={(e) => setFilterState(e.target.value)}
+                                    className="py-2.5 px-4 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl outline-none font-medium text-[var(--text-primary)] focus:border-spark-red transition-all text-sm min-w-[140px]"
+                                >
+                                    <option value="All">All States</option>
+                                    {STATES.filter(s => s !== 'All').map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        placeholder="Campus / community keyword"
+                                        className="pl-9 pr-4 py-2.5 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl outline-none font-medium text-[var(--text-primary)] focus:border-spark-red transition-all text-sm w-56"
+                                        value={filterCampus}
+                                        onChange={(e) => setFilterCampus(e.target.value)}
+                                    />
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text-secondary)]" />
+                                </div>
+                                <button
+                                    onClick={() => setFilterAvailableOnly(!filterAvailableOnly)}
+                                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider border transition-all ${
+                                        filterAvailableOnly
+                                            ? 'bg-green-500 text-white border-green-500 shadow-sm'
+                                            : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] border-[var(--border-color)] hover:border-green-500'
+                                    }`}
+                                >
+                                    <span className={`w-2 h-2 rounded-full ${filterAvailableOnly ? 'bg-white animate-pulse' : 'bg-[var(--text-secondary)]'}`}></span>
+                                    Available for Hire
+                                </button>
+                                <button
+                                    onClick={() => setFilterWhatsApp(!filterWhatsApp)}
+                                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider border transition-all ${
+                                        filterWhatsApp
+                                            ? 'bg-green-600 text-white border-green-600 shadow-sm'
+                                            : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] border-[var(--border-color)] hover:border-green-600'
+                                    }`}
+                                >
+                                    📻 WhatsApp Media
+                                </button>
+                                {(searchTerm || filterCapability !== 'All' || filterService !== 'All' || filterState !== 'All' || filterCampus || filterAvailableOnly || filterWhatsApp || creatorTypeTab !== 'all') && (
+                                    <button
+                                        onClick={clearDirectoryFilters}
+                                        className="ml-auto text-xs font-black text-spark-red hover:underline uppercase tracking-wider"
+                                    >
+                                        Clear Filters
+                                    </button>
+                                )}
+                            </div>
+                            {/* Active filter summary */}
+                            <div className="flex gap-2 flex-wrap items-center text-[11px] text-[var(--text-secondary)] font-bold">
+                                <span>Showing {filteredCreators.length} creator{filteredCreators.length !== 1 ? 's' : ''}</span>
+                                {filterCapability !== 'All' && <span className="px-2 py-0.5 bg-spark-red/10 text-spark-red rounded-lg">{filterCapability}</span>}
+                                {filterService !== 'All' && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-lg">{filterService}</span>}
+                                {filterState !== 'All' && <span className="px-2 py-0.5 bg-[var(--bg-tertiary)] rounded-lg">{filterState}</span>}
+                                {filterCampus && <span className="px-2 py-0.5 bg-[var(--bg-tertiary)] rounded-lg">{filterCampus}</span>}
+                                {filterAvailableOnly && <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-lg">Available for Hire</span>}
+                                {filterWhatsApp && <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-lg">WhatsApp Media</span>}
                             </div>
                         </div>
 
@@ -1880,67 +2039,103 @@ const BrandDashboard: React.FC<{
                                     const creatorType = creator.influencerType || (creator.university ? 'Student Creator' : 'Professional Creator');
                                     const isProfessional = creatorType === 'Professional Creator';
 
-                                    return (
-                                        <div key={creator.id} className={`group bg-[var(--bg-primary)] rounded-[2rem] border overflow-hidden shadow-sm hover:shadow-xl transition-all p-6 flex flex-col justify-between ${status === 'in_campaign' ? 'border-spark-red/30 ring-1 ring-spark-red/10' : 'border-[var(--border-color)]'}`}>
-                                            <div>
-                                                <div className="flex justify-between items-center mb-4">
-                                                    <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${statusConfig.cls}`}>{statusConfig.label}</span>
-                                                    <span className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest ${isProfessional ? 'bg-blue-500/10 text-blue-600' : 'bg-spark-red/5 text-spark-red'}`}>
-                                                        {isProfessional ? 'Professional' : 'Student'}
-                                                    </span>
-                                                </div>
-                                                <div className="w-16 h-16 rounded-2xl bg-spark-red text-white flex items-center justify-center font-black text-2xl mx-auto mb-4 overflow-hidden shadow-md">
-                                                    {creator.imageUrl ? <img src={creator.imageUrl} alt={creator.name || 'Creator Avatar'} className="w-full h-full object-cover" /> : (creator.name || '?').charAt(0)}
-                                                </div>
-                                                <h3 className="font-black text-lg line-clamp-1 text-[var(--text-primary)] text-center">{creator.name}</h3>
-                                                <p className="text-[10px] text-spark-red font-black uppercase tracking-widest mb-2 text-center">{category}</p>
-                                                
-                                                {creator.bio && <p className="text-xs text-[var(--text-secondary)] line-clamp-2 mb-3 leading-relaxed text-center">{creator.bio}</p>}
+                                    // Section 10.2 display rule variables
+                                    const primaryCap: string | undefined = creator.primaryCapability;
+                                    const primarySvc: string | undefined = creator.primaryService;
+                                    const displayLocation = creator.city && creator.state
+                                        ? `${creator.city}, ${creator.state}`
+                                        : creator.location || creator.university || 'Location not set';
+                                    const campusReach: string | undefined = creator.campusCommunityReach;
+                                    const startingPrice = creator.startingPrice;
+                                    const pricingNegotiable: boolean = creator.pricingNegotiable;
+                                    const pricingBasis: string = creator.pricingBasis || 'per project';
+                                    const isApproved = creator.reviewStatus === 'approved';
+                                    const isAvailableForHire = isApproved &&
+                                        (creator.availability === 'Available Now' || creator.availability === 'Limited');
+                                    const capColors = CAPABILITY_COLORS;
 
-                                                {rating && (
-                                                    <div className="flex items-center gap-1 text-xs text-amber-500 font-bold justify-center mb-3">
-                                                        <span>★</span>
-                                                        <span>{rating}</span>
-                                                    </div>
+                                    return (
+                                        <div key={creator.id} className={`group bg-[var(--bg-primary)] rounded-[2rem] border overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col ${status === 'in_campaign' ? 'border-spark-red/30 ring-1 ring-spark-red/10' : 'border-[var(--border-color)]'}`}>
+                                            <div className="p-6 pb-4 flex flex-col items-center text-center flex-1">
+                                                {/* Top row: status badge + capability */}
+                                                <div className="w-full flex justify-between items-center mb-4">
+                                                    {isAvailableForHire ? (
+                                                        <span className="flex items-center gap-1.5 px-2.5 py-1 bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20 rounded-full text-[9px] font-black uppercase tracking-widest">
+                                                            <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                                                            Available
+                                                        </span>
+                                                    ) : status === 'in_campaign' ? (
+                                                        <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-spark-red/10 text-spark-red border border-spark-red/20">
+                                                            Active
+                                                        </span>
+                                                    ) : isApproved && creator.availability === 'Not available' ? (
+                                                        <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-[var(--bg-secondary)] text-[var(--text-secondary)] border border-[var(--border-color)]">
+                                                            Not Available
+                                                        </span>
+                                                    ) : (
+                                                        <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-spark-red/5 text-spark-red border border-spark-red/10">
+                                                            Creator
+                                                        </span>
+                                                    )}
+                                                    {primaryCap && (
+                                                        <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${capColors[primaryCap] || 'bg-spark-red text-white'}`}>
+                                                            {primaryCap}
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                {/* Photo */}
+                                                <div className="w-16 h-16 rounded-2xl bg-spark-red/10 text-spark-red flex items-center justify-center font-black text-2xl mb-3 overflow-hidden shadow-md border-2 border-[var(--bg-primary)]">
+                                                    {creator.imageUrl ? <img src={creator.imageUrl} alt={creator.name || 'Creator'} className="w-full h-full object-cover" /> : (creator.name || '?').charAt(0)}
+                                                </div>
+
+                                                {/* Name */}
+                                                <h3 className="font-black text-base line-clamp-1 text-[var(--text-primary)]">{creator.name}</h3>
+
+                                                {/* Professional Headline */}
+                                                <p className="text-xs text-spark-red font-bold mt-0.5 line-clamp-1">
+                                                    {creator.professionalHeadline || primarySvc || category}
+                                                </p>
+
+                                                {/* Primary Service tag */}
+                                                {primarySvc && (
+                                                    <span className="mt-2 px-3 py-1 bg-spark-red/10 text-spark-red font-black text-[9px] rounded-xl border border-spark-red/20 uppercase tracking-wider">
+                                                        {primarySvc}
+                                                    </span>
                                                 )}
 
-                                                <div className="space-y-1.5 mb-6 text-xs text-[var(--text-secondary)] font-medium text-center">
-                                                    <p className="flex items-center gap-1.5 justify-center">
-                                                        <span>📍 Location:</span> {location}
-                                                    </p>
-                                                </div>
+                                                {/* Location + Campus Reach */}
+                                                <p className="flex items-center gap-1 text-xs text-[var(--text-secondary)] font-medium mt-3">
+                                                    <MapPin className="w-3 h-3 flex-shrink-0" />
+                                                    {displayLocation}{campusReach ? ` · ${campusReach}` : ''}
+                                                </p>
 
-                                                {/* Social Handles */}
-                                                <div className="flex justify-center gap-3 mb-6">
-                                                    {creator.instagram && (
-                                                        <a href={creator.instagram.startsWith('http') ? creator.instagram : `https://instagram.com/${creator.instagram.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-[var(--bg-secondary)] hover:bg-spark-red/10 text-[var(--text-secondary)] hover:text-spark-red rounded-xl transition-all">
-                                                            <Instagram className="w-4 h-4" />
-                                                        </a>
-                                                    )}
-                                                    {creator.tiktok && (
-                                                        <a href={creator.tiktok.startsWith('http') ? creator.tiktok : `https://tiktok.com/@${creator.tiktok.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-[var(--bg-secondary)] hover:bg-spark-red/10 text-[var(--text-secondary)] hover:text-spark-red rounded-xl transition-all">
-                                                            <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.17-2.89-.7-4.06-1.66-.27-.23-.52-.48-.75-.75-.01 2.91-.02 5.82-.02 8.74-.08 2.37-1.12 4.74-3.05 6.13-2.14 1.58-5.11 2.05-7.58 1.25-2.82-.87-5.06-3.47-5.26-6.47-.36-4.22 2.91-8.23 7.15-8.43.19-.01.37 0 .56-.01V8.33c-1.92.21-3.79 1.48-4.57 3.25-.97 2.12-.55 4.8 1.01 6.55 1.55 1.76 4.14 2.38 6.27 1.59 1.83-.66 3.14-2.49 3.23-4.47.08-2.73.04-5.46.05-8.19-.01 0-.01 0-.02 0-.07-.94-.48-1.89-1.17-2.54-.74-.74-1.78-1.15-2.83-1.18V.02z"/></svg>
-                                                        </a>
-                                                    )}
-                                                    {creator.twitter && (
-                                                        <a href={creator.twitter.startsWith('http') ? creator.twitter : `https://twitter.com/${creator.twitter.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-[var(--bg-secondary)] hover:bg-spark-red/10 text-[var(--text-secondary)] hover:text-spark-red rounded-xl transition-all">
-                                                            <Twitter className="w-4 h-4" />
-                                                        </a>
-                                                    )}
-                                                </div>
+                                                {/* Starting Price */}
+                                                <p className="text-sm font-black text-[var(--text-primary)] mt-2">
+                                                    {pricingNegotiable
+                                                        ? 'Price negotiable'
+                                                        : startingPrice
+                                                            ? `Starting from ₦${Number(startingPrice).toLocaleString()} / ${pricingBasis}`
+                                                            : '—'
+                                                    }
+                                                </p>
                                             </div>
 
-                                            
-                                            <div className="flex gap-2">
+                                            {/* Action Buttons */}
+                                            <div className="px-6 pb-6 flex gap-2">
                                                 <button
-                                                    onClick={() => setViewingProfile(creator)}
+                                                    onClick={() => handleViewInfluencer(creator.id, creator)}
                                                     className="flex-1 py-3 bg-[var(--bg-secondary)] text-[var(--text-primary)] font-black rounded-xl hover:bg-[var(--bg-tertiary)] transition-all text-xs border border-[var(--border-color)]"
                                                 >
-                                                    Portfolio
+                                                    View Profile
                                                 </button>
                                                 <button
                                                     onClick={() => openAllocationModal(creator)}
-                                                    className={`flex-[2] py-3 font-black rounded-xl transition-all text-xs active:scale-95 shadow-sm ${status === 'in_campaign' ? 'bg-spark-red/10 text-spark-red border border-spark-red/20 hover:bg-spark-red hover:text-white' : 'bg-spark-red text-white hover:bg-red-700'}`}
+                                                    className={`flex-[2] py-3 font-black rounded-xl transition-all text-xs active:scale-95 shadow-sm ${
+                                                        status === 'in_campaign'
+                                                            ? 'bg-spark-red/10 text-spark-red border border-spark-red/20 hover:bg-spark-red hover:text-white'
+                                                            : 'bg-spark-red text-white hover:bg-red-700'
+                                                    }`}
                                                 >
                                                     {status === 'in_campaign' ? 'Re-allocate' : 'Hire'}
                                                 </button>
@@ -1987,10 +2182,9 @@ const BrandDashboard: React.FC<{
                                 ) : (
                                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
                                         {events.map(event => {
-                                            const attendance = event.attendance || "2,500+ Students";
-                                            const slots = event.slots || "3 slots available";
-                                            const activation = event.activationNeeds || "Logo banners, flyer distribution, social media push";
-                                            const sponsorFit = event.sponsorFit || "96% High Match";
+                                            const attendance = event.expectedAttendees || event.attendees || null;
+                                            const slots = event.sponsorshipSlots || event.slots || null;
+                                            const activation = event.activationNeeds || null;
                                             return (
                                                 <div key={event.id} className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] shadow-sm hover:shadow-xl transition-all overflow-hidden flex flex-col group relative">
                                                     <div className="h-3 bg-spark-red"></div>
@@ -2003,9 +2197,11 @@ const BrandDashboard: React.FC<{
                                                                 <div className="bg-[var(--bg-primary)] border border-[var(--border-color)] shadow-sm px-3 py-1 rounded-full text-[9px] font-black uppercase text-spark-purple tracking-wider inline-block max-w-[150px] truncate">
                                                                     {event.location || 'Campus'}
                                                                 </div>
-                                                                <span className="px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-wider bg-green-50 text-green-700 border border-green-100">
-                                                                    {sponsorFit}
-                                                                </span>
+                                                                {event.category && (
+                                                                    <span className="px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-wider bg-spark-red/10 text-spark-red border border-spark-red/20">
+                                                                        {event.category}
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                             
                                                             <h3 className="text-xl font-black mb-1 group-hover:text-spark-red transition-colors text-[var(--text-primary)]">
@@ -2019,20 +2215,29 @@ const BrandDashboard: React.FC<{
                                                                 {event.description}
                                                             </p>
 
-                                                            {/* Custom Detail Items */}
+                                                            {/* Real Event Stats */}
                                                             <div className="space-y-2 mb-6 border-t border-b border-[var(--border-color)] py-4 text-xs font-semibold text-[var(--text-secondary)]">
-                                                                <div className="flex justify-between">
-                                                                    <span>👥 Attendance:</span>
-                                                                    <span className="font-bold text-[var(--text-primary)]">{attendance}</span>
-                                                                </div>
-                                                                <div className="flex justify-between">
-                                                                    <span>🎟️ Slots:</span>
-                                                                    <span className="font-bold text-[var(--text-primary)]">{slots}</span>
-                                                                </div>
-                                                                <div className="space-y-1 mt-2">
-                                                                    <p className="text-[10px] font-black uppercase text-spark-red tracking-wider">💡 Activation Needs:</p>
-                                                                    <p className="text-xs leading-normal font-medium italic text-[var(--text-secondary)]">{activation}</p>
-                                                                </div>
+                                                                {attendance && (
+                                                                    <div className="flex justify-between">
+                                                                        <span>👥 Expected Attendees:</span>
+                                                                        <span className="font-bold text-[var(--text-primary)]">{attendance}</span>
+                                                                    </div>
+                                                                )}
+                                                                {slots && (
+                                                                    <div className="flex justify-between">
+                                                                        <span>🎟️ Sponsorship Slots:</span>
+                                                                        <span className="font-bold text-[var(--text-primary)]">{slots}</span>
+                                                                    </div>
+                                                                )}
+                                                                {activation && (
+                                                                    <div className="space-y-1 mt-2">
+                                                                        <p className="text-[10px] font-black uppercase text-spark-red tracking-wider">💡 Activation Needs:</p>
+                                                                        <p className="text-xs leading-normal font-medium italic text-[var(--text-secondary)]">{activation}</p>
+                                                                    </div>
+                                                                )}
+                                                                {!attendance && !slots && !activation && (
+                                                                    <p className="text-center text-xs italic text-[var(--text-secondary)] opacity-60 py-1">Click below for full event details.</p>
+                                                                )}
                                                             </div>
                                                         </div>
                                                         
@@ -2060,7 +2265,7 @@ const BrandDashboard: React.FC<{
                                 <div className="flex justify-between items-center">
                                     <h3 className="text-xl font-black">My Hosted Events</h3>
                                     <button
-                                        onClick={() => setShowCreateEventModal(true)}
+                                        onClick={() => setShowListingTermsModal(true)}
                                         className="bg-spark-red text-white px-6 py-3 rounded-xl font-black shadow-lg shadow-red-100 hover:bg-red-700 transition-all active:scale-95 text-xs uppercase tracking-wider"
                                     >
                                         + List New Event
@@ -2076,7 +2281,7 @@ const BrandDashboard: React.FC<{
                                         <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">No hosted events listed.</h3>
                                         <p className="text-[var(--text-secondary)] font-medium">Create your first brand-hosted event to invite campus volunteers.</p>
                                         <button
-                                            onClick={() => setShowCreateEventModal(true)}
+                                            onClick={() => setShowListingTermsModal(true)}
                                             className="mt-8 px-8 py-4 bg-spark-black text-white font-black rounded-2xl hover:bg-spark-red transition-all"
                                         >
                                             Get Started
@@ -2097,11 +2302,33 @@ const BrandDashboard: React.FC<{
                                                     <span className="px-4 py-1.5 bg-green-50 text-green-600 rounded-full text-[10px] font-black uppercase tracking-widest">Published</span>
                                                 </div>
                                                 <p className="text-[var(--text-secondary)] text-sm mb-8 line-clamp-2 leading-relaxed">{event.description}</p>
-                                                <div className="flex items-center justify-between mb-8 pb-8 border-b border-[var(--border-color)]">
-                                                    <div>
-                                                        <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Target Funding</p>
-                                                        <p className="text-xl font-black text-[var(--text-primary)]">₦{Number(event.targetSponsorship).toLocaleString()}</p>
+                                                <div className="mb-8 pb-8 border-b border-[var(--border-color)] space-y-3">
+                                                    <div className="flex justify-between items-end">
+                                                        <div>
+                                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Raised Funding</p>
+                                                            <p className="text-2xl font-black text-emerald-600">₦{Number(event.raisedSponsorship || 0).toLocaleString()}</p>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">Target Goal</p>
+                                                            <p className="text-base font-black text-[var(--text-primary)]">₦{Number(event.targetSponsorship || 0).toLocaleString()}</p>
+                                                        </div>
                                                     </div>
+                                                    {(() => {
+                                                        const raised = Number(event.raisedSponsorship || 0);
+                                                        const target = Number(event.targetSponsorship || 0);
+                                                        const pct = target > 0 ? Math.min(100, Math.round((raised / target) * 100)) : 0;
+                                                        return (
+                                                            <div className="space-y-1">
+                                                                <div className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] h-3 rounded-full overflow-hidden">
+                                                                    <div className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                                                                </div>
+                                                                <div className="flex justify-between items-center text-[11px] font-bold text-[var(--text-secondary)]">
+                                                                    <span className="text-emerald-600 font-black">{pct}% Funded</span>
+                                                                    <span>{Array.isArray(event.sponsors) ? event.sponsors.length : 0} Sponsor{(Array.isArray(event.sponsors) ? event.sponsors.length : 0) !== 1 ? 's' : ''}</span>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })()}
                                                 </div>
                                                 <div className="flex gap-4">
                                                     <button
@@ -3464,13 +3691,189 @@ const BrandDashboard: React.FC<{
                 onReleaseSponsorship={handleReleaseSponsorship}
             />
 
-            <EventDetailsModal
-                isOpen={!!selectedEvent}
-                onClose={() => setSelectedEvent(null)}
-                event={selectedEvent}
-                userRole="Brand"
-                onContact={handleContactHost}
-            />
+            {/* ===== UPGRADED EVENT DETAILS MODAL (Brand) ===== */}
+            {selectedEvent && (
+                <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-black/70 backdrop-blur-md overflow-y-auto">
+                    <div className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-300 my-auto">
+                        {/* Modal Header */}
+                        <div className="bg-gradient-to-r from-spark-red to-red-700 p-6 sm:p-8 relative overflow-hidden flex-shrink-0 text-white">
+                            <div className="flex items-start justify-between relative z-10">
+                                <div className="flex-1 min-w-0 pr-4">
+                                    {selectedEvent.category && (
+                                        <span className="px-3 py-1 bg-white/20 text-white rounded-full text-[10px] font-black uppercase tracking-widest inline-block mb-2">
+                                            {selectedEvent.category}
+                                        </span>
+                                    )}
+                                    <h2 className="text-2xl sm:text-3xl font-black truncate">{selectedEvent.name}</h2>
+                                    <p className="text-white/80 text-xs font-bold mt-1">
+                                        Hosted by {selectedEvent.hostName || selectedEvent.organization || 'Association'}
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => setSelectedEvent(null)}
+                                    className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-xl flex items-center justify-center text-white font-black transition-all flex-shrink-0"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Scrollable Body */}
+                        <div className="p-6 sm:p-8 space-y-6 overflow-y-auto flex-1">
+                            {/* Quick Metrics */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                <div className="bg-[var(--bg-secondary)] p-4 rounded-2xl border border-[var(--border-color)]">
+                                    <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-wider">Target Goal</p>
+                                    <p className="text-lg font-black text-[var(--text-primary)] mt-1">₦{Number(selectedEvent.targetSponsorship || 0).toLocaleString()}</p>
+                                </div>
+                                <div className="bg-[var(--bg-secondary)] p-4 rounded-2xl border border-[var(--border-color)]">
+                                    <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-wider">Raised So Far</p>
+                                    <p className="text-lg font-black text-emerald-600 mt-1">₦{Number(selectedEvent.raisedSponsorship || 0).toLocaleString()}</p>
+                                </div>
+                                <div className="bg-[var(--bg-secondary)] p-4 rounded-2xl border border-[var(--border-color)]">
+                                    <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-wider">Attendees</p>
+                                    <p className="text-lg font-black text-[var(--text-primary)] mt-1">👥 {selectedEvent.expectedAttendees || selectedEvent.attendees || 'TBD'}</p>
+                                </div>
+                                <div className="bg-[var(--bg-secondary)] p-4 rounded-2xl border border-[var(--border-color)]">
+                                    <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-wider">Sponsor Slots</p>
+                                    <p className="text-lg font-black text-[var(--text-primary)] mt-1">🎟️ {selectedEvent.sponsorshipSlots || selectedEvent.slots || 'Open'}</p>
+                                </div>
+                            </div>
+
+                            {/* Funding Progress */}
+                            {(() => {
+                                const raised = Number(selectedEvent.raisedSponsorship || 0);
+                                const target = Number(selectedEvent.targetSponsorship || 0);
+                                const pct = target > 0 ? Math.min(100, Math.round((raised / target) * 100)) : 0;
+                                return (
+                                    <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-2xl space-y-2">
+                                        <div className="flex justify-between items-center text-xs font-black">
+                                            <span className="text-emerald-800 dark:text-emerald-300">Sponsorship Funding Progress</span>
+                                            <span className="text-emerald-700 dark:text-emerald-400">{pct}% Funded</span>
+                                        </div>
+                                        <div className="w-full bg-emerald-200 dark:bg-emerald-900/60 h-3 rounded-full overflow-hidden">
+                                            <div className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                                        </div>
+                                        <p className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold">
+                                            {Array.isArray(selectedEvent.sponsors) ? selectedEvent.sponsors.length : 0} confirmed sponsor{(Array.isArray(selectedEvent.sponsors) ? selectedEvent.sponsors.length : 0) !== 1 ? 's' : ''}
+                                        </p>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* Event Details Grid */}
+                            <div className="grid sm:grid-cols-2 gap-6 bg-[var(--bg-secondary)]/50 p-6 rounded-2xl border border-[var(--border-color)]">
+                                <div>
+                                    <h4 className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-3">Event Organizer</h4>
+                                    <div className="space-y-2 text-sm font-semibold">
+                                        <p className="text-[var(--text-primary)]">👤 {selectedEvent.hostName || selectedEvent.organization || 'Association'}</p>
+                                        {selectedEvent.hostEmail && <p className="text-[var(--text-secondary)]">✉️ {selectedEvent.hostEmail}</p>}
+                                        {selectedEvent.hostPhone && <p className="text-[var(--text-secondary)]">📞 {selectedEvent.hostPhone}</p>}
+                                        {selectedEvent.university && <p className="text-[var(--text-secondary)]">🏫 {selectedEvent.university}</p>}
+                                    </div>
+                                </div>
+                                <div>
+                                    <h4 className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-3">Schedule & Venue</h4>
+                                    <div className="space-y-2 text-sm font-semibold">
+                                        <p className="text-[var(--text-primary)]">📅 {selectedEvent.date || 'Date TBA'}</p>
+                                        <p className="text-[var(--text-primary)]">📍 {selectedEvent.location || 'Venue TBA'}</p>
+                                        {selectedEvent.activationNeeds && (
+                                            <p className="text-[var(--text-secondary)] text-xs italic">💡 Activation: {selectedEvent.activationNeeds}</p>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Description */}
+                            <div>
+                                <h4 className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">About This Event</h4>
+                                <div className="p-5 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl text-sm font-medium leading-relaxed text-[var(--text-primary)]">
+                                    {selectedEvent.description || 'No description provided.'}
+                                </div>
+                            </div>
+
+                            {/* Sponsorship Packages */}
+                            <div>
+                                <h4 className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-3">Sponsorship Packages & Tiers</h4>
+                                {(() => {
+                                    const pkgs = parsePackages(selectedEvent.sponsorshipPackages);
+                                    if (pkgs.length === 0) {
+                                        return (
+                                            <div className="p-5 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl space-y-3">
+                                                <p className="text-xs text-[var(--text-secondary)] italic mb-3">No specific packages defined — reach out to discuss a custom sponsorship deal.</p>
+                                                <button
+                                                    onClick={() => handleContactHost(selectedEvent)}
+                                                    className="w-full py-3.5 bg-gradient-to-r from-spark-red to-red-700 text-white font-black rounded-xl hover:shadow-lg hover:shadow-red-200 transition-all active:scale-95 text-xs uppercase tracking-widest"
+                                                >
+                                                    Sponsor This Event
+                                                </button>
+                                            </div>
+                                        );
+                                    }
+                                    return (
+                                        <div className="grid sm:grid-cols-2 gap-4">
+                                            {pkgs.map((pkg, idx) => (
+                                                <div key={idx} className="p-5 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl space-y-3 flex flex-col">
+                                                    <div className="flex justify-between items-center">
+                                                        <h5 className="font-black text-[var(--text-primary)] text-sm">{pkg.name}</h5>
+                                                        <span className="px-3 py-1 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 rounded-lg text-xs font-black">
+                                                            ₦{pkg.price ? Number(pkg.price).toLocaleString() : 'Custom'}
+                                                        </span>
+                                                    </div>
+                                                    {pkg.entails && (
+                                                        <p className="text-xs text-[var(--text-secondary)] font-medium leading-relaxed flex-1">{pkg.entails}</p>
+                                                    )}
+                                                    <button
+                                                        onClick={() => handleContactHost(selectedEvent, pkg)}
+                                                        className="w-full py-2.5 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all active:scale-95 text-xs uppercase tracking-widest mt-auto"
+                                                    >
+                                                        Select & Sponsor
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+
+                            {/* Confirmed Sponsors */}
+                            {Array.isArray(selectedEvent.sponsors) && selectedEvent.sponsors.length > 0 && (
+                                <div>
+                                    <h4 className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-3">Confirmed Sponsors</h4>
+                                    <div className="space-y-2">
+                                        {selectedEvent.sponsors.map((sp: any, idx: number) => (
+                                            <div key={idx} className="p-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl flex justify-between items-center text-xs font-bold">
+                                                <div>
+                                                    <span className="text-[var(--text-primary)] font-black">{sp.name}</span>
+                                                    <span className="text-[var(--text-secondary)] ml-2">({sp.package || 'Sponsor'})</span>
+                                                    {sp.isExternal && <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 text-[9px] font-black rounded uppercase">Off-Platform</span>}
+                                                </div>
+                                                <span className="text-emerald-600 font-black">₦{Number(sp.amount || 0).toLocaleString()}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="p-6 bg-[var(--bg-secondary)] border-t border-[var(--border-color)] flex items-center justify-between flex-shrink-0">
+                            <button
+                                onClick={() => setSelectedEvent(null)}
+                                className="px-6 py-3 bg-[var(--bg-primary)] hover:bg-[var(--bg-tertiary)] border border-[var(--border-color)] text-[var(--text-primary)] font-bold text-xs uppercase tracking-wider rounded-xl transition-all"
+                            >
+                                Close
+                            </button>
+                            <button
+                                onClick={() => handleContactHost(selectedEvent)}
+                                className="px-6 py-3 bg-gradient-to-r from-spark-red to-red-700 hover:from-red-700 hover:to-red-800 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-red-900/20 transition-all flex items-center gap-2"
+                            >
+                                <Handshake className="w-4 h-4" /> Sponsor This Event
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             {/* ===== ALLOCATION MODAL ===== */}
             {showAllocationModal && allocationTarget && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -3676,166 +4079,20 @@ const BrandDashboard: React.FC<{
                 </div>
             )}
 
-            {/* Influencer Profile Modal */}
             {viewingProfile && (
-                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-                    <div className="fixed inset-0 bg-spark-black/80 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setViewingProfile(null)}></div>
-                    <div className="relative bg-[var(--bg-primary)] w-full max-w-4xl max-h-[90vh] rounded-[3rem] shadow-2xl animate-in zoom-in-95 duration-300 overflow-hidden flex flex-col border border-[var(--border-color)]">
-                        {/* Header/Cover */}
-                        <div 
-                            className="h-40 bg-spark-black relative flex-shrink-0 bg-cover bg-center bg-no-repeat"
-                            style={{ backgroundImage: viewingProfile.coverPhotoUrl ? `url(${viewingProfile.coverPhotoUrl})` : undefined }}
+                <CreatorProfileModal
+                    isOpen={!!viewingProfile}
+                    onClose={() => setViewingProfile(null)}
+                    creator={viewingProfile}
+                    actionButton={
+                        <button
+                            onClick={() => { setViewingProfile(null); openAllocationModal(viewingProfile); }}
+                            className="w-full py-4 bg-spark-red text-white font-black rounded-2xl hover:bg-red-700 transition-all shadow-lg text-sm uppercase tracking-widest flex items-center justify-center gap-2"
                         >
-                            {viewingProfile.coverPhotoUrl && <div className="absolute inset-0 bg-spark-black/35 backdrop-blur-[1px] z-0"></div>}
-                            <button onClick={() => setViewingProfile(null)} className="absolute top-6 right-6 w-10 h-10 bg-white/20 backdrop-blur-md text-white rounded-full flex items-center justify-center hover:bg-white/40 transition-all z-10">
-                                <Plus className="w-6 h-6 rotate-45" />
-                             </button>
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto custom-scrollbar">
-                            {viewingProfile.loading ? (
-                                <div className="flex flex-col items-center justify-center py-40">
-                                    <div className="w-12 h-12 border-4 border-spark-red border-t-transparent rounded-full animate-spin mb-4"></div>
-                                    <p className="text-[var(--text-secondary)] font-black uppercase tracking-widest text-xs">Loading profile details...</p>
-                                </div>
-                            ) : (
-                                <div className="px-10 pb-10">
-                                    {/* Profile Info */}
-                                    <div className="relative -mt-16 mb-8 flex flex-col md:flex-row md:items-end justify-between gap-6">
-                                        <div className="flex items-end gap-6">
-                                            <div className="w-32 h-32 rounded-3xl bg-[var(--bg-primary)] p-2 shadow-2xl ring-4 ring-[var(--bg-primary)] overflow-hidden relative z-10">
-                                                {viewingProfile.imageUrl ? (
-                                                    <img src={viewingProfile.imageUrl} className="w-full h-full object-cover rounded-2xl" alt={viewingProfile.name} />
-                                                ) : (
-                                                    <div className="w-full h-full bg-spark-red/10 flex items-center justify-center text-4xl font-black text-spark-red">
-                                                        {(viewingProfile.name || '?').charAt(0)}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="pb-2 relative z-10">
-                                                <h3 className={`text-3xl font-black ${viewingProfile.coverPhotoUrl ? 'text-white' : 'text-[var(--text-primary)]'}`}>{viewingProfile.name}</h3>
-                                                <div className="flex items-center gap-3 mt-1">
-                                                    <span className={`px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-lg ${viewingProfile.coverPhotoUrl ? 'bg-black/30 text-white/90' : 'bg-spark-red/10 text-spark-red'}`}>
-                                                        {viewingProfile.influencerType || viewingProfile.role || 'Creator'}
-                                                    </span>
-                                                    {viewingProfile.influencerType !== 'Professional Creator' && viewingProfile.university && (
-                                                        <span className={`font-bold text-xs ${viewingProfile.coverPhotoUrl ? 'text-white/80' : 'text-[var(--text-secondary)]'}`}>
-                                                            🏫 {viewingProfile.university}
-                                                        </span>
-                                                    )}
-                                                    {viewingProfile.location && (
-                                                        <span className={`font-bold text-xs ${viewingProfile.coverPhotoUrl ? 'text-white/80' : 'text-[var(--text-secondary)]'}`}>
-                                                            📍 {viewingProfile.location}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="flex flex-wrap gap-2 pb-2 relative z-10">
-                                            {viewingProfile.instagram && (
-                                                <a href={sanitizeSocialLink(viewingProfile.instagram, 'instagram')} target="_blank" rel="noopener noreferrer" className="px-3 py-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl flex items-center gap-1.5 hover:bg-spark-red/10 hover:text-spark-red font-bold text-xs transition-all text-[var(--text-primary)]">
-                                                    Instagram
-                                                </a>
-                                            )}
-                                            {viewingProfile.tiktok && (
-                                                <a href={sanitizeSocialLink(viewingProfile.tiktok, 'tiktok')} target="_blank" rel="noopener noreferrer" className="px-3 py-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl flex items-center gap-1.5 hover:bg-spark-red/10 hover:text-spark-red font-bold text-xs transition-all text-[var(--text-primary)]">
-                                                    TikTok
-                                                </a>
-                                            )}
-                                            {viewingProfile.twitter && (
-                                                <a href={sanitizeSocialLink(viewingProfile.twitter, 'twitter')} target="_blank" rel="noopener noreferrer" className="px-3 py-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl flex items-center gap-1.5 hover:bg-spark-red/10 hover:text-spark-red font-bold text-xs transition-all text-[var(--text-primary)]">
-                                                    X / Twitter
-                                                </a>
-                                            )}
-                                            {viewingProfile.linkedin && (
-                                                <a href={sanitizeSocialLink(viewingProfile.linkedin, 'linkedin')} target="_blank" rel="noopener noreferrer" className="px-3 py-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl flex items-center gap-1.5 hover:bg-spark-red/10 hover:text-spark-red font-bold text-xs transition-all text-[var(--text-primary)]">
-                                                    LinkedIn
-                                                </a>
-                                            )}
-                                            {viewingProfile.website && (
-                                                <a href={sanitizeSocialLink(viewingProfile.website, 'website')} target="_blank" rel="noopener noreferrer" className="px-3 py-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl flex items-center gap-1.5 hover:bg-spark-red/10 hover:text-spark-red font-bold text-xs transition-all text-[var(--text-primary)]">
-                                                    Website
-                                                </a>
-                                            )}
-                                            <button onClick={() => { setViewingProfile(null); openAllocationModal(viewingProfile); }} className="px-6 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all shadow-lg text-xs uppercase tracking-widest ml-auto">
-                                                Hire Creator
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* Tabs for Portfolio / Bio */}
-                                    <div className="grid md:grid-cols-3 gap-8">
-                                        <div className="md:col-span-1 space-y-6">
-                                            <div className="bg-[var(--bg-secondary)] rounded-3xl p-6 border border-[var(--border-color)]">
-                                                <h4 className="font-black text-[var(--text-primary)] mb-4 uppercase text-[10px] tracking-widest text-spark-red">About Creator</h4>
-                                                <p className="text-sm text-[var(--text-secondary)] leading-relaxed font-medium">
-                                                    {viewingProfile.bio || "No bio provided by this creator yet."}
-                                                </p>
-                                            </div>
-                                            <div className="bg-[var(--bg-secondary)] rounded-3xl p-6 border border-[var(--border-color)]">
-                                                <h4 className="font-black text-[var(--text-primary)] mb-4 uppercase text-[10px] tracking-widest text-spark-red">Quick Stats</h4>
-                                                <div className="space-y-3">
-                                                    {viewingProfile.influencerType !== 'Professional Creator' && viewingProfile.university && (
-                                                        <div className="flex justify-between text-xs">
-                                                            <span className="text-[var(--text-secondary)] font-bold">University</span>
-                                                            <span className="text-[var(--text-primary)] font-black">{viewingProfile.university}</span>
-                                                        </div>
-                                                    )}
-                                                    <div className="flex justify-between text-xs">
-                                                        <span className="text-[var(--text-secondary)] font-bold">Joined</span>
-                                                        <span className="text-[var(--text-primary)] font-black">{viewingProfile.createdAt ? new Date(viewingProfile.createdAt).getFullYear() : '2024'}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="md:col-span-2 space-y-6">
-                                            <h4 className="text-xl font-black text-[var(--text-primary)] flex items-center gap-2">
-                                                <Briefcase className="w-6 h-6 text-spark-red" />
-                                                Professional Portfolio
-                                            </h4>
-                                            
-                                            {!viewingProfile.portfolio || viewingProfile.portfolio.length === 0 ? (
-                                                <div className="bg-[var(--bg-secondary)] rounded-[2.5rem] border-2 border-dashed border-[var(--border-color)] p-12 text-center">
-                                                    <p className="text-[var(--text-secondary)] font-bold">This influencer hasn't uploaded any previous work yet.</p>
-                                                </div>
-                                            ) : (
-                                                <div className="grid sm:grid-cols-2 gap-4">
-                                                    {viewingProfile.portfolio.map((item: any) => (
-                                                        <div 
-                                                            key={item.id} 
-                                                            onClick={() => setSelectedPortfolioItem(item)}
-                                                            className="bg-[var(--bg-secondary)] rounded-3xl border border-[var(--border-color)] overflow-hidden hover:border-spark-red transition-all flex flex-col group cursor-pointer"
-                                                        >
-                                                            <div className="h-32 bg-spark-black/5 relative">
-                                                                {item.fileType === 'image' ? (
-                                                                    <img src={item.fileUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={item.title} />
-                                                                ) : (
-                                                                    <div className="w-full h-full flex items-center justify-center">
-                                                                        <FileText className="w-10 h-10 text-spark-red/20" />
-                                                                    </div>
-                                                                )}
-                                                                <div className="absolute inset-0 bg-spark-black/40 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
-                                                                    <span className="px-4 py-2 bg-white text-spark-black rounded-lg text-[10px] font-black uppercase tracking-widest">
-                                                                        View Details
-                                                                    </span>
-                                                                </div>
-                                                            </div>
-                                                            <div className="p-5">
-                                                                <h5 className="font-black text-[var(--text-primary)] text-sm line-clamp-1 group-hover:text-spark-red transition-colors">{item.title}</h5>
-                                                                <p className="text-[10px] text-[var(--text-secondary)] line-clamp-2 mt-1 font-medium">{item.description}</p>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
+                            Hire Creator
+                        </button>
+                    }
+                />
             )}
 
             {/* Portfolio Item Detail Modal */}
@@ -3901,6 +4158,16 @@ const BrandDashboard: React.FC<{
                 isSender={selectedProposal?.senderId === (brandProfile?.id || auth.currentUser?.uid)}
             />
 
+            <EventListingTermsModal
+                isOpen={showListingTermsModal}
+                onAccept={() => {
+                    setShowListingTermsModal(false);
+                    setShowCreateEventModal(true);
+                }}
+                onDecline={() => setShowListingTermsModal(false)}
+                accentColor="red"
+            />
+
             {/* Create Event Modal */}
             {showCreateEventModal && (
                 <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
@@ -3913,6 +4180,9 @@ const BrandDashboard: React.FC<{
                             </button>
                         </div>
                         <form onSubmit={handleCreateEvent} className="p-10 space-y-8 overflow-y-auto max-h-[70vh]">
+                            <div className="p-4 bg-spark-red/5 border border-spark-red/20 rounded-2xl flex items-center gap-3 text-xs font-bold text-spark-red">
+                                <span>⚡ <strong>Reminder:</strong> 10% platform fee applies on raised funds. All payments & disputes handled in-platform.</span>
+                            </div>
                             <div className="space-y-3">
                                 <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Event Name</label>
                                 <input

@@ -233,3 +233,28 @@ export const LIVE_OPPORTUNITIES: Opportunity[] = [
 
 export const STATES = ["All", "Lagos", "Oyo", "Ogun", "Abuja", "Enugu", "Kaduna", "Rivers", "Edo"];
 export const UNIVERSITIES = ["All", "University of Lagos", "Obafemi Awolowo University", "Covenant University", "University of Ibadan"];
+
+export const CREATOR_SERVICES_BY_CAPABILITY: Record<string, string[]> = {
+    Create: [
+        'Content Writer', 'Copywriter', 'Graphic Designer', 'Photographer', 
+        'Videographer', 'Video Editor', 'UGC Creator', 'Voice-over Artist', 
+        'Animator', 'Presenter/Host', 'Podcaster'
+    ],
+    Manage: [
+        'Social Media Manager', 'Community Manager', 'Email Marketer', 'Digital Marketer', 
+        'Content Strategist', 'Campaign Manager', 'Influencer Campaign Manager', 
+        'Public Relations/Publicity', 'Brand Strategist'
+    ],
+    Distribute: [
+        'WhatsApp Status TV', 'WhatsApp Channel', 'Campus Media Page', 
+        'Social Media Community Page', 'Newsletter', 'Podcast/Online Radio', 
+        'Telegram or Community Broadcast Platform'
+    ],
+    Activate: [
+        'Campus Mobiliser', 'Event Host/MC', 'Brand Activation Representative', 
+        'Event Support Personnel', 'Field Marketer'
+    ]
+};
+
+export const ALL_CREATOR_SERVICES = Object.values(CREATOR_SERVICES_BY_CAPABILITY).flat();
+

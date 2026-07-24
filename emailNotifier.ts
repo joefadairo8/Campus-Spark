@@ -88,3 +88,67 @@ export function notifyWithdrawalCompleted(userEmail: string, userName: string, a
     notifyServer({ type: 'withdrawal_completed', to: userEmail, name: userName, amount, bankDetails });
 }
 
+// ─── Section 9: Creator Profile Review ───────────────────────────────────────
+
+/** Admin alert when a creator submits their profile for review */
+export function notifyProfileSubmitted(creatorName: string, creatorEmail: string): void {
+    notifyServer({ type: 'profile_submitted', to: creatorEmail, creatorName, creatorEmail });
+}
+
+/** Notify creator when admin approves their profile */
+export function notifyProfileApproved(creatorEmail: string, creatorName: string): void {
+    notifyServer({ type: 'profile_approved', to: creatorEmail, name: creatorName });
+}
+
+/** Notify creator when admin marks profile as Needs Update, includes the admin note */
+export function notifyProfileNeedsUpdate(creatorEmail: string, creatorName: string, adminNote: string): void {
+    notifyServer({ type: 'profile_needs_update', to: creatorEmail, name: creatorName, body: adminNote });
+}
+
+// ─── Disputes ─────────────────────────────────────────────────────────────────
+
+/** Notify both parties + admin when a dispute is opened */
+export function notifyDisputeOpened(
+    filingPartyEmail: string,
+    filingPartyName: string,
+    opponentName: string,
+    opponentEmail: string,
+    reason: string,
+    disputeId: string
+): void {
+    notifyServer({
+        type: 'dispute_opened',
+        to: filingPartyEmail,
+        name: filingPartyName,
+        opponentName,
+        opponentEmail,
+        reason,
+        disputeId,
+    });
+}
+
+// ─── Events ──────────────────────────────────────────────────────────────────
+
+/** Notify event organiser (+ admin) when a new event is created */
+export function notifyEventCreated(organizerEmail: string, organizerName: string, eventTitle: string, eventDate: string): void {
+    notifyServer({ type: 'event_created', to: organizerEmail, name: organizerName, title: eventTitle, eventDate });
+}
+
+// ─── Support Tickets ──────────────────────────────────────────────────────────
+
+/** Notify user their support ticket was received, and notify admin */
+export function notifySupportTicket(userEmail: string, userName: string, subject: string, message: string, ticketId: string): void {
+    notifyServer({ type: 'support_ticket', to: userEmail, name: userName, subject, body: message, ticketId });
+}
+
+/** Notify user when admin replies to their support ticket */
+export function notifySupportReply(userEmail: string, userName: string, subject: string, replyText: string): void {
+    notifyServer({ type: 'support_reply', to: userEmail, name: userName, subject, body: replyText });
+}
+
+// ─── Campaigns ────────────────────────────────────────────────────────────────
+
+/** Admin alert when a brand or association publishes a new campaign/gig */
+export function notifyGigPublished(publisherEmail: string, publisherName: string, gigTitle: string, budget: number): void {
+    notifyServer({ type: 'gig_published', to: publisherEmail, name: publisherName, title: gigTitle, amount: budget });
+}

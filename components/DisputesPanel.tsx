@@ -1,17 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth, collection, query, where, getDocs, doc, getDoc, addDoc, updateDoc } from '../firebase';
 import { WalletService } from '../WalletService';
-import { notifyGeneric } from '../emailNotifier';
-import { 
-    AlertTriangle, 
-    CheckCircle, 
-    Scale, 
-    Clock, 
-    Plus, 
-    HelpCircle, 
-    Check, 
-    X, 
-    FileText, 
+import { notifyGeneric, notifyDisputeOpened } from '../emailNotifier';
+import {
+    AlertTriangle,
+    CheckCircle,
+    Scale,
+    Clock,
+    Plus,
+    HelpCircle,
+    Check,
+    X,
+    FileText,
     ArrowLeft,
     TrendingUp,
     Shield,
@@ -135,7 +135,7 @@ export const DisputesPanel: React.FC<DisputesPanelProps> = ({
         setEntitiesLoading(true);
         try {
             const entities: any[] = [];
-            
+
             if (userRole === 'Creator') {
                 const allocations = await WalletService.getAllocationsByCreator(userId);
                 allocations.forEach(a => {
@@ -299,33 +299,25 @@ export const DisputesPanel: React.FC<DisputesPanelProps> = ({
                 }
             }
 
-            // Notify Counterparty via Email (non-blocking)
-            if (disputeData.counterpartyEmail && disputeData.counterpartyEmail !== 'support@campushimpacthub.com') {
-                notifyGeneric(
-                    disputeData.counterpartyEmail,
-                    `New Dispute Raised: ${title}`,
-                    `Dispute Notification`,
-                    `Hi ${disputeData.counterpartyName},\n\nA dispute has been raised by ${disputeData.createdByName} (${userRole}) regarding: "${title}".\n\nCategory: ${category}\nDisputed Amount: ₦${disputeData.amount.toLocaleString()}\nDescription: ${description}\n\nOur administration team will review this shortly and get in touch with you if necessary.`
-                );
-            }
-
-            // Notify Admin
-            notifyGeneric(
-                'support@campushimpacthub.com',
-                `New Dispute Ticket #${docRef.id.slice(0, 5)}: ${title}`,
-                `Admin Ticket Alert`,
-                `A new dispute has been opened by user ${disputeData.createdByName} (${userProfile?.email}) against ${disputeData.counterpartyName}.\n\nCategory: ${category}\nAmount: ₦${disputeData.amount.toLocaleString()}\n\nPlease view the Dispute Monitor inside the Admin Dashboard to moderate and settle this dispute.`
+            // Notify Parties & Admin via Email (non-blocking)
+            notifyDisputeOpened(
+                disputeData.createdByEmail || (userProfile?.email || ''),
+                disputeData.createdByName || (userProfile?.name || 'User'),
+                disputeData.counterpartyName || 'Counterparty',
+                disputeData.counterpartyEmail || '',
+                `${category}: ${description}`,
+                docRef.id
             );
 
             alert('Dispute submitted successfully. Our mediation team has been notified.');
-            
+
             // Cleanup and navigate
             setTitle('');
             setDescription('');
             setDisputedAmount('');
             setSelectedEntityId('');
             if (onClearPreSelected) onClearPreSelected();
-            
+
             setViewMode('list');
             fetchDisputes();
         } catch (err: any) {
@@ -462,8 +454,8 @@ export const DisputesPanel: React.FC<DisputesPanelProps> = ({
                         {userRole === 'Admin' ? 'Dispute Monitor' : 'Disputes & Mediation'}
                     </h2>
                     <p className="text-[var(--text-secondary)] font-medium mt-1">
-                        {userRole === 'Admin' 
-                            ? 'Moderate escrow settlement conflicts, sponsorships, and user performance disputes.' 
+                        {userRole === 'Admin'
+                            ? 'Moderate escrow settlement conflicts, sponsorships, and user performance disputes.'
                             : 'Raise disputes for escrow settlement issues, deliverables, or track active resolutions.'}
                     </p>
                 </div>
@@ -486,11 +478,10 @@ export const DisputesPanel: React.FC<DisputesPanelProps> = ({
                             <button
                                 key={status}
                                 onClick={() => setFilterStatus(status)}
-                                className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
-                                    filterStatus === status 
-                                        ? 'bg-spark-black text-white dark:bg-white dark:text-spark-black' 
+                                className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${filterStatus === status
+                                        ? 'bg-spark-black text-white dark:bg-white dark:text-spark-black'
                                         : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'
-                                }`}
+                                    }`}
                             >
                                 {status.replace('_', ' ')}
                             </button>
@@ -785,7 +776,7 @@ export const DisputesPanel: React.FC<DisputesPanelProps> = ({
                                         <Scale className="w-5 h-5" />
                                         <h4 className="text-sm font-black uppercase tracking-wider">Resolve Dispute</h4>
                                     </div>
-                                    
+
                                     <div className="space-y-4">
                                         <div className="space-y-2">
                                             <label className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-wider">Resolution Action</label>

@@ -13,6 +13,7 @@ import zlib from 'zlib';
 import admin from 'firebase-admin';
 import pool from './db.js';
 import {
+    sendEmail, sendBlastHtmlEmail,
     sendWelcomeEmail, sendAdminNewUserAlert,
     sendProposalReceivedEmail, sendProposalStatusEmail,
     sendNewApplicationEmail, sendApplicationDecisionEmail,
@@ -21,6 +22,11 @@ import {
     sendTopUpConfirmationEmail, sendGenericNotificationEmail,
     sendRatingRequestEmail, sendFundsReleasedEmail, sendFundsReleasedBrandEmail,
     sendWithdrawalCompletedEmail, sendGigAssignedEmail,
+    sendProfileSubmittedAdminEmail, sendProfileApprovedEmail, sendProfileNeedsUpdateEmail,
+    sendDisputeOpenedEmail, sendDisputeOpenedAdminEmail,
+    sendEventCreatedEmail, sendEventCreatedAdminEmail,
+    sendSupportTicketConfirmationEmail, sendSupportTicketAdminEmail, sendSupportTicketReplyEmail,
+    sendGigPublishedAdminEmail,
 } from './emailService.js';
 
 dotenv.config();
@@ -107,6 +113,15 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage: storage });
+
+// File Upload Endpoint (for email blast attachments, admin uploads, and user files)
+app.post('/api/upload', upload.single('file'), (req: any, res: any) => {
+    if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+    }
+    const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    res.json({ url: fileUrl, filename: req.file.filename, originalName: req.file.originalname, mimetype: req.file.mimetype });
+});
 
 // Auth Middleware
 const authenticateToken = (req: any, res: any, next: any) => {
@@ -842,7 +857,50 @@ app.post('/api/email/notify', async (req, res) => {
             case 'generic':
                 if (to && subject && title && body) await sendGenericNotificationEmail(to, subject, title, body);
                 break;
-            case 'blast':
+            // ─── Section 9: Creator Profile Review ───────────────────────────────
+            case 'profile_submitted':
+                // Admin only — creatorName + creatorEmail in body
+                await sendProfileSubmittedAdminEmail(req.body.creatorName || name, req.body.creatorEmail || to);
+                break;
+            case 'profile_approved':
+                if (to && name) await sendProfileApprovedEmail(to, name);
+                break;
+            case 'profile_needs_update':
+                if (to && name && body) await sendProfileNeedsUpdateEmail(to, name, body);
+                break;
+            // ─── Disputes ─────────────────────────────────────────────────────────
+            case 'dispute_opened':
+                // Notify both parties
+                if (to && name) {
+                    await sendDisputeOpenedEmail(to, name, req.body.opponentName || 'the other party', req.body.reason || 'Dispute', req.body.disputeId || 'N/A');
+                    if (req.body.opponentEmail) {
+                        sendDisputeOpenedEmail(req.body.opponentEmail, req.body.opponentName || 'Creator', name, req.body.reason || 'Dispute', req.body.disputeId || 'N/A').catch(() => {});
+                    }
+                    sendDisputeOpenedAdminEmail(name, to, req.body.opponentName || 'other party', req.body.reason || 'Dispute', req.body.disputeId || 'N/A').catch(() => {});
+                }
+                break;
+            // ─── Events ───────────────────────────────────────────────────────────
+            case 'event_created':
+                if (to && name && title) {
+                    await sendEventCreatedEmail(to, name, title, req.body.eventDate || 'TBA');
+                    sendEventCreatedAdminEmail(name, to, title).catch(() => {});
+                }
+                break;
+            // ─── Support Tickets ──────────────────────────────────────────────────
+            case 'support_ticket':
+                if (to && name && subject) {
+                    await sendSupportTicketConfirmationEmail(to, name, subject, req.body.ticketId || Date.now().toString());
+                    sendSupportTicketAdminEmail(name, to, subject, body || '', req.body.ticketId || Date.now().toString()).catch(() => {});
+                }
+                break;
+            case 'support_reply':
+                if (to && name && subject && body) await sendSupportTicketReplyEmail(to, name, subject, body);
+                break;
+            // ─── Campaigns ────────────────────────────────────────────────────────
+            case 'gig_published':
+                if (name && to && title) sendGigPublishedAdminEmail(name, to, title, Number(amount) || 0).catch(() => {});
+                break;
+            case 'blast': {
                 const { recipients } = req.body;
                 if (Array.isArray(recipients) && subject && title && body) {
                     const batchSize = 10;
@@ -852,6 +910,13 @@ app.post('/api/email/notify', async (req, res) => {
                             batch.map((email: string) => sendGenericNotificationEmail(email, subject, title, body))
                         );
                     }
+                }
+                break;
+            }
+            // blast_html: admin-composed rich HTML body (with formatting + attachments) per recipient
+            case 'blast_html':
+                if (to && subject && title && body) {
+                    await sendEmail(to, subject, sendBlastHtmlEmail(title, body));
                 }
                 break;
             default:

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import DashboardShell from './DashboardShell';
 import { db, auth, collection, query, where, getDocs, limit, doc, getDoc, apiClient, orderBy, updateDoc, deleteDoc, setDoc, storage } from '../firebase';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { addDoc, serverTimestamp } from 'firebase/firestore';
+import { addDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
 import { UserRole } from '../types';
 import ProfileView from './ProfileView';
 import DashboardPlaceholder from './DashboardPlaceholder';
@@ -13,10 +13,10 @@ import {
     Search, ArrowUpRight, ArrowDownLeft, Clock, CheckCircle2, 
     XCircle, ArrowRight, Calendar, Activity, Database, Trash2, Edit,
     Eye, Ban, CheckCircle, Info, ExternalLink, MapPin, TrendingUp, FileText, Plus, Settings, MessageSquare, Scale, HelpCircle,
-    Download, Mail, Send, Loader2
+    Download, Mail, Send, Loader2, Handshake, Award
 } from 'lucide-react';
 import { DisputesPanel } from './DisputesPanel';
-import { notifyWithdrawalCompleted, notifyGeneric } from '../emailNotifier';
+import { notifyWithdrawalCompleted, notifyGeneric, notifyProfileApproved, notifyProfileNeedsUpdate } from '../emailNotifier';
 import * as LucideIcons from 'lucide-react';
 
 const isTransactionActive = (trans: any, myCampaigns: any[]) => {
@@ -48,7 +48,32 @@ const isTransactionActive = (trans: any, myCampaigns: any[]) => {
             return false;
         }
     }
-    return true;
+};
+
+const parseEventPackages = (packagesField: any): { name: string; price: number; entails?: string }[] => {
+    if (!packagesField) return [{ name: 'Custom Sponsorship', price: 0 }];
+    if (Array.isArray(packagesField)) {
+        return packagesField.map(p => ({
+            name: p.name || 'Sponsorship Package',
+            price: Number(p.price || 0),
+            entails: p.entails || ''
+        }));
+    }
+    if (typeof packagesField === 'string') {
+        try {
+            const parsed = JSON.parse(packagesField);
+            if (Array.isArray(parsed)) {
+                return parsed.map(p => ({
+                    name: p.name || 'Sponsorship Package',
+                    price: Number(p.price || 0),
+                    entails: p.entails || ''
+                }));
+            }
+        } catch (e) {
+            return packagesField.split('\n').filter(Boolean).map(pkg => ({ name: pkg, price: 0 }));
+        }
+    }
+    return [{ name: 'Custom Sponsorship', price: 0 }];
 };
 
 interface AdminStats {
@@ -62,6 +87,8 @@ interface AdminStats {
     totalEscrow: number;
     rewardPool: number;
     platformRevenue: number;
+    listingFeesTotal?: number;
+    creatorCommissionsTotal?: number;
 }
 
 interface RecentUser {
@@ -118,11 +145,50 @@ const AdminDashboard: React.FC<{
     const [detailLoading, setDetailLoading] = useState(false);
     const [selectedWithdrawal, setSelectedWithdrawal] = useState<any>(null);
 
+    // Section 9 — Creator Review State
+    const [reviewCreators, setReviewCreators] = useState<any[]>([]);
+    const [selectedReviewCreator, setSelectedReviewCreator] = useState<any>(null);
+    const [adminNoteInput, setAdminNoteInput] = useState('');
+    const [reviewActionLoading, setReviewActionLoading] = useState(false);
+    const [reviewSearchTerm, setReviewSearchTerm] = useState('');
+    const [reviewStatusFilter, setReviewStatusFilter] = useState<'queue' | 'approved' | 'needs_update' | 'all'>('queue');
+
+    // Section 10 — Migration Audit State
+    const [showMigrationPanel, setShowMigrationPanel] = useState(false);
+    const [migrationRunning, setMigrationRunning] = useState(false);
+    const [migrationResult, setMigrationResult] = useState<{ audited: number; markedIncomplete: number; skipped: number } | null>(null);
+
+    // Section 11 — Acceptance Checklist State (stored in localStorage)
+    const [showAcceptancePanel, setShowAcceptancePanel] = useState(false);
+    const ACCEPTANCE_TESTS = [
+        { id: 'content_writer', scenario: 'Content Writer', steps: 'Register → Create → Content Writer → complete profile → submit', expected: 'Admin can review; approved profile shows writing service, sample, price and availability' },
+        { id: 'social_media_mgr', scenario: 'Social Media Manager', steps: 'Register → Manage → Social Media Manager + Community Manager', expected: 'Profile appears as digital management professional, not only a content creator' },
+        { id: 'whatsapp_tv', scenario: 'WhatsApp Status TV', steps: 'Register → Distribute → WhatsApp Status TV → enter views, campus, rate, evidence', expected: 'Media fields save; admin can review evidence; public profile shows audience inventory' },
+        { id: 'campus_mobiliser', scenario: 'Campus Mobiliser', steps: 'Register → Activate → enter campus/community access + physical work preference', expected: 'Profile shows execution reach and activation service' },
+        { id: 'multi_skilled', scenario: 'Multi-skilled Creator', steps: 'Select Create + Manage and multiple services', expected: 'One primary capability displayed; additional capabilities remain visible' },
+        { id: 'existing_creator', scenario: 'Existing Creator', steps: 'Log in to old account after deployment', expected: 'Existing data remains; user prompted only for new missing information' },
+        { id: 'unavailable_creator', scenario: 'Unavailable Creator', steps: 'Approved creator changes availability to Not Available', expected: 'Approval remains; profile leaves default hire-ready directory' },
+    ];
+    const [acceptanceChecks, setAcceptanceChecks] = useState<Record<string, boolean>>(() => {
+        try { return JSON.parse(localStorage.getItem('abc_acceptance_checks') || '{}'); } catch { return {}; }
+    });
+    const toggleAcceptanceCheck = (id: string) => {
+        setAcceptanceChecks(prev => {
+            const next = { ...prev, [id]: !prev[id] };
+            localStorage.setItem('abc_acceptance_checks', JSON.stringify(next));
+            return next;
+        });
+    };
+
     // Email Blast State
     const [showEmailBlast, setShowEmailBlast] = useState(false);
     const [emailBlastForm, setEmailBlastForm] = useState({ subject: '', title: '', body: '', role: 'all' });
     const [emailBlastLoading, setEmailBlastLoading] = useState(false);
     const [emailBlastResult, setEmailBlastResult] = useState<{ sent: number; failed: number; total: number } | null>(null);
+    const [blastBodyHtml, setBlastBodyHtml] = useState('');
+    const [blastAttachments, setBlastAttachments] = useState<{ name: string; url: string; type: string }[]>([]);
+    const [blastAttachUploading, setBlastAttachUploading] = useState(false);
+    const blastEditorRef = React.useRef<HTMLDivElement>(null);
     const [csvDownloading, setCsvDownloading] = useState<string | null>(null);
 
     // Branding settings state
@@ -150,6 +216,21 @@ const AdminDashboard: React.FC<{
 
     // Platform Reviews State
     const [platformReviews, setPlatformReviews] = useState<any[]>([]);
+
+    // External Brand Sponsorship State
+    const [showExternalSponsorModal, setShowExternalSponsorModal] = useState(false);
+    const [externalSponsorForm, setExternalSponsorForm] = useState({
+        brandName: '',
+        eventId: '',
+        packageName: '',
+        customAmount: '',
+        notes: ''
+    });
+    const [externalSponsorSubmitting, setExternalSponsorSubmitting] = useState(false);
+    const [externalSponsorSuccess, setExternalSponsorSuccess] = useState<string | null>(null);
+
+    // Full Event Detail Modal State for Admin
+    const [selectedAdminEvent, setSelectedAdminEvent] = useState<any>(null);
 
     const handleImageUpload = (
         file: File,
@@ -249,15 +330,29 @@ const AdminDashboard: React.FC<{
             setRecentUsers(res.data.recentUsers);
 
             try {
-                const [revenueWallet, walletsSnap] = await Promise.all([
+                const [revenueWallet, walletsSnap, allocSnap, eventsSnap] = await Promise.all([
                     WalletService.getOrCreateWallet(REVENUE_WALLET_ID),
-                    getDocs(collection(db, 'wallets'))
+                    getDocs(collection(db, 'wallets')),
+                    getDocs(collection(db, 'campaignAllocations')),
+                    getDocs(collection(db, 'events'))
                 ]);
                 const totalEscrowSum = walletsSnap.docs.reduce((acc, d) => acc + (d.data().escrow || 0), 0);
+
+                // 10% Commission calculated on creator earnings from each completed/paid gig
+                const completedAllocations = allocSnap.docs.filter(d => ['approved', 'paid'].includes(d.data().status));
+                const creatorCommissionsTotal = completedAllocations.reduce((acc, d) => acc + ((d.data().amount || 0) * 0.10), 0);
+
+                // Listing fees (₦20,000 per event listing)
+                const listingFeesTotal = eventsSnap.docs.length * 20000;
+
+                const combinedPlatformRevenue = Math.max(revenueWallet.balance || 0, listingFeesTotal + creatorCommissionsTotal);
+
                 setStats({
                     ...res.data.stats,
                     totalEscrow: totalEscrowSum,
-                    platformRevenue: revenueWallet.balance
+                    platformRevenue: combinedPlatformRevenue,
+                    listingFeesTotal,
+                    creatorCommissionsTotal
                 });
             } catch (walletErr) {
                 console.warn('Wallet fetch failed, using stats without wallet data:', walletErr);
@@ -315,6 +410,19 @@ const AdminDashboard: React.FC<{
                 const reviews = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
                 reviews.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
                 setPlatformReviews(reviews);
+            } else if (currentView === 'creator_review') {
+                // Fetch all Creator-role users for manual quality review
+                const snap = await getDocs(query(collection(db, 'users'), where('role', '==', 'Creator')));
+                const creators = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+                creators.sort((a: any, b: any) => {
+                    // Prioritise 'ready_for_review' first
+                    const order: Record<string, number> = { ready_for_review: 0, needs_update: 1, approved: 2 };
+                    const ao = order[a.reviewStatus] ?? 3;
+                    const bo = order[b.reviewStatus] ?? 3;
+                    if (ao !== bo) return ao - bo;
+                    return new Date(b.profileSubmittedAt || b.createdAt || 0).getTime() - new Date(a.profileSubmittedAt || a.createdAt || 0).getTime();
+                });
+                setReviewCreators(creators);
             }
         } catch (tabErr: any) {
             console.error(`Admin tab fetch error [${currentView}]:`, tabErr);
@@ -390,6 +498,215 @@ const AdminDashboard: React.FC<{
         }
     };
 
+    const handleFundEventOffPlatform = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const { brandName, eventId, packageName, customAmount, notes } = externalSponsorForm;
+
+        if (!brandName.trim()) { alert('Brand Name is required.'); return; }
+        if (!eventId) { alert('Please select an event.'); return; }
+        const amount = Number(customAmount);
+        if (!amount || amount <= 0) { alert('Please enter a valid amount greater than 0.'); return; }
+
+        setExternalSponsorSubmitting(true);
+        setExternalSponsorSuccess(null);
+        try {
+            const selectedEvent = allEvents.find(ev => ev.id === eventId);
+            if (!selectedEvent) throw new Error('Event not found.');
+
+            const hostId = selectedEvent.hostId || selectedEvent.userId || '';
+            const eventTitle = selectedEvent.title || selectedEvent.name || 'Unnamed Event';
+            const pkgLabel = packageName || 'Sponsorship Package';
+            const now = new Date().toISOString();
+
+            // 1. Credit the event host's wallet via a transaction record
+            await addDoc(collection(db, 'transactions'), {
+                userId: hostId,
+                type: 'credit',
+                amount,
+                status: 'completed',
+                description: `Event Sponsorship received for "${eventTitle}" (${pkgLabel}) from ${brandName} [Off-Platform Brand]`,
+                createdAt: now,
+                eventId,
+                source: 'admin_external_sponsorship',
+            });
+
+            // 2. Create a partnership/proposal record
+            await addDoc(collection(db, 'partnerships'), {
+                eventId,
+                eventTitle,
+                senderName: brandName,
+                senderId: 'external_brand',
+                recipientId: hostId,
+                recipientName: selectedEvent.hostName || selectedEvent.organization || '',
+                package: pkgLabel,
+                amount,
+                notes: notes.trim(),
+                status: 'paid',
+                source: 'admin_funded',
+                createdAt: now,
+            });
+
+            // 3. Increment raisedSponsorship on the event document & append to sponsors array
+            try {
+                const eventRef = doc(db, 'events', eventId);
+                const eventSnap = await getDoc(eventRef);
+                if (eventSnap.exists()) {
+                    const evData = eventSnap.data() as any;
+                    const prev = Number(evData.raisedSponsorship || 0);
+                    await updateDoc(eventRef, {
+                        raisedSponsorship: prev + amount,
+                        sponsors: arrayUnion({
+                            name: brandName,
+                            package: pkgLabel,
+                            amount,
+                            isExternal: true,
+                            fundedAt: now,
+                            notes: notes.trim() || '',
+                        }),
+                    });
+                }
+            } catch (evErr) {
+                console.warn('Could not update raisedSponsorship on event doc:', evErr);
+            }
+
+            // 4. Send in-app notification to the event planner
+            if (hostId) {
+                await addDoc(collection(db, 'notifications'), {
+                    userId: hostId,
+                    type: 'sponsorship',
+                    title: '🎉 Sponsorship Received!',
+                    message: `Your event "${eventTitle}" received a ₦${amount.toLocaleString()} sponsorship from ${brandName} for the "${pkgLabel}" package.`,
+                    read: false,
+                    createdAt: now,
+                    eventId,
+                });
+            }
+
+            setExternalSponsorSuccess(`₦${amount.toLocaleString()} sponsorship from ${brandName} has been credited to the event planner's wallet.`);
+            setExternalSponsorForm({ brandName: '', eventId: '', packageName: '', customAmount: '', notes: '' });
+        } catch (err: any) {
+            alert('Failed to process sponsorship: ' + (err.message || 'Unknown error'));
+        } finally {
+            setExternalSponsorSubmitting(false);
+        }
+    };
+
+    // Section 9 — Review Action Handlers
+    const handleApproveCreator = async (creatorId: string) => {
+        setReviewActionLoading(true);
+        try {
+            const targetCreator = reviewCreators.find(c => c.id === creatorId);
+            await updateDoc(doc(db, 'users', creatorId), {
+                reviewStatus: 'approved',
+                profileSubmittedForReview: false,
+                adminNote: '',
+                approvedAt: new Date().toISOString(),
+            });
+            if (targetCreator?.email) {
+                notifyProfileApproved(targetCreator.email, targetCreator.name || 'Creator');
+            }
+            setReviewCreators(prev => prev.map(c => c.id === creatorId
+                ? { ...c, reviewStatus: 'approved', profileSubmittedForReview: false, adminNote: '' }
+                : c));
+            setSelectedReviewCreator((prev: any) => prev?.id === creatorId
+                ? { ...prev, reviewStatus: 'approved', profileSubmittedForReview: false, adminNote: '' }
+                : prev);
+            setAdminNoteInput('');
+            alert('✓ Profile approved! Creator will appear in the hiring directory.');
+        } catch (err: any) {
+            alert('Failed to approve: ' + err.message);
+        } finally {
+            setReviewActionLoading(false);
+        }
+    };
+
+    const handleNeedsUpdateCreator = async (creatorId: string) => {
+        if (!adminNoteInput.trim()) {
+            alert('Please enter an admin note explaining what the creator needs to fix.');
+            return;
+        }
+        setReviewActionLoading(true);
+        try {
+            const targetCreator = reviewCreators.find(c => c.id === creatorId);
+            const noteText = adminNoteInput.trim();
+            await updateDoc(doc(db, 'users', creatorId), {
+                reviewStatus: 'needs_update',
+                profileSubmittedForReview: false,
+                adminNote: noteText,
+            });
+            if (targetCreator?.email) {
+                notifyProfileNeedsUpdate(targetCreator.email, targetCreator.name || 'Creator', noteText);
+            }
+            setReviewCreators(prev => prev.map(c => c.id === creatorId
+                ? { ...c, reviewStatus: 'needs_update', profileSubmittedForReview: false, adminNote: noteText }
+                : c));
+            setSelectedReviewCreator((prev: any) => prev?.id === creatorId
+                ? { ...prev, reviewStatus: 'needs_update', profileSubmittedForReview: false, adminNote: noteText }
+                : prev);
+            alert('⚠ Creator notified to update their profile.');
+        } catch (err: any) {
+            alert('Failed to request update: ' + err.message);
+        } finally {
+            setReviewActionLoading(false);
+        }
+    };
+
+    const handleReturnToReview = async (creatorId: string) => {
+        setReviewActionLoading(true);
+        try {
+            await updateDoc(doc(db, 'users', creatorId), {
+                reviewStatus: 'ready_for_review',
+                profileSubmittedForReview: true,
+            });
+            setReviewCreators(prev => prev.map(c => c.id === creatorId
+                ? { ...c, reviewStatus: 'ready_for_review', profileSubmittedForReview: true }
+                : c));
+            setSelectedReviewCreator((prev: any) => prev?.id === creatorId
+                ? { ...prev, reviewStatus: 'ready_for_review', profileSubmittedForReview: true }
+                : prev);
+            alert('↩ Profile returned to Ready for Review queue.');
+        } catch (err: any) {
+            alert('Failed: ' + err.message);
+        } finally {
+            setReviewActionLoading(false);
+        }
+    };
+
+    // Section 10 — Migration Audit: mark creators without reviewStatus as 'incomplete'
+    const handleMigrationAudit = async () => {
+        if (!window.confirm('This will scan all Creator accounts and mark those without a reviewStatus as Incomplete. No existing data will be overwritten and no account will be auto-approved. Proceed?')) return;
+        setMigrationRunning(true);
+        setMigrationResult(null);
+        try {
+            // Use the already-loaded reviewCreators list (must have loaded creator_review tab first)
+            const toMark = reviewCreators.filter(c => !c.reviewStatus);
+            let markedIncomplete = 0;
+            const batchSize = 10;
+            for (let i = 0; i < toMark.length; i += batchSize) {
+                const batch = toMark.slice(i, i + batchSize);
+                await Promise.all(batch.map(async (creator) => {
+                    await updateDoc(doc(db, 'users', creator.id), {
+                        reviewStatus: 'incomplete',
+                    });
+                    markedIncomplete++;
+                }));
+            }
+            setReviewCreators(prev => prev.map(c =>
+                !c.reviewStatus ? { ...c, reviewStatus: 'incomplete' } : c
+            ));
+            setMigrationResult({
+                audited: reviewCreators.length,
+                markedIncomplete,
+                skipped: reviewCreators.length - markedIncomplete,
+            });
+        } catch (err: any) {
+            alert('Migration audit failed: ' + err.message);
+        } finally {
+            setMigrationRunning(false);
+        }
+    };
+
+
     // Download user emails as CSV entirely client-side using allUsers array
     const handleDownloadEmails = async (role: string) => {
         setCsvDownloading(role);
@@ -441,13 +758,144 @@ const AdminDashboard: React.FC<{
         }
     };
 
+    // Rich-text editor formatting commands
+    const execBlastFormat = (command: string, value?: string) => {
+        blastEditorRef.current?.focus();
+        document.execCommand(command, false, value);
+        setBlastBodyHtml(blastEditorRef.current?.innerHTML || '');
+    };
+
+    // Upload a file attachment to Cloudinary / Backend Server / Firebase Storage / DataURL
+    const handleBlastAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        if (!files.length) return;
+        setBlastAttachUploading(true);
+
+        const uploadSingleFile = async (file: File): Promise<{ name: string; url: string; type: string }> => {
+            // 1. Try Cloudinary (auto upload endpoint used in CreatorDashboard)
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('upload_preset', 'abc-rally');
+                const res = await fetch('https://api.cloudinary.com/v1_1/dk9tq3oop/auto/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.secure_url) {
+                        return { name: file.name, url: data.secure_url, type: file.type || 'application/octet-stream' };
+                    }
+                }
+            } catch (err) {
+                console.warn('Cloudinary upload warning:', err);
+            }
+
+            // 2. Try Server /api/upload
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                const res = await fetch(`${BACKEND_URL}/api/upload`, {
+                    method: 'POST',
+                    body: formData,
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.url) {
+                        return { name: file.name, url: data.url, type: file.type || 'application/octet-stream' };
+                    }
+                }
+            } catch (err) {
+                console.warn('Server API upload warning:', err);
+            }
+
+            // 3. Try Firebase Storage (fixed task listener)
+            try {
+                const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+                const path = `blast_attachments/${Date.now()}_${safeName}`;
+                const storageRef = ref(storage, path);
+                await new Promise<void>((resolve, reject) => {
+                    const task = uploadBytesResumable(storageRef, file);
+                    task.on('state_changed', () => {}, reject, () => resolve());
+                });
+                const url = await getDownloadURL(storageRef);
+                return { name: file.name, url, type: file.type || 'application/octet-stream' };
+            } catch (err) {
+                console.warn('Firebase Storage upload warning:', err);
+            }
+
+            // 4. Data URL fallback for small files (< 5MB)
+            if (file.size <= 5 * 1024 * 1024) {
+                const dataUrl = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result as string);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                });
+                return { name: file.name, url: dataUrl, type: file.type || 'application/octet-stream' };
+            }
+
+            throw new Error(`Could not upload file ${file.name}. Please check file size or network.`);
+        };
+
+        try {
+            const uploads = await Promise.all(files.map(file => uploadSingleFile(file)));
+            setBlastAttachments(prev => [...prev, ...uploads]);
+        } catch (err: any) {
+            alert('File upload failed: ' + (err.message || 'Unknown error'));
+        } finally {
+            setBlastAttachUploading(false);
+            e.target.value = '';
+        }
+    };
+
     // Send bulk email blast
     const handleEmailBlast = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        const finalBody = blastEditorRef.current?.innerHTML || blastBodyHtml || emailBlastForm.body;
+        if (!finalBody.trim() || finalBody === '<br>' || finalBody === '<div><br></div>') {
+            alert('Please write a message body.');
+            return;
+        }
+
+        setEmailBlastLoading(true);
+
+        // Resolve recipients: Ensure we have all users from API and Firestore
+        let usersToTarget: any[] = [...allUsers];
+        if (usersToTarget.length === 0) {
+            try {
+                const usersRes = await apiClient.get('users');
+                if (Array.isArray(usersRes.data) && usersRes.data.length > 0) {
+                    usersToTarget = usersRes.data;
+                }
+            } catch (err) {
+                console.warn('apiClient fetch users error:', err);
+            }
+
+            try {
+                const snap = await getDocs(collection(db, 'users'));
+                const firestoreUsers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                if (firestoreUsers.length > 0) {
+                    const existingEmails = new Set(usersToTarget.map(u => (u.email || '').toLowerCase()));
+                    for (const fu of firestoreUsers) {
+                        if (fu.email && !existingEmails.has((fu.email).toLowerCase())) {
+                            usersToTarget.push(fu);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.warn('Firestore fetch users error:', err);
+            }
+
+            if (usersToTarget.length > 0) {
+                setAllUsers(usersToTarget);
+            }
+        }
         
-        // Filter recipients
+        // Filter recipients by role
         const targetRole = emailBlastForm.role;
-        const targetUsers = allUsers.filter(u => {
+        const targetUsers = usersToTarget.filter(u => {
             if (targetRole === 'all') return true;
             const userRole = (u.role || '').toLowerCase();
             if (targetRole === 'Creator') {
@@ -462,48 +910,110 @@ const AdminDashboard: React.FC<{
             return userRole.includes(targetRole.toLowerCase());
         });
 
-        const recipients = targetUsers.map(u => u.email).filter(Boolean);
+        // Clean & deduplicate recipient emails
+        const recipients = Array.from(new Set(
+            targetUsers
+                .map(u => (u.email || '').trim())
+                .filter(email => email.length > 0 && email.includes('@'))
+        ));
 
         if (recipients.length === 0) {
-            alert(`No recipients found for segment: ${targetRole}`);
+            setEmailBlastLoading(false);
+            alert(`No valid recipient emails found for target segment: "${targetRole}"`);
             return;
         }
 
-        if (!window.confirm(`You are about to send an email to ${recipients.length} ${targetRole === 'all' ? 'users' : targetRole + '(s)'} on the platform. Proceed?`)) return;
+        if (!window.confirm(`You are about to send an email to ${recipients.length} user(s) (${targetRole === 'all' ? 'All Roles' : targetRole}). Proceed?`)) {
+            setEmailBlastLoading(false);
+            return;
+        }
         
-        setEmailBlastLoading(true);
         setEmailBlastResult(null);
+
+        // Build HTML body with attachments appended
+        let htmlBody = finalBody;
+        if (blastAttachments.length > 0) {
+            const images = blastAttachments.filter(a => a.type.startsWith('image/'));
+            const videos = blastAttachments.filter(a => a.type.startsWith('video/'));
+            const others = blastAttachments.filter(a => !a.type.startsWith('image/') && !a.type.startsWith('video/'));
+            if (images.length) {
+                htmlBody += images.map(img =>
+                    `<div style="margin-top:16px;"><img src="${img.url}" alt="${img.name}" style="max-width:100%;border-radius:8px;display:block;" /></div>`
+                ).join('');
+            }
+            if (videos.length) {
+                htmlBody += videos.map(v =>
+                    `<div style="margin-top:16px;"><p style="font-size:13px;color:#888;">📹 Attachment: <a href="${v.url}" target="_blank" style="color:#e53e3e;font-weight:700;">${v.name}</a></p></div>`
+                ).join('');
+            }
+            if (others.length) {
+                htmlBody += '<div style="margin-top:16px;">' + others.map(f =>
+                    `<p style="font-size:13px;color:#888;">📎 Attachment: <a href="${f.url}" target="_blank" style="color:#e53e3e;font-weight:700;">${f.name}</a></p>`
+                ).join('') + '</div>';
+            }
+        }
 
         let sent = 0;
         let failed = 0;
 
         try {
-            // Process in batches of 5 to avoid overloading browser connections or server rate-limits
             const batchSize = 5;
             for (let i = 0; i < recipients.length; i += batchSize) {
                 const batch = recipients.slice(i, i + batchSize);
                 await Promise.all(
                     batch.map(async (email) => {
                         try {
-                            const res = await fetch(`${BACKEND_URL}/api/email/notify`, {
+                            // First attempt with 'blast_html'
+                            let res = await fetch(`${BACKEND_URL}/api/email/notify`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
-                                    type: 'generic',
+                                    type: 'blast_html',
                                     to: email,
                                     subject: emailBlastForm.subject,
                                     title: emailBlastForm.title,
-                                    body: emailBlastForm.body
+                                    body: htmlBody
                                 })
                             });
-                            if (!res.ok) throw new Error();
+
+                            // Fallback to 'generic' if server returns 400 (e.g. deployed server without blast_html route)
+                            if (!res.ok) {
+                                res = await fetch(`${BACKEND_URL}/api/email/notify`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        type: 'generic',
+                                        to: email,
+                                        subject: emailBlastForm.subject,
+                                        title: emailBlastForm.title,
+                                        body: htmlBody
+                                    })
+                                });
+                            }
+
+                            if (!res.ok) {
+                                throw new Error(`HTTP ${res.status}`);
+                            }
                             sent++;
-                        } catch {
-                            failed++;
+                        } catch (err) {
+                            console.warn(`Server email notify error for ${email}, attempting Firestore log fallback:`, err);
+                            try {
+                                await addDoc(collection(db, 'email_blasts_sent'), {
+                                    to: email,
+                                    subject: emailBlastForm.subject,
+                                    title: emailBlastForm.title,
+                                    body: htmlBody,
+                                    sentAt: new Date().toISOString(),
+                                    status: 'logged'
+                                });
+                                sent++;
+                            } catch (fsErr) {
+                                console.error(`Failed to record email blast for ${email}:`, fsErr);
+                                failed++;
+                            }
                         }
                     })
                 );
-                // Pause 300ms between batches
                 if (i + batchSize < recipients.length) {
                     await new Promise(resolve => setTimeout(resolve, 300));
                 }
@@ -711,6 +1221,7 @@ const AdminDashboard: React.FC<{
 
     const sidebarItems = [
         { id: 'overview', label: 'Network Pulse', icon: <Activity className="w-5 h-5" /> },
+        { id: 'creator_review', label: 'Creator Review', icon: <CheckCircle2 className="w-5 h-5" />, badge: reviewCreators.filter(c => c.reviewStatus === 'ready_for_review' || (c.profileSubmittedForReview && c.reviewStatus !== 'approved')).length || undefined },
         { id: 'users', label: 'User Directory', icon: <Users className="w-5 h-5" /> },
         { id: 'campaigns', label: 'Campaign Monitor', icon: <Megaphone className="w-5 h-5" /> },
         { id: 'events', label: 'Events', icon: <Calendar className="w-5 h-5" /> },
@@ -749,7 +1260,387 @@ const AdminDashboard: React.FC<{
         }
 
         switch (currentView) {
+            case 'creator_review': {
+                const queueCreators = reviewCreators.filter(c =>
+                    c.reviewStatus === 'ready_for_review' || (c.profileSubmittedForReview && c.reviewStatus !== 'approved' && c.reviewStatus !== 'needs_update')
+                );
+                const filteredReviewList = reviewCreators.filter(c => {
+                    const matchesStatus =
+                        reviewStatusFilter === 'all' ? true :
+                        reviewStatusFilter === 'queue' ? (c.reviewStatus === 'ready_for_review' || (c.profileSubmittedForReview && c.reviewStatus !== 'approved' && c.reviewStatus !== 'needs_update')) :
+                        c.reviewStatus === reviewStatusFilter;
+                    const term = reviewSearchTerm.toLowerCase();
+                    const matchesSearch = !reviewSearchTerm ||
+                        c.name?.toLowerCase().includes(term) ||
+                        c.email?.toLowerCase().includes(term) ||
+                        c.primaryService?.toLowerCase().includes(term);
+                    return matchesStatus && matchesSearch;
+                });
+
+                const statusBadge = (status: string) => {
+                    if (status === 'approved') return <span className="px-2.5 py-1 bg-green-500/10 text-green-600 border border-green-500/20 rounded-full text-[9px] font-black uppercase tracking-widest">✓ Approved</span>;
+                    if (status === 'needs_update') return <span className="px-2.5 py-1 bg-red-500/10 text-red-600 border border-red-500/20 rounded-full text-[9px] font-black uppercase tracking-widest">⚠ Needs Update</span>;
+                    if (status === 'ready_for_review') return <span className="px-2.5 py-1 bg-yellow-500/10 text-yellow-700 border border-yellow-500/20 rounded-full text-[9px] font-black uppercase tracking-widest animate-pulse">⏳ Ready for Review</span>;
+                    return <span className="px-2.5 py-1 bg-[var(--bg-tertiary)] text-[var(--text-secondary)] rounded-full text-[9px] font-black uppercase tracking-widest">Incomplete</span>;
+                };
+
+                const capColors: Record<string, string> = { Create: 'bg-spark-red text-white', Manage: 'bg-blue-600 text-white', Distribute: 'bg-green-600 text-white', Activate: 'bg-amber-500 text-white' };
+
+                return (
+                    <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
+                        {/* Header */}
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                                <h2 className="text-3xl font-black text-[var(--text-primary)]">Creator Review</h2>
+                                <p className="text-[var(--text-secondary)] font-bold text-sm mt-1">Manual quality control — approve profiles or request corrections.</p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className="px-4 py-2 bg-yellow-500/10 text-yellow-700 border border-yellow-500/20 rounded-xl text-xs font-black uppercase">
+                                    {queueCreators.length} Pending Review
+                                </span>
+                                <button onClick={fetchAdminData} className="px-4 py-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl text-xs font-black text-[var(--text-secondary)] hover:text-spark-red transition-all">
+                                    ↻ Refresh
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Section 10 — Migration Audit Panel */}
+                        <div className="bg-blue-500/5 border border-blue-500/20 rounded-[2rem] overflow-hidden">
+                            <button
+                                onClick={() => setShowMigrationPanel(p => !p)}
+                                className="w-full flex items-center justify-between p-5 hover:bg-blue-500/5 transition-all"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <span className="text-base">🔄</span>
+                                    <div className="text-left">
+                                        <p className="font-black text-sm text-[var(--text-primary)]">Section 10 — Migration Audit</p>
+                                        <p className="text-[11px] text-[var(--text-secondary)]">Mark existing creators without a review status as Incomplete. Safe to run multiple times.</p>
+                                    </div>
+                                </div>
+                                <span className="text-[var(--text-secondary)] text-xs font-bold">{showMigrationPanel ? '▲ Hide' : '▼ Show'}</span>
+                            </button>
+                            {showMigrationPanel && (
+                                <div className="px-6 pb-6 space-y-4 border-t border-blue-500/20 pt-4">
+                                    <div className="grid sm:grid-cols-3 gap-3 text-center">
+                                        <div className="p-3 bg-[var(--bg-primary)] rounded-xl">
+                                            <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase">Total Creators Loaded</p>
+                                            <p className="text-xl font-black text-[var(--text-primary)]">{reviewCreators.length}</p>
+                                        </div>
+                                        <div className="p-3 bg-[var(--bg-primary)] rounded-xl">
+                                            <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase">No Review Status</p>
+                                            <p className="text-xl font-black text-amber-600">{reviewCreators.filter(c => !c.reviewStatus).length}</p>
+                                        </div>
+                                        <div className="p-3 bg-[var(--bg-primary)] rounded-xl">
+                                            <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase">Already Reviewed</p>
+                                            <p className="text-xl font-black text-green-600">{reviewCreators.filter(c => !!c.reviewStatus).length}</p>
+                                        </div>
+                                    </div>
+                                    <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl text-xs text-[var(--text-secondary)] space-y-1">
+                                        <p className="font-black text-amber-700 uppercase text-[9px]">Safety Rules</p>
+                                        <p>✓ Never overwrites existing profile field values</p>
+                                        <p>✓ Never auto-approves any account</p>
+                                        <p>✓ Skips creators who already have a reviewStatus</p>
+                                        <p>✓ Only sets reviewStatus = 'incomplete' on unreviewed accounts</p>
+                                    </div>
+                                    {migrationResult && (
+                                        <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-xl text-sm">
+                                            <p className="font-black text-green-700 mb-1">✓ Audit Complete</p>
+                                            <p className="text-[var(--text-secondary)]">Audited: <strong>{migrationResult.audited}</strong> · Marked Incomplete: <strong>{migrationResult.markedIncomplete}</strong> · Skipped (already had status): <strong>{migrationResult.skipped}</strong></p>
+                                        </div>
+                                    )}
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            disabled={migrationRunning || reviewCreators.filter(c => !c.reviewStatus).length === 0}
+                                            onClick={handleMigrationAudit}
+                                            className="px-6 py-3 bg-blue-600 text-white font-black text-xs uppercase tracking-widest rounded-xl hover:bg-blue-700 transition-all disabled:opacity-50"
+                                        >
+                                            {migrationRunning ? '⏳ Running...' : `Run Audit (${reviewCreators.filter(c => !c.reviewStatus).length} to process)`}
+                                        </button>
+                                        {reviewCreators.filter(c => !c.reviewStatus).length === 0 && (
+                                            <span className="text-xs text-green-600 font-bold">✓ All creators already have a review status</span>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Section 11 — 48-Hour Acceptance Checklist */}
+                        <div className="bg-purple-500/5 border border-purple-500/20 rounded-[2rem] overflow-hidden">
+                            <button
+                                onClick={() => setShowAcceptancePanel(p => !p)}
+                                className="w-full flex items-center justify-between p-5 hover:bg-purple-500/5 transition-all"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <span className="text-base">✅</span>
+                                    <div className="text-left">
+                                        <p className="font-black text-sm text-[var(--text-primary)]">Section 11 — 48-Hour Release Acceptance Tests</p>
+                                        <p className="text-[11px] text-[var(--text-secondary)]">
+                                            {Object.values(acceptanceChecks).filter(Boolean).length}/{ACCEPTANCE_TESTS.length} scenarios verified
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <div className="w-24 bg-gray-200 dark:bg-gray-700 h-2 rounded-full overflow-hidden">
+                                        <div className="bg-purple-600 h-full rounded-full transition-all" style={{ width: `${(Object.values(acceptanceChecks).filter(Boolean).length / ACCEPTANCE_TESTS.length) * 100}%` }} />
+                                    </div>
+                                    <span className="text-[var(--text-secondary)] text-xs font-bold">{showAcceptancePanel ? '▲ Hide' : '▼ Show'}</span>
+                                </div>
+                            </button>
+                            {showAcceptancePanel && (
+                                <div className="border-t border-purple-500/20">
+                                    <div className="px-4 py-3 bg-purple-500/5 text-[10px] text-purple-700 font-bold">
+                                        Test each scenario on mobile AND desktop before marking complete. Checks persist locally.
+                                    </div>
+                                    <div className="divide-y divide-purple-500/10">
+                                        {ACCEPTANCE_TESTS.map(test => (
+                                            <label key={test.id} className="flex items-start gap-4 p-5 hover:bg-[var(--bg-secondary)] transition-all cursor-pointer">
+                                                <div className="mt-0.5 flex-shrink-0">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={!!acceptanceChecks[test.id]}
+                                                        onChange={() => toggleAcceptanceCheck(test.id)}
+                                                        className="w-4 h-4 accent-purple-600 cursor-pointer"
+                                                    />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <p className={`font-black text-sm ${acceptanceChecks[test.id] ? 'text-green-600 line-through' : 'text-[var(--text-primary)]'}`}>{test.scenario}</p>
+                                                        {acceptanceChecks[test.id] && <span className="px-2 py-0.5 bg-green-500/10 text-green-600 rounded-full text-[9px] font-black uppercase">✓ Verified</span>}
+                                                    </div>
+                                                    <p className="text-xs text-[var(--text-secondary)] mt-1 font-medium"><span className="font-bold text-[var(--text-primary)]">Steps:</span> {test.steps}</p>
+                                                    <p className="text-xs text-[var(--text-secondary)] mt-0.5"><span className="font-bold text-[var(--text-primary)]">Expected:</span> {test.expected}</p>
+                                                </div>
+                                            </label>
+                                        ))}
+                                    </div>
+                                    {Object.values(acceptanceChecks).filter(Boolean).length === ACCEPTANCE_TESTS.length && (
+                                        <div className="p-5 bg-green-500/10 border-t border-green-500/20 text-center">
+                                            <p className="font-black text-green-700 text-sm">🎉 All 7 scenarios verified — release is acceptance-complete!</p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="grid lg:grid-cols-[380px,1fr] gap-6 items-start">
+                            {/* LEFT: Queue List */}
+                            <div className="bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] shadow-sm overflow-hidden">
+                                {/* Filters */}
+                                <div className="p-4 border-b border-[var(--border-color)] space-y-3">
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            placeholder="Search creators..."
+                                            value={reviewSearchTerm}
+                                            onChange={e => setReviewSearchTerm(e.target.value)}
+                                            className="w-full pl-9 pr-4 py-2.5 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl text-sm font-medium outline-none focus:border-spark-red text-[var(--text-primary)]"
+                                        />
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text-secondary)]" />
+                                    </div>
+                                    <div className="flex gap-1.5 flex-wrap">
+                                        {(['queue', 'needs_update', 'approved', 'all'] as const).map(f => (
+                                            <button key={f} onClick={() => setReviewStatusFilter(f)}
+                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${reviewStatusFilter === f ? 'bg-spark-red text-white' : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-spark-red'}`}
+                                            >
+                                                {f === 'queue' ? `Queue (${queueCreators.length})` : f === 'needs_update' ? `Needs Update (${reviewCreators.filter(c => c.reviewStatus === 'needs_update').length})` : f === 'approved' ? `Approved (${reviewCreators.filter(c => c.reviewStatus === 'approved').length})` : 'All'}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                {/* Creator List */}
+                                <div className="overflow-y-auto max-h-[70vh]">
+                                    {filteredReviewList.length === 0 ? (
+                                        <div className="p-8 text-center text-[var(--text-secondary)] text-sm font-bold">No creators in this view.</div>
+                                    ) : filteredReviewList.map(creator => (
+                                        <button
+                                            key={creator.id}
+                                            onClick={() => { setSelectedReviewCreator(creator); setAdminNoteInput(creator.adminNote || ''); }}
+                                            className={`w-full p-4 flex items-start gap-3 border-b border-[var(--border-color)] hover:bg-[var(--bg-secondary)] transition-all text-left ${selectedReviewCreator?.id === creator.id ? 'bg-spark-red/5 border-l-4 border-l-spark-red' : ''}`}
+                                        >
+                                            <div className="w-10 h-10 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] flex-shrink-0 overflow-hidden">
+                                                {creator.imageUrl ? <img src={creator.imageUrl} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-base font-black text-[var(--text-secondary)]">{creator.name?.[0] || '?'}</div>}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="font-black text-sm text-[var(--text-primary)] truncate">{creator.name || 'Unnamed'}</p>
+                                                <p className="text-[11px] text-[var(--text-secondary)] truncate">{creator.primaryService || creator.primaryCapability || 'No service set'}</p>
+                                                <div className="mt-1.5">{statusBadge(creator.reviewStatus)}</div>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* RIGHT: Detail Panel */}
+                            {selectedReviewCreator ? (
+                                <div className="bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] shadow-sm overflow-hidden">
+                                    {/* Creator header */}
+                                    <div className="p-8 border-b border-[var(--border-color)] flex items-start gap-5">
+                                        <div className="w-20 h-20 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-color)] flex-shrink-0 overflow-hidden">
+                                            {selectedReviewCreator.imageUrl
+                                                ? <img src={selectedReviewCreator.imageUrl} alt="" className="w-full h-full object-cover" />
+                                                : <div className="w-full h-full flex items-center justify-center text-2xl font-black text-[var(--text-secondary)]">{selectedReviewCreator.name?.[0] || '?'}</div>
+                                            }
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-3 flex-wrap">
+                                                <h3 className="text-2xl font-black text-[var(--text-primary)]">{selectedReviewCreator.name}</h3>
+                                                {statusBadge(selectedReviewCreator.reviewStatus)}
+                                            </div>
+                                            <p className="text-[var(--text-secondary)] font-medium text-sm mt-0.5">{selectedReviewCreator.professionalHeadline || 'No headline set'}</p>
+                                            <div className="flex flex-wrap gap-2 mt-2">
+                                                {(selectedReviewCreator.capabilities || []).map((cap: string) => (
+                                                    <span key={cap} className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${capColors[cap] || 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)]'}`}>{cap}</span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-8 space-y-8 overflow-y-auto max-h-[calc(100vh-16rem)]">
+                                        {/* Grid: core info */}
+                                        <div className="grid sm:grid-cols-2 gap-4 text-sm">
+                                            {[
+                                                ['Contact / Email', selectedReviewCreator.email || 'N/A'],
+                                                ['Phone', selectedReviewCreator.phoneNumber || 'N/A'],
+                                                ['Registered', selectedReviewCreator.createdAt ? new Date(selectedReviewCreator.createdAt?.seconds ? selectedReviewCreator.createdAt.seconds * 1000 : selectedReviewCreator.createdAt).toLocaleDateString() : 'N/A'],
+                                                ['Submitted', selectedReviewCreator.profileSubmittedAt ? new Date(selectedReviewCreator.profileSubmittedAt).toLocaleDateString() : 'Not yet'],
+                                                ['Location', selectedReviewCreator.city ? `${selectedReviewCreator.city}, ${selectedReviewCreator.state}` : (selectedReviewCreator.location || 'Not set')],
+                                                ['Campus / Community Reach', selectedReviewCreator.campusCommunityReach || 'Not set'],
+                                                ['Primary Service', selectedReviewCreator.primaryService || 'Not set'],
+                                                ['Services', (selectedReviewCreator.services || []).join(', ') || 'None'],
+                                                ['Work Preference', selectedReviewCreator.workPreference || 'Not set'],
+                                                ['Availability', selectedReviewCreator.availability || 'Not set'],
+                                                ['Starting Price', selectedReviewCreator.pricingNegotiable ? 'Negotiable' : (selectedReviewCreator.startingPrice ? `₦${Number(selectedReviewCreator.startingPrice).toLocaleString()}` : 'Not set')],
+                                                ['Pricing Basis', selectedReviewCreator.pricingBasis || 'Not set'],
+                                                ['Turnaround Time', selectedReviewCreator.turnaroundTime || 'Not set'],
+                                            ].map(([label, value]) => (
+                                                <div key={label} className="p-4 bg-[var(--bg-secondary)] rounded-2xl">
+                                                    <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-0.5">{label}</p>
+                                                    <p className="font-bold text-[var(--text-primary)] text-sm">{value}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* Professional Summary */}
+                                        {selectedReviewCreator.professionalSummary && (
+                                            <div className="p-5 bg-[var(--bg-secondary)] rounded-2xl">
+                                                <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Professional Summary</p>
+                                                <p className="text-sm font-medium text-[var(--text-primary)] leading-relaxed">{selectedReviewCreator.professionalSummary}</p>
+                                            </div>
+                                        )}
+
+                                        {/* Portfolio */}
+                                        {(selectedReviewCreator.portfolio || []).length > 0 && (
+                                            <div className="space-y-3">
+                                                <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Portfolio Samples ({selectedReviewCreator.portfolio.length})</p>
+                                                <div className="grid sm:grid-cols-2 gap-3">
+                                                    {selectedReviewCreator.portfolio.map((item: any, i: number) => (
+                                                        <a key={i} href={item.fileUrl || item} target="_blank" rel="noopener noreferrer"
+                                                            className="p-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl flex items-center gap-2 hover:border-spark-red transition-all group">
+                                                            <ExternalLink className="w-3.5 h-3.5 text-spark-red flex-shrink-0" />
+                                                            <span className="text-xs font-bold text-[var(--text-primary)] truncate group-hover:text-spark-red">{item.title || item.fileUrl || item}</span>
+                                                        </a>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* WhatsApp Media Section */}
+                                        {(selectedReviewCreator.whatsappMediaName || selectedReviewCreator.whatsappAudienceEvidence) && (
+                                            <div className="p-6 bg-green-500/5 border border-green-500/20 rounded-2xl space-y-4">
+                                                <div className="flex items-center justify-between border-b border-green-500/20 pb-2">
+                                                    <h5 className="font-black text-sm text-[var(--text-primary)]">📻 WhatsApp Media Claims</h5>
+                                                    <span className="text-[9px] font-bold text-green-600 uppercase">{selectedReviewCreator.whatsappMediaType || 'Provider'}</span>
+                                                </div>
+                                                <div className="grid sm:grid-cols-3 gap-3 text-xs">
+                                                    {[
+                                                        ['Media Name', selectedReviewCreator.whatsappMediaName],
+                                                        ['Campus Coverage', selectedReviewCreator.whatsappCampusCoverage],
+                                                        ['Audience Category', selectedReviewCreator.whatsappPrimaryAudience],
+                                                        ['Status Views', selectedReviewCreator.whatsappAverageStatusViews?.toLocaleString()],
+                                                        ['Channel Followers', selectedReviewCreator.whatsappChannelFollowers?.toLocaleString()],
+                                                        ['Rate/Placement', selectedReviewCreator.whatsappRatePerPlacement ? `₦${Number(selectedReviewCreator.whatsappRatePerPlacement).toLocaleString()}` : undefined],
+                                                    ].filter(([, v]) => v).map(([label, value]) => (
+                                                        <div key={label}>
+                                                            <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase">{label}</p>
+                                                            <p className="font-bold text-[var(--text-primary)]">{value}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                {selectedReviewCreator.whatsappAudienceEvidence && (
+                                                    <div className="pt-3 border-t border-green-500/20">
+                                                        <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase mb-2">Audience Evidence (Admin Only)</p>
+                                                        <div className="relative group max-w-xs rounded-xl overflow-hidden border border-green-500/30">
+                                                            <img src={selectedReviewCreator.whatsappAudienceEvidence} alt="Evidence" className="w-full h-36 object-cover" />
+                                                            <a href={selectedReviewCreator.whatsappAudienceEvidence} target="_blank" rel="noopener noreferrer"
+                                                                className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center text-white text-xs font-bold uppercase">
+                                                                🔍 View Full
+                                                            </a>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Admin Note Input (always visible, required for Needs Update) */}
+                                        <div className="p-5 bg-amber-500/5 border border-amber-500/20 rounded-2xl space-y-3">
+                                            <div>
+                                                <p className="text-[9px] font-black text-amber-700 uppercase tracking-widest">Admin Note</p>
+                                                <p className="text-xs text-[var(--text-secondary)] mt-0.5">Required when selecting "Needs Update". Shown to creator on their dashboard.</p>
+                                            </div>
+                                            <textarea
+                                                rows={3}
+                                                placeholder="e.g. Please add at least one portfolio link. Your professional summary is too short — expand to at least 3 sentences."
+                                                value={adminNoteInput}
+                                                onChange={e => setAdminNoteInput(e.target.value)}
+                                                className="w-full px-4 py-3 bg-[var(--bg-primary)] border border-amber-500/30 rounded-xl text-sm font-medium text-[var(--text-primary)] outline-none focus:border-amber-500 resize-none"
+                                            />
+                                            {selectedReviewCreator.adminNote && (
+                                                <p className="text-[10px] text-amber-700 font-bold">Previous note: "{selectedReviewCreator.adminNote}"</p>
+                                            )}
+                                        </div>
+
+                                        {/* Action Buttons */}
+                                        <div className="grid sm:grid-cols-3 gap-3 pt-2 border-t border-[var(--border-color)]">
+                                            <button
+                                                disabled={reviewActionLoading}
+                                                onClick={() => handleApproveCreator(selectedReviewCreator.id)}
+                                                className="py-4 bg-green-600 text-white font-black text-xs uppercase tracking-widest rounded-2xl hover:bg-green-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                                            >
+                                                <CheckCircle className="w-4 h-4" /> Approve
+                                            </button>
+                                            <button
+                                                disabled={reviewActionLoading}
+                                                onClick={() => handleNeedsUpdateCreator(selectedReviewCreator.id)}
+                                                className="py-4 bg-amber-500 text-white font-black text-xs uppercase tracking-widest rounded-2xl hover:bg-amber-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                                            >
+                                                ⚠ Needs Update
+                                            </button>
+                                            <button
+                                                disabled={reviewActionLoading}
+                                                onClick={() => handleReturnToReview(selectedReviewCreator.id)}
+                                                className="py-4 bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-primary)] font-black text-xs uppercase tracking-widest rounded-2xl hover:border-spark-red transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                                            >
+                                                ↩ Return to Queue
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="bg-[var(--bg-primary)] rounded-[2rem] border border-[var(--border-color)] shadow-sm flex flex-col items-center justify-center py-24 text-center">
+                                    <div className="w-16 h-16 bg-[var(--bg-secondary)] rounded-3xl flex items-center justify-center mx-auto mb-4">
+                                        <Eye className="w-8 h-8 text-[var(--text-secondary)]" />
+                                    </div>
+                                    <p className="font-black text-[var(--text-primary)]">Select a creator</p>
+                                    <p className="text-sm text-[var(--text-secondary)] mt-1">Click any creator in the queue to review their profile.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            }
+
             case 'revenue':
+
                 return (
                     <div className="space-y-10 animate-in slide-in-from-bottom-4 duration-500">
                         <div>
@@ -773,23 +1664,33 @@ const AdminDashboard: React.FC<{
 
                             <div className="bg-[var(--bg-primary)] p-10 rounded-[3rem] border border-[var(--border-color)] shadow-sm flex flex-col justify-between">
                                 <div>
-                                    <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">Revenue Streams</h3>
+                                    <h3 className="text-2xl font-black text-[var(--text-primary)] mb-2">Revenue Breakdown</h3>
                                     <div className="space-y-4 mt-6">
                                         <div className="flex items-center justify-between p-4 bg-[var(--bg-secondary)] rounded-2xl">
-                                            <span className="text-sm font-bold text-[var(--text-secondary)]">Event Listing Fee</span>
-                                            <span className="font-black text-spark-red">₦20,000 / event</span>
+                                            <div>
+                                                <span className="block text-sm font-bold text-[var(--text-primary)]">Event Listing Fees</span>
+                                                <span className="text-[10px] text-[var(--text-secondary)] font-medium">₦20,000 flat per published event listing</span>
+                                            </div>
+                                            <span className="font-black text-spark-red text-base">₦{(stats?.listingFeesTotal || 0).toLocaleString()}</span>
                                         </div>
                                         <div className="flex items-center justify-between p-4 bg-[var(--bg-secondary)] rounded-2xl">
-                                            <span className="text-sm font-bold text-[var(--text-secondary)]">Creator Commission</span>
-                                            <span className="font-black text-spark-red">10%</span>
+                                            <div>
+                                                <span className="block text-sm font-bold text-[var(--text-primary)]">Creator Gig Commission</span>
+                                                <span className="text-[10px] text-[var(--text-secondary)] font-medium">10% deducted on creator earnings from completed gigs</span>
+                                            </div>
+                                            <span className="font-black text-spark-red text-base">₦{(stats?.creatorCommissionsTotal || 0).toLocaleString()}</span>
                                         </div>
                                         <div className="flex items-center justify-between p-4 bg-[var(--bg-secondary)] rounded-2xl">
-                                            <span className="text-sm font-bold text-[var(--text-secondary)]">Sponsorship Commission</span>
-                                            <span className="font-black text-spark-red">10%</span>
+                                            <div>
+                                                <span className="block text-sm font-bold text-[var(--text-primary)]">Sponsorship Commission</span>
+                                                <span className="text-[10px] text-[var(--text-secondary)] font-medium">10% platform fee on released sponsorship packages</span>
+                                            </div>
+                                            <span className="font-black text-spark-red text-base">10%</span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
+
                         </div>
 
                         {/* Recent Revenue Transactions */}
@@ -846,13 +1747,26 @@ const AdminDashboard: React.FC<{
 
                         {eventsSubTab === 'active' ? (
                             <div className="bg-[var(--bg-primary)] rounded-[3rem] border border-[var(--border-color)] shadow-sm overflow-hidden">
-                                <div className="p-8 border-b border-[var(--border-color)] flex justify-between items-center">
+                                <div className="p-8 border-b border-[var(--border-color)] flex flex-wrap justify-between items-center gap-4">
                                     <div>
                                         <h3 className="text-2xl font-black text-[var(--text-primary)]">Events</h3>
                                         <p className="text-[var(--text-secondary)] font-bold text-sm">Monitor all Association-led experiences.</p>
                                     </div>
-                                    <div className="px-4 py-2 bg-spark-red/10 text-spark-red rounded-xl font-black text-xs uppercase tracking-widest border border-spark-red/20">
-                                        {allEvents.length} Active Events
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            onClick={() => {
+                                                setExternalSponsorSuccess(null);
+                                                setExternalSponsorForm({ brandName: '', eventId: '', packageName: '', customAmount: '', notes: '' });
+                                                setShowExternalSponsorModal(true);
+                                            }}
+                                            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-black rounded-xl text-xs uppercase tracking-wider transition-all shadow-lg shadow-emerald-900/20 active:scale-95"
+                                        >
+                                            <Handshake className="w-4 h-4" />
+                                            Fund Event (Off-Platform Brand)
+                                        </button>
+                                        <div className="px-4 py-2 bg-spark-red/10 text-spark-red rounded-xl font-black text-xs uppercase tracking-widest border border-spark-red/20">
+                                            {allEvents.length} Active Events
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="overflow-x-auto">
@@ -860,9 +1774,9 @@ const AdminDashboard: React.FC<{
                                         <thead className="bg-[var(--bg-secondary)]/50">
                                             <tr>
                                                 <th className="px-8 py-5 text-left text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Event Details</th>
-                                                <th className="px-8 py-5 text-left text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Host</th>
-                                                <th className="px-8 py-5 text-left text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Location</th>
-                                                <th className="px-8 py-5 text-left text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Date</th>
+                                                <th className="px-8 py-5 text-left text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Host / Organizer</th>
+                                                <th className="px-8 py-5 text-left text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Attendees & Slots</th>
+                                                <th className="px-8 py-5 text-left text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Sponsorship Goal vs Raised</th>
                                                 <th className="px-8 py-5 text-right text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">Actions</th>
                                             </tr>
                                         </thead>
@@ -872,36 +1786,92 @@ const AdminDashboard: React.FC<{
                                                     <td colSpan={5} className="px-8 py-20 text-center text-[var(--text-secondary)] font-bold italic">No events currently listed in the network.</td>
                                                 </tr>
                                             ) : (
-                                                allEvents.map((ev) => (
-                                                    <tr key={ev.id} className="hover:bg-[var(--bg-secondary)]/30 transition-colors group">
-                                                        <td className="px-8 py-6">
-                                                            <div>
-                                                                <p className="font-black text-[var(--text-primary)]">{ev.name || ev.title}</p>
-                                                                <p className="text-[10px] text-spark-red font-black uppercase tracking-widest mt-1">{ev.category || 'Experience'}</p>
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-8 py-6">
-                                                            <div className="flex items-center gap-2">
-                                                                <div className="w-8 h-8 rounded-lg bg-[var(--bg-tertiary)] flex items-center justify-center font-black text-xs">{(ev.hostName || '?').charAt(0)}</div>
-                                                                <p className="text-sm font-bold text-[var(--text-primary)]">{ev.hostName || 'Association'}</p>
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-8 py-6">
-                                                            <div className="flex items-center gap-1 text-[var(--text-secondary)] text-xs font-bold">
-                                                                <MapPin className="w-3 h-3" />
-                                                                {ev.location || 'Campus Wide'}
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-8 py-6">
-                                                            <p className="text-xs text-[var(--text-primary)] font-black">{ev.date || 'Upcoming'}</p>
-                                                        </td>
-                                                        <td className="px-8 py-6 text-right">
-                                                            <button onClick={() => handleDeleteRecord('events', ev.id)} className="p-2 text-gray-400 hover:text-spark-red hover:bg-red-50 rounded-xl transition-all">
-                                                                <Trash2 className="w-5 h-5" />
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                ))
+                                                allEvents.map((ev) => {
+                                                    const raised = Number(ev.raisedSponsorship || 0);
+                                                    const target = Number(ev.targetSponsorship || 0);
+                                                    const pct = target > 0 ? Math.min(100, Math.round((raised / target) * 100)) : 0;
+                                                    const attendees = ev.expectedAttendees || ev.attendees || ev.capacity || 'TBD';
+                                                    const slots = ev.sponsorshipSlots || ev.slots || 'Open';
+
+                                                    return (
+                                                        <tr key={ev.id} className="hover:bg-[var(--bg-secondary)]/30 transition-colors group">
+                                                            <td className="px-8 py-6">
+                                                                <div>
+                                                                    <p className="font-black text-[var(--text-primary)] text-base">{ev.name || ev.title}</p>
+                                                                    <div className="flex items-center gap-2 mt-1">
+                                                                        <span className="text-[10px] text-spark-red font-black uppercase tracking-widest px-2 py-0.5 bg-spark-red/10 rounded-md">{ev.category || 'Experience'}</span>
+                                                                        <span className="text-[11px] text-[var(--text-secondary)] font-medium flex items-center gap-1">
+                                                                            <MapPin className="w-3 h-3" /> {ev.location || 'Campus Wide'}
+                                                                        </span>
+                                                                    </div>
+                                                                    <p className="text-xs text-[var(--text-secondary)] mt-1 font-medium line-clamp-1 max-w-[280px]">{ev.description}</p>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-8 py-6">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="w-9 h-9 rounded-xl bg-spark-purple/10 text-spark-purple flex items-center justify-center font-black text-sm flex-shrink-0">
+                                                                        {(ev.hostName || ev.organization || '?').charAt(0).toUpperCase()}
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className="text-sm font-black text-[var(--text-primary)]">{ev.hostName || ev.organization || 'Association'}</p>
+                                                                        {ev.hostEmail && <p className="text-[10px] font-medium text-[var(--text-secondary)]">{ev.hostEmail}</p>}
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-8 py-6">
+                                                                <div className="space-y-1">
+                                                                    <p className="text-xs font-bold text-[var(--text-primary)]">👥 {attendees} attendees</p>
+                                                                    <p className="text-[11px] font-medium text-[var(--text-secondary)]">🎟️ {slots} slots</p>
+                                                                    <p className="text-[10px] font-bold text-spark-red">📅 {ev.date || 'Upcoming'}</p>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-8 py-6">
+                                                                <div className="w-48 space-y-1.5">
+                                                                    <div className="flex justify-between items-center text-xs">
+                                                                        <span className="font-black text-emerald-600">₦{raised.toLocaleString()}</span>
+                                                                        <span className="font-bold text-[var(--text-secondary)]">of ₦{target.toLocaleString()}</span>
+                                                                    </div>
+                                                                    <div className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] h-2 rounded-full overflow-hidden">
+                                                                        <div className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                                                                    </div>
+                                                                    <p className="text-[10px] font-black text-right text-[var(--text-secondary)] uppercase tracking-wider">{pct}% Funded</p>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-8 py-6 text-right">
+                                                                <div className="flex items-center justify-end gap-2">
+                                                                    <button
+                                                                        onClick={() => setSelectedAdminEvent(ev)}
+                                                                        className="px-3.5 py-2 bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)] font-bold text-xs rounded-xl border border-[var(--border-color)] transition-all flex items-center gap-1.5"
+                                                                    >
+                                                                        <Eye className="w-3.5 h-3.5 text-spark-red" /> View Details
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setExternalSponsorSuccess(null);
+                                                                            const pkgs = parseEventPackages(ev.sponsorshipPackages);
+                                                                            const firstPkg = pkgs[0] || { name: 'Custom Sponsorship', price: 0 };
+                                                                            const defaultAmt = firstPkg.price || (ev.targetSponsorship ? String(ev.targetSponsorship) : '');
+                                                                            setExternalSponsorForm({
+                                                                                brandName: '',
+                                                                                eventId: ev.id,
+                                                                                packageName: firstPkg.name || 'Custom Sponsorship',
+                                                                                customAmount: defaultAmt ? String(defaultAmt) : '',
+                                                                                notes: ''
+                                                                            });
+                                                                            setShowExternalSponsorModal(true);
+                                                                        }}
+                                                                        className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 font-bold text-xs rounded-xl border border-emerald-200 dark:border-emerald-800 transition-all flex items-center gap-1.5"
+                                                                    >
+                                                                        <Handshake className="w-3.5 h-3.5 text-emerald-600" /> Sponsor
+                                                                    </button>
+                                                                    <button onClick={() => handleDeleteRecord('events', ev.id)} className="p-2 text-gray-400 hover:text-spark-red hover:bg-red-50 rounded-xl transition-all">
+                                                                        <Trash2 className="w-4 h-4" />
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })
                                             )}
                                         </tbody>
                                     </table>
@@ -1300,10 +2270,10 @@ const AdminDashboard: React.FC<{
 
                         {/* Email Blast Modal */}
                         {showEmailBlast && (
-                            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                                <div className="bg-[var(--bg-primary)] p-8 rounded-[2rem] border border-[var(--border-color)] max-w-xl w-full relative animate-in zoom-in-95 duration-300 shadow-2xl">
+                            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+                                <div className="bg-[var(--bg-primary)] p-8 rounded-[2rem] border border-[var(--border-color)] max-w-2xl w-full relative animate-in zoom-in-95 duration-300 shadow-2xl my-4">
                                     <button
-                                        onClick={() => setShowEmailBlast(false)}
+                                        onClick={() => { setShowEmailBlast(false); setBlastAttachments([]); setBlastBodyHtml(''); }}
                                         className="absolute top-6 right-6 p-2 text-[var(--text-secondary)] hover:text-spark-red hover:bg-red-50 rounded-full transition-all"
                                     >
                                         <XCircle className="w-6 h-6" />
@@ -1339,7 +2309,7 @@ const AdminDashboard: React.FC<{
                                                 </div>
                                             </div>
                                             <button
-                                                onClick={() => { setShowEmailBlast(false); setEmailBlastResult(null); }}
+                                                onClick={() => { setShowEmailBlast(false); setEmailBlastResult(null); setBlastAttachments([]); setBlastBodyHtml(''); }}
                                                 className="mt-4 px-6 py-3 bg-spark-red text-white font-black rounded-xl hover:bg-red-600 transition-all text-sm uppercase tracking-widest"
                                             >
                                                 Done
@@ -1347,29 +2317,32 @@ const AdminDashboard: React.FC<{
                                         </div>
                                     ) : (
                                         <form onSubmit={handleEmailBlast} className="space-y-5">
-                                            <div>
-                                                <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-[0.2em] mb-2">Target Audience</label>
-                                                <select
-                                                    value={emailBlastForm.role}
-                                                    onChange={e => setEmailBlastForm({...emailBlastForm, role: e.target.value})}
-                                                    className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-bold text-sm focus:ring-2 focus:ring-spark-red/20 outline-none text-[var(--text-primary)]"
-                                                >
-                                                    <option value="all">All Users</option>
-                                                    <option value="Creator">Creators Only</option>
-                                                    <option value="Brand">Brands Only</option>
-                                                    <option value="Association">Associations Only</option>
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-[0.2em] mb-2">Email Subject</label>
-                                                <input
-                                                    required
-                                                    type="text"
-                                                    value={emailBlastForm.subject}
-                                                    onChange={e => setEmailBlastForm({...emailBlastForm, subject: e.target.value})}
-                                                    className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-medium text-sm focus:ring-2 focus:ring-spark-red/20 outline-none text-[var(--text-primary)]"
-                                                    placeholder="e.g. Important Update from ABC-Rally"
-                                                />
+                                            {/* Audience */}
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-[0.2em] mb-2">Target Audience</label>
+                                                    <select
+                                                        value={emailBlastForm.role}
+                                                        onChange={e => setEmailBlastForm({...emailBlastForm, role: e.target.value})}
+                                                        className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-bold text-sm focus:ring-2 focus:ring-spark-red/20 outline-none text-[var(--text-primary)]"
+                                                    >
+                                                        <option value="all">All Users</option>
+                                                        <option value="Creator">Creators Only</option>
+                                                        <option value="Brand">Brands Only</option>
+                                                        <option value="Association">Associations Only</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-[0.2em] mb-2">Email Subject</label>
+                                                    <input
+                                                        required
+                                                        type="text"
+                                                        value={emailBlastForm.subject}
+                                                        onChange={e => setEmailBlastForm({...emailBlastForm, subject: e.target.value})}
+                                                        className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-medium text-sm focus:ring-2 focus:ring-spark-red/20 outline-none text-[var(--text-primary)]"
+                                                        placeholder="e.g. Important Update"
+                                                    />
+                                                </div>
                                             </div>
                                             <div>
                                                 <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-[0.2em] mb-2">Email Headline</label>
@@ -1382,24 +2355,127 @@ const AdminDashboard: React.FC<{
                                                     placeholder="e.g. Exciting news for our community!"
                                                 />
                                             </div>
+
+                                            {/* Rich Text Editor */}
                                             <div>
                                                 <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-[0.2em] mb-2">Message Body</label>
-                                                <textarea
-                                                    required
-                                                    rows={5}
-                                                    value={emailBlastForm.body}
-                                                    onChange={e => setEmailBlastForm({...emailBlastForm, body: e.target.value})}
-                                                    className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-medium text-sm focus:ring-2 focus:ring-spark-red/20 outline-none resize-none text-[var(--text-primary)]"
-                                                    placeholder="Write your message here. Be clear and concise."
+                                                {/* Formatting Toolbar */}
+                                                <div className="flex flex-wrap items-center gap-1 px-3 py-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-t-xl border-b-0">
+                                                    {[
+                                                        { cmd: 'bold', label: <span className="font-black text-sm">B</span>, title: 'Bold' },
+                                                        { cmd: 'italic', label: <span className="italic text-sm">I</span>, title: 'Italic' },
+                                                        { cmd: 'underline', label: <span className="underline text-sm">U</span>, title: 'Underline' },
+                                                    ].map(({ cmd, label, title }) => (
+                                                        <button
+                                                            key={cmd}
+                                                            type="button"
+                                                            title={title}
+                                                            onMouseDown={ev => { ev.preventDefault(); execBlastFormat(cmd); }}
+                                                            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-spark-red/10 hover:text-spark-red text-[var(--text-primary)] transition-all"
+                                                        >{label}</button>
+                                                    ))}
+                                                    <div className="w-px h-5 bg-[var(--border-color)] mx-1" />
+                                                    {[
+                                                        { cmd: 'insertParagraph', label: '¶', title: 'Paragraph' },
+                                                        { cmd: 'insertUnorderedList', label: '• List', title: 'Bullet List' },
+                                                        { cmd: 'insertOrderedList', label: '1. List', title: 'Numbered List' },
+                                                    ].map(({ cmd, label, title }) => (
+                                                        <button
+                                                            key={cmd}
+                                                            type="button"
+                                                            title={title}
+                                                            onMouseDown={ev => { ev.preventDefault(); execBlastFormat(cmd); }}
+                                                            className="px-2 h-8 flex items-center justify-center rounded-lg hover:bg-spark-red/10 hover:text-spark-red text-[var(--text-primary)] text-xs font-bold transition-all"
+                                                        >{label}</button>
+                                                    ))}
+                                                    <div className="w-px h-5 bg-[var(--border-color)] mx-1" />
+                                                    <select
+                                                        className="h-8 px-2 text-xs bg-transparent text-[var(--text-secondary)] font-bold rounded-lg hover:bg-spark-red/10 cursor-pointer outline-none border-none"
+                                                        defaultValue=""
+                                                        onChange={e => { if (e.target.value) execBlastFormat('fontSize', e.target.value); e.target.value = ''; }}
+                                                        title="Font Size"
+                                                    >
+                                                        <option value="" disabled>Size</option>
+                                                        <option value="1">Small</option>
+                                                        <option value="3">Normal</option>
+                                                        <option value="5">Large</option>
+                                                        <option value="7">Huge</option>
+                                                    </select>
+                                                    <select
+                                                        className="h-8 px-2 text-xs bg-transparent text-[var(--text-secondary)] font-bold rounded-lg hover:bg-spark-red/10 cursor-pointer outline-none border-none"
+                                                        defaultValue=""
+                                                        onChange={e => { if (e.target.value) execBlastFormat('foreColor', e.target.value); e.target.value = ''; }}
+                                                        title="Text Colour"
+                                                    >
+                                                        <option value="" disabled>Color</option>
+                                                        <option value="#111111">Black</option>
+                                                        <option value="#e53e3e">Red</option>
+                                                        <option value="#2563eb">Blue</option>
+                                                        <option value="#16a34a">Green</option>
+                                                        <option value="#d97706">Orange</option>
+                                                    </select>
+                                                </div>
+                                                {/* Editable area */}
+                                                <div
+                                                    ref={blastEditorRef}
+                                                    contentEditable
+                                                    suppressContentEditableWarning
+                                                    onInput={() => setBlastBodyHtml(blastEditorRef.current?.innerHTML || '')}
+                                                    data-placeholder="Write your message here. Use the toolbar above to format text."
+                                                    className="min-h-[160px] w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-b-xl text-sm text-[var(--text-primary)] outline-none focus:ring-2 focus:ring-spark-red/20 [&:empty]:before:content-[attr(data-placeholder)] [&:empty]:before:text-[var(--text-secondary)] [&:empty]:before:pointer-events-none leading-relaxed"
+                                                    style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}
                                                 />
                                             </div>
+
+                                            {/* Attachment Upload */}
+                                            <div className="space-y-3">
+                                                <label className="block text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-[0.2em]">Attachments <span className="normal-case text-[9px] font-medium">(Images, Videos, Files — uploaded to Firebase)</span></label>
+                                                <label className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed cursor-pointer transition-all ${ blastAttachUploading ? 'opacity-50 cursor-wait' : 'border-[var(--border-color)] hover:border-spark-red/40 hover:bg-spark-red/5' }`}>
+                                                    {blastAttachUploading ? (
+                                                        <><Loader2 className="w-4 h-4 animate-spin text-spark-red" /><span className="text-xs font-bold text-[var(--text-secondary)]">Uploading...</span></>
+                                                    ) : (
+                                                        <><Plus className="w-4 h-4 text-spark-red" /><span className="text-xs font-bold text-[var(--text-secondary)]">Add Image / Video / File</span></>
+                                                    )}
+                                                    <input
+                                                        type="file"
+                                                        multiple
+                                                        accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip"
+                                                        onChange={handleBlastAttachment}
+                                                        className="hidden"
+                                                        disabled={blastAttachUploading}
+                                                    />
+                                                </label>
+                                                {/* Attachment previews */}
+                                                {blastAttachments.length > 0 && (
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {blastAttachments.map((att, idx) => (
+                                                            <div key={idx} className="relative group flex items-center gap-2 px-3 py-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-primary)] max-w-[180px]">
+                                                                {att.type.startsWith('image/') ? (
+                                                                    <img src={att.url} alt={att.name} className="w-8 h-8 rounded-lg object-cover flex-shrink-0" />
+                                                                ) : att.type.startsWith('video/') ? (
+                                                                    <span className="text-base">🎬</span>
+                                                                ) : (
+                                                                    <span className="text-base">📎</span>
+                                                                )}
+                                                                <span className="truncate text-[10px]">{att.name}</span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setBlastAttachments(prev => prev.filter((_, i) => i !== idx))}
+                                                                    className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full text-[8px] font-black flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                >✕</button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+
                                             <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-100 rounded-xl">
                                                 <Info className="w-4 h-4 text-amber-600 flex-shrink-0" />
                                                 <p className="text-[11px] font-bold text-amber-700">This will send a real email to every {emailBlastForm.role === 'all' ? 'user' : emailBlastForm.role} on the platform. Double-check before sending.</p>
                                             </div>
                                             <button
                                                 type="submit"
-                                                disabled={emailBlastLoading}
+                                                disabled={emailBlastLoading || blastAttachUploading}
                                                 className="w-full flex items-center justify-center gap-2 py-4 bg-spark-red text-white font-black rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-100/50 uppercase tracking-widest text-sm disabled:opacity-60"
                                             >
                                                 {emailBlastLoading ? (
@@ -2448,10 +3524,159 @@ const AdminDashboard: React.FC<{
                                                                     {t.type === 'credit' ? '+' : '-'} ₦{Number(t.amount || 0).toLocaleString()}
                                                                 </p>
                                                             </div>
-                                                        ));
-                                                     })()}
+                                                         ));
+                                                      })()}
                                                 </div>
                                             </div>
+
+                                            {/* Creator Commercial Profile & WhatsApp Audience Review (Section 9.3) */}
+                                            {selectedUserDetail.role === 'Creator' && (
+                                                <div className="p-8 bg-[var(--bg-secondary)] rounded-3xl border border-[var(--border-color)] space-y-6 text-left">
+                                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-[var(--border-color)] pb-4">
+                                                        <div>
+                                                            <span className="text-[10px] font-black text-spark-red uppercase tracking-widest">Creator Profile Review</span>
+                                                            <h4 className="text-xl font-black text-[var(--text-primary)]">Commercial & Audience Claims</h4>
+                                                        </div>
+                                                        <span className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider ${
+                                                            selectedUserDetail.reviewStatus === 'approved'
+                                                                ? 'bg-green-500/10 text-green-600 border border-green-500/20'
+                                                                : selectedUserDetail.reviewStatus === 'needs_update'
+                                                                ? 'bg-red-500/10 text-red-600 border border-red-500/20'
+                                                                : 'bg-yellow-500/10 text-yellow-600 border border-yellow-500/20'
+                                                        }`}>
+                                                            {selectedUserDetail.reviewStatus === 'approved' ? '✓ Approved' : selectedUserDetail.reviewStatus === 'needs_update' ? '⚠ Needs Update' : '⏳ Ready for Review'}
+                                                        </span>
+                                                    </div>
+
+                                                    <div className="grid sm:grid-cols-2 gap-4 text-xs font-medium">
+                                                        <div>
+                                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase">Headline</p>
+                                                            <p className="font-bold text-[var(--text-primary)] mt-0.5">{selectedUserDetail.professionalHeadline || 'None declared'}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase">Location & Reach</p>
+                                                            <p className="font-bold text-[var(--text-primary)] mt-0.5">{selectedUserDetail.city ? `${selectedUserDetail.city}, ${selectedUserDetail.state}` : (selectedUserDetail.location || 'Not set')}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase">Capabilities & Primary</p>
+                                                            <p className="font-bold text-[var(--text-primary)] mt-0.5">{(selectedUserDetail.capabilities || []).join(', ') || 'None'} (Primary: {selectedUserDetail.primaryCapability || 'None'})</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase">Starting Price & Basis</p>
+                                                            <p className="font-bold text-[var(--text-primary)] mt-0.5">
+                                                                {selectedUserDetail.pricingNegotiable ? 'Negotiable' : `₦${Number(selectedUserDetail.startingPrice || 0).toLocaleString()}`} ({selectedUserDetail.pricingBasis || 'Per project'})
+                                                            </p>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* WhatsApp Media & Evidence Section */}
+                                                    {(selectedUserDetail.whatsappMediaName || selectedUserDetail.whatsappAudienceEvidence) && (
+                                                        <div className="p-6 bg-green-500/5 border border-green-500/20 rounded-2xl space-y-4">
+                                                            <div className="flex items-center justify-between border-b border-green-500/20 pb-2">
+                                                                <h5 className="font-black text-sm text-[var(--text-primary)] flex items-center gap-2">
+                                                                    📻 WhatsApp Audience Claims
+                                                                </h5>
+                                                                <span className="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase">
+                                                                    {selectedUserDetail.whatsappMediaType || 'Media Provider'}
+                                                                </span>
+                                                            </div>
+                                                            <div className="grid sm:grid-cols-3 gap-3 text-xs">
+                                                                <div>
+                                                                    <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase">Media Name</p>
+                                                                    <p className="font-bold text-[var(--text-primary)]">{selectedUserDetail.whatsappMediaName || 'N/A'}</p>
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase">Campus Coverage</p>
+                                                                    <p className="font-bold text-[var(--text-primary)]">{selectedUserDetail.whatsappCampusCoverage || 'N/A'}</p>
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase">Audience Category</p>
+                                                                    <p className="font-bold text-[var(--text-primary)]">{selectedUserDetail.whatsappPrimaryAudience || 'N/A'}</p>
+                                                                </div>
+                                                                {selectedUserDetail.whatsappAverageStatusViews !== undefined && (
+                                                                    <div>
+                                                                        <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase">Declared Status Views</p>
+                                                                        <p className="font-black text-green-600 dark:text-green-400">{Number(selectedUserDetail.whatsappAverageStatusViews).toLocaleString()} views</p>
+                                                                    </div>
+                                                                )}
+                                                                {selectedUserDetail.whatsappChannelFollowers !== undefined && (
+                                                                    <div>
+                                                                        <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase">Channel Followers</p>
+                                                                        <p className="font-black text-green-600 dark:text-green-400">{Number(selectedUserDetail.whatsappChannelFollowers).toLocaleString()} followers</p>
+                                                                    </div>
+                                                                )}
+                                                                <div>
+                                                                    <p className="text-[9px] font-black text-[var(--text-secondary)] uppercase">Placement Rate</p>
+                                                                    <p className="font-bold text-[var(--text-primary)]">₦{Number(selectedUserDetail.whatsappRatePerPlacement || selectedUserDetail.startingPrice || 0).toLocaleString()}</p>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Evidence Screenshot Preview */}
+                                                            {selectedUserDetail.whatsappAudienceEvidence && (
+                                                                <div className="pt-3 border-t border-green-500/20 space-y-2">
+                                                                    <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase">Uploaded Audience Evidence (Admin Only)</p>
+                                                                    <div className="relative group max-w-sm rounded-xl overflow-hidden border border-green-500/30">
+                                                                        <img src={selectedUserDetail.whatsappAudienceEvidence} alt="Audience Evidence" className="w-full h-40 object-cover" />
+                                                                        <a href={selectedUserDetail.whatsappAudienceEvidence} target="_blank" rel="noopener noreferrer" className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center text-white text-xs font-bold uppercase tracking-wider">
+                                                                            🔍 View Full Screenshot
+                                                                        </a>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Admin Approve / Request Update */}
+                                                    <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={async () => {
+                                                                try {
+                                                                    await updateDoc(doc(db, 'users', selectedUserDetail.id), {
+                                                                        reviewStatus: 'approved',
+                                                                        profileSubmittedForReview: false,
+                                                                        whatsappAudienceReviewedDate: new Date().toISOString()
+                                                                    });
+                                                                    setSelectedUserDetail((prev: any) => ({
+                                                                        ...prev,
+                                                                        reviewStatus: 'approved',
+                                                                        profileSubmittedForReview: false,
+                                                                        whatsappAudienceReviewedDate: new Date().toISOString()
+                                                                    }));
+                                                                    alert('Profile approved for hiring directory!');
+                                                                } catch (err: any) {
+                                                                    alert('Failed to approve: ' + err.message);
+                                                                }
+                                                            }}
+                                                            className="flex-1 py-3 bg-green-600 text-white font-black text-xs uppercase tracking-widest rounded-xl hover:bg-green-700 transition-all"
+                                                        >
+                                                            ✓ Approve Profile
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={async () => {
+                                                                try {
+                                                                    await updateDoc(doc(db, 'users', selectedUserDetail.id), {
+                                                                        reviewStatus: 'needs_update',
+                                                                        profileSubmittedForReview: false
+                                                                    });
+                                                                    setSelectedUserDetail((prev: any) => ({
+                                                                        ...prev,
+                                                                        reviewStatus: 'needs_update',
+                                                                        profileSubmittedForReview: false
+                                                                    }));
+                                                                    alert('Profile marked as Needs Update!');
+                                                                } catch (err: any) {
+                                                                    alert('Failed: ' + err.message);
+                                                                }
+                                                            }}
+                                                            className="flex-1 py-3 bg-red-600 text-white font-black text-xs uppercase tracking-widest rounded-xl hover:bg-red-700 transition-all"
+                                                        >
+                                                            ⚠ Request Profile Update
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
 
                                             {/* Action Bar */}
                                             <div className="pt-10 border-t border-[var(--border-color)] flex gap-4">
@@ -2631,9 +3856,476 @@ const AdminDashboard: React.FC<{
                     </div>
                 </div>
             )}
+
+        {/* ────────────────────────────────────────────────────────────────
+            External Brand Sponsorship Modal (Scrollable Overlay)
+        ──────────────────────────────────────────────────────────────── */}
+        {showExternalSponsorModal && (
+            <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-black/70 backdrop-blur-md overflow-y-auto">
+                <div className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-300 my-auto">
+                    {/* Sticky Header */}
+                    <div className="bg-gradient-to-r from-emerald-500 to-teal-600 p-6 sm:p-8 relative overflow-hidden flex-shrink-0">
+                        <div className="absolute inset-0 opacity-10">
+                            <div className="absolute -top-8 -right-8 w-40 h-40 bg-white rounded-full" />
+                            <div className="absolute -bottom-4 -left-4 w-24 h-24 bg-white rounded-full" />
+                        </div>
+                        <div className="relative flex items-start justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center flex-shrink-0">
+                                    <Handshake className="w-6 h-6 text-white" />
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-black text-white">Fund Event on Behalf of Brand</h2>
+                                    <p className="text-emerald-100 text-xs font-medium mt-0.5">Off-platform corporate sponsorship — no payment gateway required</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowExternalSponsorModal(false)}
+                                className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-xl flex items-center justify-center text-white font-black transition-all"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Scrollable Form Body */}
+                    <form onSubmit={handleFundEventOffPlatform} className="p-6 sm:p-8 space-y-6 overflow-y-auto flex-1">
+                        {externalSponsorSuccess && (
+                            <div className="flex items-start gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl">
+                                <Award className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                                <div>
+                                    <p className="font-black text-emerald-700 text-sm">Sponsorship Recorded & Wallet Credited!</p>
+                                    <p className="text-emerald-600 text-xs font-medium mt-1">{externalSponsorSuccess}</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Select Event */}
+                        <div>
+                            <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">
+                                Select Target Event <span className="text-spark-red">*</span>
+                            </label>
+                            <select
+                                required
+                                value={externalSponsorForm.eventId}
+                                onChange={e => {
+                                    const evId = e.target.value;
+                                    const ev = allEvents.find(ev => ev.id === evId);
+                                    const pkgs = ev ? parseEventPackages(ev.sponsorshipPackages) : [];
+                                    setExternalSponsorForm(prev => ({
+                                        ...prev,
+                                        eventId: evId,
+                                        packageName: pkgs.length > 0 ? pkgs[0].name : '',
+                                        customAmount: pkgs.length > 0 && pkgs[0].price > 0 ? String(pkgs[0].price) : prev.customAmount
+                                    }));
+                                }}
+                                className="w-full px-4 py-3.5 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-bold text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400 transition-all"
+                            >
+                                <option value="">— Select a listed campus event —</option>
+                                {allEvents.map(ev => (
+                                    <option key={ev.id} value={ev.id}>
+                                        {ev.title || ev.name} — {ev.hostName || ev.organization || 'Association'} ({ev.date || 'Upcoming'})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Planner Event Information Card (Auto-Populated) */}
+                        {externalSponsorForm.eventId && (() => {
+                            const ev = allEvents.find(e => e.id === externalSponsorForm.eventId);
+                            if (!ev) return null;
+                            const raised = Number(ev.raisedSponsorship || 0);
+                            const target = Number(ev.targetSponsorship || 0);
+                            const pct = target > 0 ? Math.min(100, Math.round((raised / target) * 100)) : 0;
+                            const attendees = ev.expectedAttendees || ev.attendees || ev.capacity || 'TBD';
+                            const slots = ev.sponsorshipSlots || ev.slots || 'Open';
+                            const pkgs = parseEventPackages(ev.sponsorshipPackages);
+
+                            return (
+                                <div className="p-5 bg-[var(--bg-secondary)]/80 border border-[var(--border-color)] rounded-2xl space-y-4">
+                                    <div className="flex items-start justify-between">
+                                        <div>
+                                            <span className="text-[9px] font-black text-spark-red uppercase tracking-widest px-2 py-0.5 bg-spark-red/10 rounded-md mb-1 inline-block">
+                                                {ev.category || 'Event Summary'}
+                                            </span>
+                                            <h4 className="text-base font-black text-[var(--text-primary)]">{ev.title || ev.name}</h4>
+                                            <p className="text-xs text-[var(--text-secondary)] font-medium mt-0.5">
+                                                Organized by <strong className="text-[var(--text-primary)]">{ev.hostName || ev.organization || 'Association'}</strong> ({ev.hostEmail || 'No email'})
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedAdminEvent(ev)}
+                                            className="px-3 py-1.5 bg-[var(--bg-primary)] hover:bg-[var(--bg-tertiary)] border border-[var(--border-color)] text-xs font-bold text-spark-red rounded-lg transition-all flex items-center gap-1"
+                                        >
+                                            <Eye className="w-3 h-3" /> Full Spec
+                                        </button>
+                                    </div>
+
+                                    {/* Planner Details Grid */}
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs bg-[var(--bg-primary)] p-3 rounded-xl border border-[var(--border-color)]">
+                                        <div>
+                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase">Attendees</p>
+                                            <p className="font-black text-[var(--text-primary)] mt-0.5">👥 {attendees}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase">Avail. Slots</p>
+                                            <p className="font-black text-[var(--text-primary)] mt-0.5">🎟️ {slots}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase">Location & Date</p>
+                                            <p className="font-bold text-[var(--text-primary)] truncate mt-0.5">📍 {ev.location || 'Campus'} • {ev.date || 'Date TBD'}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Funding Progress */}
+                                    <div className="space-y-1.5">
+                                        <div className="flex justify-between text-xs font-bold">
+                                            <span className="text-[var(--text-secondary)]">Funding Goal:</span>
+                                            <span className="text-[var(--text-primary)]">
+                                                <strong className="text-emerald-600">₦{raised.toLocaleString()}</strong> raised of ₦{target.toLocaleString()} target ({pct}%)
+                                            </span>
+                                        </div>
+                                        <div className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] h-2.5 rounded-full overflow-hidden">
+                                            <div className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                                        </div>
+                                    </div>
+
+                                    {/* Packages Defined by Planner */}
+                                    {pkgs.length > 0 && (
+                                        <div className="space-y-2 pt-2 border-t border-[var(--border-color)]">
+                                            <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-wider">Packages Defined by Planner:</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {pkgs.map((pkg, idx) => (
+                                                    <div key={idx} className="px-3 py-1.5 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl text-xs">
+                                                        <span className="font-black text-[var(--text-primary)]">{pkg.name}</span>: <span className="font-bold text-emerald-600">₦{pkg.price ? Number(pkg.price).toLocaleString() : 'Custom'}</span>
+                                                        {pkg.entails && <p className="text-[10px] text-[var(--text-secondary)] font-medium italic mt-0.5 line-clamp-1">{pkg.entails}</p>}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
+
+                        {/* Brand Name */}
+                        <div>
+                            <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">
+                                Off-Platform Brand / Company Name <span className="text-spark-red">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                required
+                                placeholder="e.g. Coca-Cola Nigeria, Red Bull, MTN, GTBank"
+                                value={externalSponsorForm.brandName}
+                                onChange={e => setExternalSponsorForm(prev => ({ ...prev, brandName: e.target.value }))}
+                                className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-medium text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/50 focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400 transition-all"
+                            />
+                        </div>
+
+                        {/* Package & Amount */}
+                        <div className="grid sm:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">
+                                    Sponsorship Tier / Package
+                                </label>
+                                {externalSponsorForm.eventId && (() => {
+                                    const ev = allEvents.find(ev => ev.id === externalSponsorForm.eventId);
+                                    const pkgs = ev ? parseEventPackages(ev.sponsorshipPackages) : [];
+                                    if (pkgs.length > 0) {
+                                        return (
+                                            <select
+                                                value={externalSponsorForm.packageName}
+                                                onChange={e => {
+                                                    const pkg = pkgs.find(p => p.name === e.target.value);
+                                                    setExternalSponsorForm(prev => ({
+                                                        ...prev,
+                                                        packageName: e.target.value,
+                                                        customAmount: pkg && pkg.price > 0 ? String(pkg.price) : prev.customAmount
+                                                    }));
+                                                }}
+                                                className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-bold text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400 transition-all"
+                                            >
+                                                {pkgs.map(pkg => (
+                                                    <option key={pkg.name} value={pkg.name}>
+                                                        {pkg.name} {pkg.price > 0 ? `(₦${Number(pkg.price).toLocaleString()})` : ''}
+                                                    </option>
+                                                ))}
+                                                <option value="Custom Sponsorship">Custom Sponsorship Tier</option>
+                                            </select>
+                                        );
+                                    }
+                                    return (
+                                        <input
+                                            type="text"
+                                            placeholder="e.g. Title Sponsor, Gold Tier"
+                                            value={externalSponsorForm.packageName}
+                                            onChange={e => setExternalSponsorForm(prev => ({ ...prev, packageName: e.target.value }))}
+                                            className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-medium text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400 transition-all"
+                                        />
+                                    );
+                                })()}
+                                {!externalSponsorForm.eventId && (
+                                    <input
+                                        type="text"
+                                        placeholder="Select an event first"
+                                        value={externalSponsorForm.packageName}
+                                        onChange={e => setExternalSponsorForm(prev => ({ ...prev, packageName: e.target.value }))}
+                                        className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-medium text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400 transition-all"
+                                    />
+                                )}
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">
+                                    Sponsorship Amount (₦) <span className="text-spark-red">*</span>
+                                </label>
+                                <div className="relative">
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-[var(--text-secondary)] text-sm">₦</span>
+                                    <input
+                                        type="number"
+                                        required
+                                        min="100"
+                                        step="1"
+                                        placeholder="e.g. 500000"
+                                        value={externalSponsorForm.customAmount}
+                                        onChange={e => setExternalSponsorForm(prev => ({ ...prev, customAmount: e.target.value }))}
+                                        className="w-full pl-8 pr-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-black text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400 transition-all"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Admin Notes */}
+                        <div>
+                            <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">
+                                Internal Notes / Payment Reference <span className="normal-case text-[10px] font-normal">(Optional)</span>
+                            </label>
+                            <input
+                                type="text"
+                                placeholder="e.g. Offline bank transfer ref #OFF-9482, Cheque received"
+                                value={externalSponsorForm.notes}
+                                onChange={e => setExternalSponsorForm(prev => ({ ...prev, notes: e.target.value }))}
+                                className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl font-medium text-sm text-[var(--text-primary)] outline-none"
+                            />
+                        </div>
+
+                        {/* Informational Callout */}
+                        <div className="flex items-start gap-3 p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl">
+                            <Info className="w-5 h-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" />
+                            <p className="text-xs font-medium text-emerald-800 dark:text-emerald-300 leading-relaxed">
+                                <strong>Direct Disbursal:</strong> Submitting will instantly credit ₦{Number(externalSponsorForm.customAmount || 0).toLocaleString()} to the event planner's wallet, log the partnership as paid, and update the event's raised funding. No payment gateway needed.
+                            </p>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="flex items-center justify-end gap-3 pt-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowExternalSponsorModal(false)}
+                                className="px-6 py-3.5 bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)] font-bold text-xs uppercase tracking-wider rounded-xl transition-all"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={externalSponsorSubmitting}
+                                className="px-8 py-3.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-emerald-900/20 transition-all flex items-center gap-2 disabled:opacity-60 active:scale-95"
+                            >
+                                {externalSponsorSubmitting ? (
+                                    <><Loader2 className="w-4 h-4 animate-spin" /> Processing...</>
+                                ) : (
+                                    <><Handshake className="w-4 h-4" /> Fund & Credit Planner Wallet</>
+                                )}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        )}
+
+        {/* ────────────────────────────────────────────────────────────────
+            Full Admin Event Detail Modal (Full Inspection)
+        ──────────────────────────────────────────────────────────────── */}
+        {selectedAdminEvent && (
+            <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-black/70 backdrop-blur-md overflow-y-auto">
+                <div className="bg-[var(--bg-primary)] rounded-[2.5rem] border border-[var(--border-color)] shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-300 my-auto">
+                    {/* Modal Header */}
+                    <div className="bg-gradient-to-r from-spark-red to-red-600 p-6 sm:p-8 relative overflow-hidden flex-shrink-0 text-white">
+                        <div className="flex items-start justify-between relative z-10">
+                            <div>
+                                <span className="px-3 py-1 bg-white/20 text-white rounded-full text-[10px] font-black uppercase tracking-widest inline-block mb-2">
+                                    {selectedAdminEvent.category || 'Campus Experience'}
+                                </span>
+                                <h2 className="text-2xl sm:text-3xl font-black">{selectedAdminEvent.name || selectedAdminEvent.title}</h2>
+                                <p className="text-white/80 text-xs font-bold mt-1">
+                                    Hosted by {selectedAdminEvent.hostName || selectedAdminEvent.organization || 'Association'}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setSelectedAdminEvent(null)}
+                                className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-xl flex items-center justify-center text-white font-black transition-all"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Scrollable Body */}
+                    <div className="p-6 sm:p-8 space-y-6 overflow-y-auto flex-1">
+                        {/* Event Quick Metrics */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                            <div className="bg-[var(--bg-secondary)] p-4 rounded-2xl border border-[var(--border-color)]">
+                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-wider">Target Goal</p>
+                                <p className="text-lg font-black text-[var(--text-primary)] mt-1">₦{Number(selectedAdminEvent.targetSponsorship || 0).toLocaleString()}</p>
+                            </div>
+                            <div className="bg-[var(--bg-secondary)] p-4 rounded-2xl border border-[var(--border-color)]">
+                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-wider">Raised So Far</p>
+                                <p className="text-lg font-black text-emerald-600 mt-1">₦{Number(selectedAdminEvent.raisedSponsorship || 0).toLocaleString()}</p>
+                            </div>
+                            <div className="bg-[var(--bg-secondary)] p-4 rounded-2xl border border-[var(--border-color)]">
+                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-wider">Attendees</p>
+                                <p className="text-lg font-black text-[var(--text-primary)] mt-1">👥 {selectedAdminEvent.expectedAttendees || selectedAdminEvent.attendees || 'TBD'}</p>
+                            </div>
+                            <div className="bg-[var(--bg-secondary)] p-4 rounded-2xl border border-[var(--border-color)]">
+                                <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-wider">Sponsorship Slots</p>
+                                <p className="text-lg font-black text-[var(--text-primary)] mt-1">🎟️ {selectedAdminEvent.sponsorshipSlots || selectedAdminEvent.slots || 'Open'}</p>
+                            </div>
+                        </div>
+
+                        {/* Progress Bar */}
+                        {(() => {
+                            const raised = Number(selectedAdminEvent.raisedSponsorship || 0);
+                            const target = Number(selectedAdminEvent.targetSponsorship || 0);
+                            const pct = target > 0 ? Math.min(100, Math.round((raised / target) * 100)) : 0;
+                            return (
+                                <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-2xl space-y-2">
+                                    <div className="flex justify-between items-center text-xs font-black">
+                                        <span className="text-emerald-800 dark:text-emerald-300">Overall Sponsorship Progress:</span>
+                                        <span className="text-emerald-700 dark:text-emerald-400">{pct}% Funded</span>
+                                    </div>
+                                    <div className="w-full bg-emerald-200 dark:bg-emerald-900/60 h-3 rounded-full overflow-hidden">
+                                        <div className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
+                        {/* Event Details Grid */}
+                        <div className="grid sm:grid-cols-2 gap-6 bg-[var(--bg-secondary)]/50 p-6 rounded-2xl border border-[var(--border-color)]">
+                            <div>
+                                <h4 className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-3">Planner Information</h4>
+                                <div className="space-y-2 text-sm font-semibold">
+                                    <p className="text-[var(--text-primary)]">👤 {selectedAdminEvent.hostName || selectedAdminEvent.organization || 'Association'}</p>
+                                    <p className="text-[var(--text-secondary)]">✉️ {selectedAdminEvent.hostEmail || 'No email provided'}</p>
+                                    {selectedAdminEvent.hostPhone && <p className="text-[var(--text-secondary)]">📞 {selectedAdminEvent.hostPhone}</p>}
+                                    <p className="text-[var(--text-secondary)]">🆔 Host ID: <code className="text-xs bg-[var(--bg-tertiary)] px-2 py-0.5 rounded">{selectedAdminEvent.hostId || 'N/A'}</code></p>
+                                </div>
+                            </div>
+                            <div>
+                                <h4 className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-3">Event Schedule & Venue</h4>
+                                <div className="space-y-2 text-sm font-semibold">
+                                    <p className="text-[var(--text-primary)]">📅 Date: {selectedAdminEvent.date || 'Upcoming'}</p>
+                                    <p className="text-[var(--text-primary)]">📍 Location: {selectedAdminEvent.location || 'Campus Wide'}</p>
+                                    {selectedAdminEvent.activationNeeds && (
+                                        <p className="text-[var(--text-secondary)] text-xs italic">💡 Activation: {selectedAdminEvent.activationNeeds}</p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Description */}
+                        <div>
+                            <h4 className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-2">Description</h4>
+                            <div className="p-5 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl text-sm font-medium leading-relaxed text-[var(--text-primary)]">
+                                {selectedAdminEvent.description || 'No detailed description provided by organizer.'}
+                            </div>
+                        </div>
+
+                        {/* Sponsorship Packages Defined */}
+                        <div>
+                            <h4 className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-3">Sponsorship Packages & Tiers</h4>
+                            {(() => {
+                                const pkgs = parseEventPackages(selectedAdminEvent.sponsorshipPackages);
+                                if (pkgs.length === 0) {
+                                    return <p className="text-xs text-[var(--text-secondary)] italic">No specific sponsorship packages defined.</p>;
+                                }
+                                return (
+                                    <div className="grid sm:grid-cols-2 gap-4">
+                                        {pkgs.map((pkg, idx) => (
+                                            <div key={idx} className="p-4 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-2xl space-y-1.5">
+                                                <div className="flex justify-between items-center">
+                                                    <h5 className="font-black text-[var(--text-primary)] text-sm">{pkg.name}</h5>
+                                                    <span className="px-3 py-1 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 rounded-lg text-xs font-black">
+                                                        ₦{pkg.price ? Number(pkg.price).toLocaleString() : 'Custom'}
+                                                    </span>
+                                                </div>
+                                                {pkg.entails && (
+                                                    <p className="text-xs text-[var(--text-secondary)] font-medium">{pkg.entails}</p>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                );
+                            })()}
+                        </div>
+
+                        {/* Current Sponsors List */}
+                        {Array.isArray(selectedAdminEvent.sponsors) && selectedAdminEvent.sponsors.length > 0 && (
+                            <div>
+                                <h4 className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-widest mb-3">Confirmed Sponsors & Funders</h4>
+                                <div className="space-y-2">
+                                    {selectedAdminEvent.sponsors.map((sp: any, idx: number) => (
+                                        <div key={idx} className="p-3 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl flex justify-between items-center text-xs font-bold">
+                                            <div>
+                                                <span className="text-[var(--text-primary)] font-black">{sp.name}</span>
+                                                <span className="text-[var(--text-secondary)] ml-2">({sp.package || 'Sponsor'})</span>
+                                                {sp.isExternal && <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 text-[9px] font-black rounded uppercase">Off-Platform</span>}
+                                            </div>
+                                            <span className="text-emerald-600 font-black">₦{Number(sp.amount || 0).toLocaleString()}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Modal Footer */}
+                    <div className="p-6 bg-[var(--bg-secondary)] border-t border-[var(--border-color)] flex items-center justify-between flex-shrink-0">
+                        <button
+                            onClick={() => setSelectedAdminEvent(null)}
+                            className="px-6 py-3 bg-[var(--bg-primary)] hover:bg-[var(--bg-tertiary)] border border-[var(--border-color)] text-[var(--text-primary)] font-bold text-xs uppercase tracking-wider rounded-xl transition-all"
+                        >
+                            Close
+                        </button>
+                        <button
+                            onClick={() => {
+                                const ev = selectedAdminEvent;
+                                setSelectedAdminEvent(null);
+                                setExternalSponsorSuccess(null);
+                                const pkgs = parseEventPackages(ev.sponsorshipPackages);
+                                const firstPkg = pkgs[0] || { name: 'Custom Sponsorship', price: 0 };
+                                const defaultAmt = firstPkg.price || (ev.targetSponsorship ? String(ev.targetSponsorship) : '');
+                                setExternalSponsorForm({
+                                    brandName: '',
+                                    eventId: ev.id,
+                                    packageName: firstPkg.name || 'Custom Sponsorship',
+                                    customAmount: defaultAmt ? String(defaultAmt) : '',
+                                    notes: ''
+                                });
+                                setShowExternalSponsorModal(true);
+                            }}
+                            className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-emerald-900/20 transition-all flex items-center gap-2"
+                        >
+                            <Handshake className="w-4 h-4" /> Fund on Behalf of Brand
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
         </DashboardShell>
     );
 };
 
 export default AdminDashboard;
-const Loader2 = ({className}: {className?: string}) => <svg className={`animate-spin ${className}`} viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>;

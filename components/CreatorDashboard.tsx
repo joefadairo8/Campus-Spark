@@ -11,6 +11,7 @@ import { EventDetailsModal } from './EventDetailsModal';
 import { WalletService } from '../WalletService';
 import { CreatorProfileModal } from './CreatorProfileModal';
 import { Search, Zap, Rocket, Mail, Wallet, Clock, TrendingUp, ArrowUpRight, ArrowDownLeft, Briefcase, Plus, Trash2, ExternalLink, FileText, Image as ImageIcon, Download, Star, Award, Shield, User, Sparkles, AlertCircle, CheckCircle, Circle, UserCheck, HelpCircle, Send, MessageSquare, Building2, Instagram, Twitter, Scale } from 'lucide-react';
+import { CreatorOnboardingModal } from './CreatorOnboardingModal';
 import { DisputesPanel } from './DisputesPanel';
 
 const isTransactionActive = (trans: any, myCampaigns: any[]) => {
@@ -376,6 +377,18 @@ const CreatorDashboard: React.FC<{
     useEffect(() => {
         fetchWallet();
     }, [currentSection, userProfile]);
+
+    // Section 10.2 — Deep Link: ?onboard=true lands creator directly on Commercial profile tab
+    useEffect(() => {
+        if (!userProfile) return; // wait until profile loads
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('onboard') === 'true') {
+            setCurrentSection('profile_portfolio');
+            setProfileSubTab('profile'); // 'profile' sub-tab shows the commercial form
+            // Strip param from URL so refresh doesn't re-trigger
+            window.history.replaceState({}, '', window.location.pathname);
+        }
+    }, [userProfile?.id]);
 
     const handleWithdraw = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -1467,15 +1480,158 @@ const CreatorDashboard: React.FC<{
     };
 
     const renderOverview = () => {
-        const profileCompletion = (() => {
-            if (!userProfile) return 0;
-            let score = 0;
-            if (userProfile.bio) score += 20;
-            if (userProfile.nicheCategory || userProfile.niche) score += 20;
-            if (userProfile.skills && userProfile.skills.length > 0) score += 20;
-            if (userProfile.instagram || userProfile.twitter || userProfile.tiktok) score += 20;
-            if (userProfile.portfolio && userProfile.portfolio.length > 0) score += 20;
-            return score;
+        // --- Section 7.3: Profile Completion Checklist Items & Calculations ---
+        const checklist = (() => {
+            const caps = (userProfile?.capabilities || []).map((c: string) => c.toLowerCase());
+            const services = (userProfile?.services || userProfile?.skills || []);
+
+            const photo = Boolean(userProfile?.imageUrl);
+            const headline = Boolean(userProfile?.professionalHeadline);
+            const capAndServices = Boolean(
+                userProfile?.capabilities && userProfile.capabilities.length > 0 &&
+                services && services.length > 0
+            );
+
+            const hasLocation = Boolean(userProfile?.location || (userProfile?.city && userProfile?.state));
+            const needsReach = caps.includes('distribute') || caps.includes('activate');
+            const hasReach = !needsReach || Boolean(userProfile?.campusCommunityReach);
+            const locationAndReach = hasLocation && hasReach;
+
+            const summary = Boolean(userProfile?.professionalSummary);
+            const portfolio = Boolean(userProfile?.portfolio && userProfile.portfolio.length > 0);
+
+            const price = Boolean(
+                (userProfile?.startingPrice !== undefined && userProfile?.startingPrice !== null) || userProfile?.pricingNegotiable
+            );
+            const pricingBasis = Boolean(userProfile?.pricingBasis);
+            const priceAndBasis = price && pricingBasis;
+
+            const turnaround = Boolean(userProfile?.turnaroundTime);
+            const availAndWorkPref = Boolean(userProfile?.availability && userProfile?.workPreference);
+
+            const isWhatsAppSelected = caps.includes('distribute') && services.some((s: string) => 
+                s.toLowerCase().includes('whatsapp')
+            );
+            const whatsappMediaInfo = !isWhatsAppSelected || Boolean(userProfile?.campusCommunityReach || userProfile?.phoneNumber);
+
+            const items = [
+                { id: 'photo', label: 'Profile photo or business/media logo', completed: photo, targetSubTab: 'profile' },
+                { id: 'headline', label: 'Professional headline', completed: headline, targetSubTab: 'profile' },
+                { id: 'capabilities', label: 'Capability and services', completed: capAndServices, targetSubTab: 'profile' },
+                { id: 'location', label: 'Location and delivery reach', completed: locationAndReach, targetSubTab: 'profile' },
+                { id: 'summary', label: 'Professional summary', completed: summary, targetSubTab: 'profile' },
+                { id: 'portfolio', label: 'Portfolio or work sample', completed: portfolio, targetSubTab: 'portfolio' },
+                { id: 'pricing', label: 'Price and pricing basis', completed: priceAndBasis, targetSubTab: 'profile' },
+                { id: 'turnaround', label: 'Turnaround time', completed: turnaround, targetSubTab: 'profile' },
+                { id: 'availability', label: 'Availability and work preference', completed: availAndWorkPref, targetSubTab: 'profile' }
+            ];
+
+            if (isWhatsAppSelected) {
+                items.push({ id: 'whatsapp', label: 'WhatsApp media information', completed: whatsappMediaInfo, targetSubTab: 'profile' });
+            }
+
+            const completedCount = items.filter(i => i.completed).length;
+            const allComplete = items.every(i => i.completed);
+            const percent = Math.round((completedCount / items.length) * 100);
+
+            return { items, allComplete, completedCount, totalCount: items.length, percent };
+        })();
+
+        // --- Section 7.2: Exact Banner Copy & Status Determination ---
+        const bannerState = (() => {
+            const reviewStatus = userProfile?.reviewStatus || userProfile?.profileStatus;
+            const isSubmitted = userProfile?.profileSubmittedForReview || reviewStatus === 'submitted' || reviewStatus === 'pending_review';
+            const isApproved = reviewStatus === 'approved';
+            const isNeedsUpdate = reviewStatus === 'needs_update';
+            const isNotAvailable = userProfile?.availability === 'Not Available';
+
+            if (isApproved && isNotAvailable) {
+                return {
+                    type: 'approved_unavailable',
+                    title: 'Approved but unavailable',
+                    copy: 'Your profile is approved but hidden from active hiring because your availability is set to Not Available.',
+                    buttonText: 'Update Availability',
+                    bannerClass: 'bg-amber-500/10 border-amber-500/30 text-amber-950 dark:text-amber-100',
+                    badgeClass: 'bg-amber-500 text-white',
+                    btnClass: 'bg-amber-600 hover:bg-amber-700 text-white',
+                    disabled: false,
+                    onClick: () => { setCurrentSection('profile_portfolio'); setProfileSubTab('profile'); }
+                };
+            }
+
+            if (isApproved) {
+                return {
+                    type: 'approved',
+                    title: 'Approved and available',
+                    copy: 'Your profile is approved and currently visible for hiring opportunities.',
+                    buttonText: 'View Public Profile',
+                    bannerClass: 'bg-green-500/10 border-green-500/30 text-green-950 dark:text-green-100',
+                    badgeClass: 'bg-green-600 text-white',
+                    btnClass: 'bg-green-600 hover:bg-green-700 text-white',
+                    disabled: false,
+                    onClick: () => setSelectedBrand(userProfile)
+                };
+            }
+
+            if (isNeedsUpdate) {
+                return {
+                    type: 'needs_update',
+                    title: 'Needs Update',
+                    copy: 'Your profile requires an update before it can be listed for hiring.',
+                    buttonText: 'Fix Profile',
+                    bannerClass: 'bg-red-500/10 border-red-500/30 text-red-950 dark:text-red-100',
+                    badgeClass: 'bg-red-500 text-white',
+                    btnClass: 'bg-red-600 hover:bg-red-700 text-white',
+                    disabled: false,
+                    onClick: () => { setCurrentSection('profile_portfolio'); setProfileSubTab('profile'); }
+                };
+            }
+
+            if (isSubmitted) {
+                return {
+                    type: 'ready_for_review',
+                    title: 'Ready for Review',
+                    copy: 'Your profile has been submitted and is awaiting review.',
+                    buttonText: 'View Profile',
+                    bannerClass: 'bg-indigo-500/10 border-indigo-500/30 text-indigo-950 dark:text-indigo-100',
+                    badgeClass: 'bg-indigo-600 text-white',
+                    btnClass: 'bg-indigo-600 hover:bg-indigo-700 text-white',
+                    disabled: false,
+                    onClick: () => { setCurrentSection('profile_portfolio'); setProfileSubTab('profile'); }
+                };
+            }
+
+            if (checklist.allComplete) {
+                return {
+                    type: 'complete_not_submitted',
+                    title: 'All fields complete, not submitted',
+                    copy: 'Your profile is complete. Submit it for review so it can be considered for hiring.',
+                    buttonText: 'Submit for Review',
+                    bannerClass: 'bg-spark-red/10 border-spark-red/30 text-[var(--text-primary)]',
+                    badgeClass: 'bg-spark-red text-white',
+                    btnClass: 'bg-gradient-red text-white hover:shadow-lg',
+                    disabled: false,
+                    onClick: async () => {
+                        const userId = userProfile?.id || (user as any)?.uid || (user as any)?.id;
+                        if (userId) {
+                            await setDoc(doc(db, "users", userId), { profileSubmittedForReview: true }, { merge: true });
+                            setUserProfile((prev: any) => ({ ...prev, profileSubmittedForReview: true }));
+                        }
+                    }
+                };
+            }
+
+            return {
+                type: 'incomplete',
+                title: 'Incomplete',
+                copy: 'Complete your profile to become eligible for hiring opportunities from brands and associations.',
+                buttonText: 'Complete Profile',
+                bannerClass: 'bg-amber-500/10 border-amber-500/30 text-[var(--text-primary)]',
+                badgeClass: 'bg-amber-500 text-white',
+                btnClass: 'bg-spark-black hover:bg-spark-red text-white',
+                disabled: false,
+                onClick: () => { setCurrentSection('profile_portfolio'); setProfileSubTab('profile'); }
+            };
         })();
 
         const activeGigsCount = myCampaigns.filter(c => ['selected', 'in_progress', 'submitted', 'revision', 'approved'].includes(c.status)).length;
@@ -1492,17 +1648,13 @@ const CreatorDashboard: React.FC<{
         const pendingPayouts = myCampaigns.filter(c => ['approved', 'submitted'].includes(c.status)).reduce((sum, c) => sum + (c.amount || 0), 0);
         const pendingProposalsCount = proposals.filter(p => p.status === 'pending' && p.recipientId === userProfile?.id).length;
 
-        const isProfileDone = profileCompletion >= 80;
-        const isSocialDone = !!(userProfile?.instagram || userProfile?.twitter || userProfile?.tiktok);
-        const isAppliedDone = myApplications.length > 0;
-        const isBankDone = !!(userProfile?.bankDetails || (bankDetails.bank && bankDetails.account));
-
         return (
-            <div className="space-y-10 animate-in slide-in-from-bottom-4 duration-500">
+            <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                {/* Dashboard Welcome Header */}
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                     <div>
                         <h2 className="text-3xl sm:text-4xl font-black text-[var(--text-primary)]">Welcome, {userProfile?.name || 'Creator'}!</h2>
-                        <p className="text-[var(--text-secondary)] font-medium mt-1">Quick summary of your profile, gigs, applications, and earnings.</p>
+                        <p className="text-[var(--text-secondary)] font-medium mt-1">Move your profile towards hiring readiness for brand and association campaigns.</p>
                     </div>
                     {userProfile?.nicheCategory && (
                         <span className="px-4 py-2 bg-spark-red/10 text-spark-red border border-spark-red/20 rounded-full text-xs font-black uppercase tracking-wider">
@@ -1511,9 +1663,91 @@ const CreatorDashboard: React.FC<{
                     )}
                 </div>
 
+                {/* ── Section 7.1 & 7.2: Step 1 — Profile-Status Banner ── */}
+                <div className={`p-6 sm:p-8 rounded-[2.5rem] border shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6 transition-all ${bannerState.bannerClass}`}>
+                    <div className="space-y-2 flex-1">
+                        <div className="flex items-center gap-3">
+                            <span className={`px-3.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${bannerState.badgeClass}`}>
+                                {bannerState.title}
+                            </span>
+                        </div>
+                        <p className="text-base sm:text-lg font-bold leading-relaxed">{bannerState.copy}</p>
+                        {/* Section 9 — Show admin feedback note on Needs Update */}
+                        {bannerState.type === 'needs_update' && userProfile?.adminNote && (
+                            <div className="mt-3 p-4 bg-white/60 dark:bg-black/20 border border-red-300/50 rounded-2xl space-y-1">
+                                <p className="text-[9px] font-black text-red-700 uppercase tracking-widest">📋 Admin Feedback</p>
+                                <p className="text-sm font-semibold text-red-900 dark:text-red-200 leading-relaxed">{userProfile.adminNote}</p>
+                            </div>
+                        )}
+                    </div>
+                    <button
+                        onClick={bannerState.onClick}
+                        disabled={bannerState.disabled}
+                        className={`px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shrink-0 shadow-md disabled:opacity-50 ${bannerState.btnClass}`}
+                    >
+                        {bannerState.buttonText}
+                    </button>
+                </div>
+
+                {/* ── Section 7.1 & 7.3: Step 2 — Simple Profile-Completion Checklist ── */}
+                <div className="bg-[var(--bg-primary)] p-6 sm:p-8 rounded-[2.5rem] border border-[var(--border-color)] shadow-sm space-y-6">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-[var(--border-color)] pb-4">
+                        <div>
+                            <h3 className="text-xl font-black text-[var(--text-primary)] flex items-center gap-2">
+                                <Award className="w-5 h-5 text-spark-red" /> Profile Completion Checklist
+                            </h3>
+                            <p className="text-xs text-[var(--text-secondary)] mt-1 font-medium">Complete all required fields to become eligible for hiring opportunities.</p>
+                        </div>
+                        <div className="flex items-center gap-3 bg-[var(--bg-secondary)] px-4 py-2 rounded-2xl border border-[var(--border-color)]">
+                            <div className="w-24 bg-gray-200 dark:bg-gray-700 h-2.5 rounded-full overflow-hidden">
+                                <div className="bg-spark-red h-full rounded-full transition-all duration-500" style={{ width: `${checklist.percent}%` }} />
+                            </div>
+                            <span className="text-xs font-black text-spark-red">{checklist.completedCount}/{checklist.totalCount} ({checklist.percent}%)</span>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {checklist.items.map((item) => (
+                            <div
+                                key={item.id}
+                                onClick={() => {
+                                    if (!item.completed) {
+                                        setCurrentSection('profile_portfolio');
+                                        setProfileSubTab(item.targetSubTab as any);
+                                    }
+                                }}
+                                className={`p-4 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
+                                    item.completed
+                                        ? 'bg-green-500/5 border-green-500/20 text-green-700 dark:text-green-300'
+                                        : 'bg-red-500/5 border-red-500/20 text-red-600 dark:text-red-300 hover:bg-red-500/10 cursor-pointer group'
+                                }`}
+                            >
+                                <div className="flex items-center gap-3 min-w-0">
+                                    {item.completed ? (
+                                        <CheckCircle className="w-5 h-5 text-green-500 shrink-0" />
+                                    ) : (
+                                        <Circle className="w-5 h-5 text-red-400 shrink-0 group-hover:scale-110 transition-transform" />
+                                    )}
+                                    <span className={`text-xs font-bold truncate ${item.completed ? 'line-through opacity-70' : ''}`}>
+                                        {item.label}
+                                    </span>
+                                </div>
+                                <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider shrink-0 ${
+                                    item.completed
+                                        ? 'bg-green-500/20 text-green-600 dark:text-green-300'
+                                        : 'bg-red-500/20 text-red-600 dark:text-red-400 group-hover:bg-red-600 text-white'
+                                }`}>
+                                    {item.completed ? 'Completed' : 'Missing'}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* ── Section 7.1: Step 3 — Retain Creator's Existing Opportunities & Activity ── */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
                     {[
-                        { label: 'Profile Strength', value: `${profileCompletion}%`, icon: <User className="w-6 h-6" />, color: 'text-purple-500 bg-purple-500/10 border-purple-500/20', action: () => setCurrentSection('profile_portfolio') },
+                        { label: 'Profile Strength', value: `${checklist.percent}%`, icon: <User className="w-6 h-6" />, color: 'text-purple-500 bg-purple-500/10 border-purple-500/20', action: () => setCurrentSection('profile_portfolio') },
                         { label: 'Active Gigs', value: activeGigsCount, icon: <Briefcase className="w-6 h-6" />, color: 'text-blue-500 bg-blue-500/10 border-blue-500/20', action: () => setCurrentSection('active_gigs') },
                         { label: 'Matched Opportunities', value: matchedOpportunities.length, icon: <Sparkles className="w-6 h-6" />, color: 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20', action: () => setCurrentSection('opportunities') },
                         { label: 'Pending Payouts', value: `₦${pendingPayouts.toLocaleString()}`, icon: <Wallet className="w-6 h-6" />, color: 'text-green-500 bg-green-500/10 border-green-500/20', action: () => setCurrentSection('earnings_wallet') }
@@ -1569,38 +1803,6 @@ const CreatorDashboard: React.FC<{
 
                 <div className="grid md:grid-cols-2 gap-8">
                     <div className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)]">
-                        <h3 className="text-lg font-black text-[var(--text-primary)] mb-6 flex items-center gap-2">
-                            <Award className="w-5 h-5 text-spark-red" /> Creator Checklist
-                        </h3>
-                        <div className="space-y-4">
-                            {[
-                                { id: 'profile', label: 'Complete profile details (80%+)', checked: isProfileDone, desc: 'Add niche, skills, bio & profile pic.', action: () => setCurrentSection('profile_portfolio') },
-                                { id: 'socials', label: 'Link social channels', checked: isSocialDone, desc: 'Connect your Instagram, TikTok, or X accounts.', action: () => setCurrentSection('profile_portfolio') },
-                                { id: 'apply', label: 'Apply to opportunities', checked: isAppliedDone, desc: 'Find open campaigns on the board.', action: () => setCurrentSection('opportunities') },
-                                { id: 'bank', label: 'Link bank account details', checked: isBankDone, desc: 'Set up payout info for earnings.', action: () => setCurrentSection('earnings_wallet') },
-                                { id: 'feedback', label: 'Provide platform feedback', checked: checklistItems.custom_feedback, desc: 'Let us know how you like ABC-Rally.', action: () => setChecklistItems(prev => ({ ...prev, custom_feedback: !prev.custom_feedback })) }
-                            ].map((item, i) => (
-                                <div key={i} className="flex items-start gap-4 p-3 rounded-2xl hover:bg-[var(--bg-secondary)] transition-all">
-                                    <button 
-                                        onClick={item.action} 
-                                        className="mt-0.5 text-spark-red hover:scale-110 transition-transform flex-shrink-0"
-                                    >
-                                        {item.checked ? (
-                                            <CheckCircle className="w-6 h-6 fill-spark-red text-white" />
-                                        ) : (
-                                            <Circle className="w-6 h-6 text-[var(--border-color)]" />
-                                        )}
-                                    </button>
-                                    <div className="flex-1 cursor-pointer" onClick={item.action}>
-                                        <p className={`text-sm font-bold text-[var(--text-primary)] ${item.checked ? 'line-through opacity-55' : ''}`}>{item.label}</p>
-                                        <p className="text-xs text-[var(--text-secondary)] mt-0.5">{item.desc}</p>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)]">
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="text-lg font-black text-[var(--text-primary)] flex items-center gap-2">
                                 <Sparkles className="w-5 h-5 text-yellow-500" /> Matched Listings
@@ -1655,6 +1857,43 @@ const CreatorDashboard: React.FC<{
                                 </button>
                             </div>
                         )}
+                    </div>
+
+                    <div className="bg-[var(--bg-primary)] p-8 rounded-[2.5rem] border border-[var(--border-color)]">
+                        <h3 className="text-lg font-black text-[var(--text-primary)] mb-4 flex items-center gap-2">
+                            <Zap className="w-5 h-5 text-spark-red" /> Quick Actions
+                        </h3>
+                        <p className="text-xs text-[var(--text-secondary)] font-medium mb-6">Manage your creator career with one tap.</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <button
+                                onClick={() => { setCurrentSection('profile_portfolio'); setProfileSubTab('profile'); }}
+                                className="p-4 bg-[var(--bg-secondary)] hover:bg-spark-red/5 border border-[var(--border-color)] hover:border-spark-red/30 rounded-2xl text-left transition-all"
+                            >
+                                <p className="text-xs font-black text-[var(--text-primary)] uppercase tracking-wider">✏ Edit Profile</p>
+                                <p className="text-[11px] text-[var(--text-secondary)] font-medium mt-1">Update rates & services</p>
+                            </button>
+                            <button
+                                onClick={() => { setCurrentSection('profile_portfolio'); setProfileSubTab('portfolio'); }}
+                                className="p-4 bg-[var(--bg-secondary)] hover:bg-spark-red/5 border border-[var(--border-color)] hover:border-spark-red/30 rounded-2xl text-left transition-all"
+                            >
+                                <p className="text-xs font-black text-[var(--text-primary)] uppercase tracking-wider">📁 Add Portfolio</p>
+                                <p className="text-[11px] text-[var(--text-secondary)] font-medium mt-1">Showcase work samples</p>
+                            </button>
+                            <button
+                                onClick={() => setCurrentSection('opportunities')}
+                                className="p-4 bg-[var(--bg-secondary)] hover:bg-spark-red/5 border border-[var(--border-color)] hover:border-spark-red/30 rounded-2xl text-left transition-all"
+                            >
+                                <p className="text-xs font-black text-[var(--text-primary)] uppercase tracking-wider">🔍 Browse Gigs</p>
+                                <p className="text-[11px] text-[var(--text-secondary)] font-medium mt-1">Find active campaigns</p>
+                            </button>
+                            <button
+                                onClick={() => setCurrentSection('earnings_wallet')}
+                                className="p-4 bg-[var(--bg-secondary)] hover:bg-spark-red/5 border border-[var(--border-color)] hover:border-spark-red/30 rounded-2xl text-left transition-all"
+                            >
+                                <p className="text-xs font-black text-[var(--text-primary)] uppercase tracking-wider">💳 Wallet & Payouts</p>
+                                <p className="text-[11px] text-[var(--text-secondary)] font-medium mt-1">Manage earnings & bank</p>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -3038,8 +3277,26 @@ const CreatorDashboard: React.FC<{
         }
     };
 
+    const needsOnboarding = Boolean(
+        userProfile &&
+        (!userProfile.capabilities || userProfile.capabilities.length === 0 || !userProfile.onboardingCompleted)
+    );
+
     return (
         <>
+        {needsOnboarding && (
+            <CreatorOnboardingModal
+                userId={(userProfile as any)?.id || (user as any)?.uid || (user as any)?.id}
+                existingProfile={userProfile}
+                onComplete={(updated) => {
+                    setUserProfile(updated);
+                    // Section 10 Step 5: land on the Commercial tab so creator
+                    // immediately fills in remaining required fields
+                    setCurrentSection('profile_portfolio');
+                    setProfileSubTab('profile'); // 'profile' sub-tab = commercial form
+                }}
+            />
+        )}
         <DashboardShell
             role={'Creator'}
             activeView={currentSection}

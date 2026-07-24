@@ -62,7 +62,12 @@ service cloud.firestore {
         && request.resource.data.hostId == request.auth.uid
         && hasFields(['name', 'hostId', 'hostName', 'createdAt']);
 
-      allow update, delete: if isAuth()
+      // Host can update their own event; admin can update any event
+      // (needed for admin-sourced sponsorship raisedSponsorship increments)
+      allow update: if isAuth()
+        && (resource.data.hostId == request.auth.uid || isAdmin());
+
+      allow delete: if isAuth()
         && (resource.data.hostId == request.auth.uid || isAdmin());
     }
 
@@ -94,6 +99,29 @@ service cloud.firestore {
       allow read: if isAuth();
       allow create: if isAuth()
         && request.resource.data.senderId == request.auth.uid;
+      allow update: if isAuth();
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────
+    // PARTNERSHIPS — sponsorship agreements between brands & event hosts
+    // Admin-sourced off-platform sponsorship records are also stored here.
+    // ─────────────────────────────────────────────────────
+    match /partnerships/{partnershipId} {
+      allow read: if isAuth();
+      // Any authenticated user can create (brands sending proposals,
+      // or admin recording an off-platform sponsorship).
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────
+    // SPONSORSHIP RECORDS (alias collection used by some flows)
+    // ─────────────────────────────────────────────────────
+    match /sponsorship_records/{id} {
+      allow read: if isAuth();
+      allow create: if isAuth();
       allow update: if isAuth();
       allow delete: if isAdmin();
     }

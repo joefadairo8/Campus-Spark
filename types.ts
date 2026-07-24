@@ -79,6 +79,8 @@ export interface User {
   imageUrl?: string;
   bio?: string;
   location?: string;
+  city?: string;
+  state?: string;
   phoneNumber?: string;
   accountName?: string;
   accountNumber?: string;
@@ -97,6 +99,40 @@ export interface User {
   coverPhotoUrl?: string;
   influencerType?: string;
   portfolio?: PortfolioItem[];
+  // Onboarding capability fields
+  capabilities?: string[];
+  primaryCapability?: string;
+  services?: string[];
+  primaryService?: string;
+  onboardingCompleted?: boolean;
+  profileSubmittedForReview?: boolean;
+  // Commercial profile fields (Section 6.2)
+  professionalHeadline?: string;
+  professionalSummary?: string;
+  campusCommunityReach?: string;
+  startingPrice?: number;
+  pricingNegotiable?: boolean;
+  pricingBasis?: 'Per project' | 'Per day' | 'Per month' | 'Per placement' | 'Negotiable';
+  turnaroundTime?: 'Same day' | '1–3 days' | '4–7 days' | 'Custom';
+  workPreference?: 'Remote' | 'Physical' | 'Hybrid';
+  availability?: 'Available now' | 'Limited availability' | 'Not available';
+  // Conditional Media Fields (Section 9 — WhatsApp TV & Channel Integration)
+  whatsappMediaName?: string;
+  whatsappMediaType?: 'Status TV' | 'Channel' | 'Both';
+  whatsappCampusCoverage?: string;
+  whatsappCityState?: string;
+  whatsappPrimaryAudience?: 'Students' | 'Youth' | 'Professionals' | 'Faith Community' | 'Local Community' | 'Mixed';
+  whatsappAverageStatusViews?: number;
+  whatsappChannelFollowers?: number;
+  whatsappRecentReach?: number;
+  whatsappRatePerPlacement?: number;
+  whatsappPackageDescription?: string;
+  whatsappAudienceEvidence?: string;
+  whatsappAdRestrictions?: string;
+  whatsappAudienceReviewedDate?: string;
+  whatsappChannelLink?: string;
+  whatsappAverageViews?: string;
+  reviewStatus?: 'submitted' | 'pending_review' | 'approved' | 'needs_update';
   createdAt: string;
 }
 
